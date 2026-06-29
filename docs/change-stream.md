@@ -36,14 +36,17 @@ data: <one line of JSON>
 
 ## 1. Snapshot event (first message)
 
-A full snapshot of the canonical model. It is **name-keyed and denormalised: it
-carries no entity ids**. It contains timelines and swimlanes (which the
-`eventmodeling.schema.json` interchange format does not) because the stream is
-for visualisation.
+A full snapshot of the canonical model. **Every entity carries its integer
+`id`** — the same surrogate identity the deltas use — so you can seed a
+normalised store from the snapshot and patch it by id from later deltas.
+Denormalised display fields (element / connection names) are nested under their
+sub-entity, which also carries its id. It contains timelines and swimlanes
+(which the `eventmodeling.schema.json` interchange format does not) because the
+stream is for visualisation.
 
 ```
 event: snapshot
-data: {"op":"snapshot","model":{"name":"Orders","timelines":[],"swimlanes":[],"connections":[]}}
+data: {"op":"snapshot","model":{"id":1,"name":"Orders","timelines":[],"swimlanes":[],"connections":[]}}
 ```
 
 Populated:
@@ -52,19 +55,33 @@ Populated:
 {
   "op": "snapshot",
   "model": {
+    "id": 1,
     "name": "Orders",
     "timelines": [
-      { "title": "Order flow",
+      { "id": 5, "title": "Order flow",
         "slices": [
-          { "title": "Place order", "kind": "state_change", "status": "created", "index": 0,
-            "placements": [ { "name": "PlaceOrder", "kind": "command" } ] }
+          { "id": 6, "title": "Place order", "kind": "state_change", "status": "created", "index": 0,
+            "placements": [
+              { "id": 7, "element": { "id": 2, "name": "PlaceOrder", "kind": "command" } }
+            ] }
         ] }
     ],
-    "swimlanes": ["Orders"],
-    "connections": [ { "from": "PlaceOrder", "to": "OrderPlaced" } ]
+    "swimlanes": [ { "id": 4, "name": "Orders" } ],
+    "connections": [
+      { "id": 8,
+        "from": { "id": 2, "name": "PlaceOrder" },
+        "to":   { "id": 3, "name": "OrderPlaced" } }
+    ]
   }
 }
 ```
+
+The ids correlate directly with deltas: the placement `id` matches a
+`PlaceElement` delta's entity id, `element.id` matches `CreateElement`,
+`connections[].id` matches `Connect`, and so on. Note that an element appears in
+the snapshot only where it is placed or connected (the stream is
+placement-bound); a standalone element with no placement is not in the snapshot,
+though its `CreateElement` delta still arrives on the stream.
 
 ## 2. Delta events (one per mutation)
 
@@ -158,23 +175,28 @@ Embedded value objects:
 - `field.type`: `string`, `boolean`, `double`, `decimal`, `long`, `custom`, `date`, `date_time`, `uuid`, `int`
 - `field.cardinality`: `single`, `list`
 
-## Important: snapshot and deltas use different shapes
+## Consuming the stream
 
-The snapshot is **name-keyed without ids**; deltas are **id-keyed**. You cannot
-directly map a delta's `id` onto a snapshot node. Two practical consumption
-strategies:
+Both the snapshot and the deltas are keyed by the same integer entity `id`, so a
+single normalised store works end to end:
 
-1. **Render-then-rebuild (recommended):** use the snapshot for the initial
-   picture, but maintain your own normalised store keyed by entity id that you
-   build up purely from deltas going forward. Resolve names via the entities you
-   receive in `created`/`updated` changes.
-2. **Snapshot-only refresh:** ignore deltas for state and re-`GET /snapshot`
-   (or `/model`) whenever a delta arrives, treating deltas as change *signals*.
-   Simpler, but loses the per-mutation granularity.
+1. **Seed** your store from the snapshot: index timelines, slices, placements,
+   swimlanes and connections by their `id`. Element identity is available via
+   `placements[].element.id` and `connections[].from/to.id`.
+2. **Patch** by id as deltas arrive: on a `created`/`updated` change, upsert
+   `entity` into the collection for its `type`; on a `deleted` change, drop the
+   `(type, id)`. A cascading delete arrives as one delta listing every removed
+   entity, so apply all of its `changes` atomically.
 
-> If you would prefer the snapshot to include entity ids (so a single store can
-> be seeded from the snapshot and then patched by deltas), that is a small
-> change to `emcli.app/snapshot` — ask and it can be added.
+Two shape differences to keep in mind:
+
+- The snapshot is a **nested projection** (slices under timelines, element name/
+  kind under placements), whereas a delta `entity` is the **flat canonical
+  record** with foreign-key ids (e.g. a slice entity has `timeline`; a placement
+  has `slice` and `element`). Index by id and the two line up.
+- Deltas may carry canonical fields the snapshot omits (e.g. an element delta
+  includes `context`, `fields`, `image_url`). Treat the delta `entity` as the
+  authoritative latest state for that id.
 
 ## Reconnection
 

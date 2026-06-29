@@ -31,6 +31,32 @@
             snap     (first @msgs)]
         (is (= ["Ordering"] (map :title (get-in snap [:model :timelines]))))))))
 
+(deftest snapshot-carries-entity-ids-matching-the-store
+  (testing "every snapshot entity exposes its integer id, correlatable with deltas"
+    (let [a   (app/new-app "Orders")
+          tl  (:result (cmd/run a "create-timeline" {:title "Ordering"}))
+          sw  (:result (cmd/run a "create-swimlane" {:name "Lane"}))
+          sl  (:result (cmd/run a "add-slice" {:timeline (:id tl) :title "Place" :kind "state_change" :index 0}))
+          cmd' (:result (cmd/run a "create-element" {:name "PlaceOrder" :kind "command"}))
+          evt (:result (cmd/run a "create-element" {:name "OrderPlaced" :kind "event"}))
+          pl  (:result (cmd/run a "place-element" {:slice (:id sl) :element (:id cmd')}))
+          cn  (:result (cmd/run a "connect" {:from (:id cmd') :to (:id evt)}))
+          [_ msgs] (recording-sub a)
+          model (:model (first @msgs))
+          t1    (first (:timelines model))
+          s1    (first (:slices t1))
+          p1    (first (:placements s1))
+          c1    (first (:connections model))]
+      (is (= (app/model-id a) (:id model)))
+      (is (= (:id tl) (:id t1)))
+      (is (= (:id sl) (:id s1)))
+      (is (= (:id sw) (:id (first (:swimlanes model)))))
+      (is (= (:id pl) (:id p1)))
+      (is (= {:id (:id cmd') :name "PlaceOrder" :kind :command} (:element p1)))
+      (is (= (:id cn) (:id c1)))
+      (is (= {:id (:id cmd') :name "PlaceOrder"} (:from c1)))
+      (is (= {:id (:id evt) :name "OrderPlaced"} (:to c1))))))
+
 (deftest delta-per-mutation
   (testing "DeltaPerMutation: each ModelAuthoring mutation yields exactly one delta"
     (let [a (app/new-app "Orders")

@@ -87,24 +87,37 @@
 
 (defn snapshot
   "A full canonical snapshot of the model: timelines/slices/placements,
-  swimlanes and connections, by name."
+  swimlanes and connections.
+
+  Every entity carries its integer `id` — the same surrogate identity the deltas
+  use — so a consumer can seed a normalised store from the snapshot and then
+  patch it by id from subsequent deltas. The denormalised display fields the
+  ModelChangeStream surface exposes (element/connection names and kinds) are
+  nested under their sub-entity, mirroring the spec's `p.element.name` /
+  `c.from.name` navigation."
   [app]
   (let [s   (store app)
         mid (model-id app)]
     {:op    :snapshot
-     :model {:name (:name (m/fetch s :event-model mid))
+     :model {:id   mid
+             :name (:name (m/fetch s :event-model mid))
              :timelines (for [t (m/timelines s mid)]
-                          {:title (:title t)
+                          {:id (:id t) :title (:title t)
                            :slices (for [sl (m/slices s (:id t))]
-                                     {:title (:title sl) :kind (:kind sl)
+                                     {:id (:id sl) :title (:title sl) :kind (:kind sl)
                                       :status (:status sl) :index (:index sl)
                                       :placements (for [p (m/placements s (:id sl))
                                                         :let [el (m/placement-element s p)]]
-                                                    {:name (:name el) :kind (:kind el)})})})
-             :swimlanes   (map :name (m/swimlanes s mid))
-             :connections (for [c (m/connections s mid)]
-                            {:from (:name (m/fetch s :element (:from c)))
-                             :to   (:name (m/fetch s :element (:to c)))})}}))
+                                                    {:id (:id p)
+                                                     :element {:id (:id el) :name (:name el) :kind (:kind el)}})})})
+             :swimlanes   (for [sw (m/swimlanes s mid)]
+                            {:id (:id sw) :name (:name sw)})
+             :connections (for [c (m/connections s mid)
+                                :let [from (m/fetch s :element (:from c))
+                                      to   (m/fetch s :element (:to c))]]
+                            {:id (:id c)
+                             :from {:id (:id from) :name (:name from)}
+                             :to   {:id (:id to)   :name (:name to)}})}}))
 
 ;; ---------------------------------------------------------------------------
 ;; Subscriber registry

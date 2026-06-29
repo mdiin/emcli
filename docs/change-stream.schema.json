@@ -10,32 +10,35 @@
   "$defs": {
     "SnapshotEvent": {
       "type": "object",
-      "description": "The full canonical model, sent once when a client connects (SnapshotThenDeltas). It is NAME-keyed and denormalised: it carries no entity ids. Use it to render the initial view; correlate later deltas by rebuilding your own store from them (see docs/change-stream.md).",
+      "description": "The full canonical model, sent once when a client connects (SnapshotThenDeltas). Every entity carries its integer `id` (the same surrogate identity the deltas use), so a consumer can seed a normalised store from the snapshot and patch it by id from later deltas. Denormalised display fields (element/connection names) are nested under their sub-entity, which also carries its id.",
       "required": ["op", "model"],
       "additionalProperties": false,
       "properties": {
         "op": { "const": "snapshot" },
         "model": {
           "type": "object",
-          "required": ["name", "timelines", "swimlanes", "connections"],
+          "required": ["id", "name", "timelines", "swimlanes", "connections"],
           "additionalProperties": false,
           "properties": {
+            "id": { "type": "integer", "description": "EventModel id" },
             "name": { "type": "string" },
             "timelines": {
               "type": "array",
               "items": {
                 "type": "object",
-                "required": ["title", "slices"],
+                "required": ["id", "title", "slices"],
                 "additionalProperties": false,
                 "properties": {
+                  "id": { "type": "integer", "description": "Timeline id" },
                   "title": { "type": "string" },
                   "slices": {
                     "type": "array",
                     "items": {
                       "type": "object",
-                      "required": ["title", "kind", "status", "index", "placements"],
+                      "required": ["id", "title", "kind", "status", "index", "placements"],
                       "additionalProperties": false,
                       "properties": {
+                        "id": { "type": "integer", "description": "Slice id" },
                         "title": { "type": "string" },
                         "kind": { "$ref": "#/$defs/sliceKind" },
                         "status": { "$ref": "#/$defs/sliceStatus" },
@@ -44,11 +47,20 @@
                           "type": "array",
                           "items": {
                             "type": "object",
-                            "required": ["name", "kind"],
+                            "required": ["id", "element"],
                             "additionalProperties": false,
                             "properties": {
-                              "name": { "type": "string" },
-                              "kind": { "$ref": "#/$defs/elementKind" }
+                              "id": { "type": "integer", "description": "ElementPlacement id" },
+                              "element": {
+                                "type": "object",
+                                "required": ["id", "name", "kind"],
+                                "additionalProperties": false,
+                                "properties": {
+                                  "id": { "type": "integer", "description": "Element id (correlates with element deltas)" },
+                                  "name": { "type": "string" },
+                                  "kind": { "$ref": "#/$defs/elementKind" }
+                                }
+                              }
                             }
                           }
                         }
@@ -58,21 +70,43 @@
                 }
               }
             },
-            "swimlanes": { "type": "array", "items": { "type": "string" } },
+            "swimlanes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["id", "name"],
+                "additionalProperties": false,
+                "properties": {
+                  "id": { "type": "integer", "description": "Swimlane id" },
+                  "name": { "type": "string" }
+                }
+              }
+            },
             "connections": {
               "type": "array",
               "items": {
                 "type": "object",
-                "required": ["from", "to"],
+                "required": ["id", "from", "to"],
                 "additionalProperties": false,
                 "properties": {
-                  "from": { "type": "string", "description": "source element name" },
-                  "to": { "type": "string", "description": "target element name" }
+                  "id": { "type": "integer", "description": "Connection id" },
+                  "from": { "$ref": "#/$defs/connectionEnd", "description": "source element" },
+                  "to": { "$ref": "#/$defs/connectionEnd", "description": "target element" }
                 }
               }
             }
           }
         }
+      }
+    },
+
+    "connectionEnd": {
+      "type": "object",
+      "required": ["id", "name"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "integer", "description": "Element id" },
+        "name": { "type": "string" }
       }
     },
 
