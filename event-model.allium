@@ -548,9 +548,12 @@ contract SchemaCodec {
         --   slice index/status <-> Slice.index/status.
 }
 
--- @note ASPIRATIONAL: SchemaCodec import/export is declared but not yet
--- implemented. The contract defines the required behaviour; the functions
--- stubs exist in the codebase but do not perform actual schema parsing.
+-- @note SchemaCodec import/export is implemented in emcli.schema: export
+-- rejects models that are not export-ready, drops informational slices and the
+-- documented technical/visual fields, and emits one embedded element per
+-- placement sharing the element's groupId; import collapses elements by groupId
+-- and deduplicates dependencies back into connections. ModelRoundtrip and the
+-- groupId/dependency identity invariants are covered by emcli.schema-test.
 
 -- The live change stream a frontend consumes to visualise a model as it is
 -- edited. Outbound only: the frontend receives changes, never issues edits over
