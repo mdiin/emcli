@@ -79,22 +79,22 @@
       (swap! app assoc :store (:store res))
       ;; the new subscriber's first message is the snapshot...
       (send-fn (snapshot app))
-      ;; ...and only then is it wired up to receive subsequent deltas.
+      ;; ...and only then is it wired up to receive subsequent deltas. No
+      ;; Subscribe delta is broadcast: subscriptions are not part of the
+      ;; canonical shape clients visualise (CanonicalShape), and only
+      ;; ModelAuthoring mutations produce deltas (DeltaPerMutation).
       (swap! app assoc-in [:subscribers (:id sub)] send-fn)
-      ;; the Subscribe delta itself goes to previously-connected subscribers.
-      (doseq [[sid f] (:subscribers @app) :when (not= sid (:id sub))]
-        (f (:delta res)))
       (:id sub))))
 
 (defn unsubscribe!
-  "Remove a subscriber via the Unsubscribe rule and stop sending to it."
+  "Remove a subscriber via the Unsubscribe rule and stop sending to it. Like
+  Subscribe, this emits no delta to other clients."
   [app sub-id]
   (locking (:lock @app)
     (let [res (r/unsubscribe (store app) {:subscription sub-id})]
       (when-not (r/error? res)
         (swap! app update :subscribers dissoc sub-id)
-        (swap! app assoc :store (:store res))
-        (broadcast! app (:delta res)))
+        (swap! app assoc :store (:store res)))
       res)))
 
 (defn subscriber-count [app] (count (:subscribers @app)))

@@ -1,0 +1,95 @@
+(ns emcli.server-test
+  "Integration tests over a real HTTP server: the ModelAuthoring HTTP boundary
+  (POST /authoring/<command>, /model, /export, /validate, /import) and the
+  ModelChangeStream SSE endpoint (GET /stream) delivering snapshot-then-deltas."
+  (:require [babashka.http-client :as http]
+            [cheshire.core :as json]
+            [clojure.string :as str]
+            [clojure.test :refer [deftest testing is use-fixtures]]
+            [emcli.server :as server]))
+
+(def ^:dynamic *base* nil)
+(def ^:dynamic *srv* nil)
+
+(use-fixtures :each
+  (fn [t]
+    (let [port (+ 8100 (rand-int 800))
+          srv  (server/start! {:port port :model-name "Orders"})]
+      (try
+        (binding [*base* (str "http://localhost:" port) *srv* srv]
+          (t))
+        (finally ((:stop srv)))))))
+
+(defn- post [path body]
+  (http/post (str *base* path)
+             {:headers {"Content-Type" "application/json"} :throw false
+              :body (json/generate-string body)}))
+
+(defn- get* [path] (http/get (str *base* path) {:throw false}))
+(defn- body-json [resp] (json/parse-string (:body resp) true))
+
+(deftest health-and-snapshot
+  (is (= 200 (:status (get* "/health"))))
+  (let [snap (body-json (get* "/model"))]
+    (is (= "snapshot" (:op snap)))
+    (is (= "Orders" (get-in snap [:model :name])))))
+
+(deftest authoring-create-and-reject
+  (testing "a successful authoring command returns the created entity"
+    (let [resp (post "/authoring/create-timeline" {:title "Ordering"})
+          body (body-json resp)]
+      (is (= 200 (:status resp)))
+      (is (:ok body))
+      (is (= "Ordering" (get-in body [:result :title])))))
+  (testing "an unknown command is 404"
+    (is (= 404 (:status (post "/authoring/frobnicate" {})))))
+  (testing "an invariant-violating command is 422"
+    (let [tl (:result (body-json (post "/authoring/create-timeline" {:title "T"})))
+          sl (:result (body-json (post "/authoring/add-slice"
+                                       {:timeline (:id tl) :title "S" :kind "state_change" :index 0})))
+          c1 (:result (body-json (post "/authoring/create-element" {:name "A" :kind "command"})))
+          c2 (:result (body-json (post "/authoring/create-element" {:name "B" :kind "command"})))]
+      (is (= 200 (:status (post "/authoring/place-element" {:slice (:id sl) :element (:id c1)}))))
+      ;; a second command in a state_change slice breaks PlacementMatchesSliceKind
+      (let [resp (post "/authoring/place-element" {:slice (:id sl) :element (:id c2)})]
+        (is (= 422 (:status resp)))
+        (is (= "invariant-violation" (:error (body-json resp))))))))
+
+(deftest export-requires-complete
+  (testing "export of an incomplete model is 422; a complete one exports 200"
+    (let [tl (:result (body-json (post "/authoring/create-timeline" {:title "Ordering"})))
+          sl (:result (body-json (post "/authoring/add-slice"
+                                       {:timeline (:id tl) :title "Place" :kind "state_change" :index 0})))]
+      (is (= 422 (:status (get* "/export"))) "no command placed yet")
+      (let [cmd (:result (body-json (post "/authoring/create-element" {:name "PlaceOrder" :kind "command"})))]
+        (post "/authoring/place-element" {:slice (:id sl) :element (:id cmd)})
+        (let [spec (:result (body-json (post "/authoring/add-specification" {:slice (:id sl) :title "spec"})))]
+          (is (= 422 (:status (get* "/export"))) "spec has no when-command yet")
+          (post "/authoring/add-spec-step" {:spec (:id spec) :clause "when_step" :element (:id cmd) :index 0})
+          (let [resp (get* "/export")]
+            (is (= 200 (:status resp)) "now complete")
+            (is (seq (get (body-json resp) :slices)))))))))
+
+(deftest sse-stream-delivers-snapshot-then-delta
+  (testing "GET /stream sends a snapshot, then one delta per mutation"
+    (let [resp   (http/get (str *base* "/stream") {:as :stream :throw false
+                                                   :headers {"Accept" "text/event-stream"}})
+          stream (:body resp)
+          events (atom [])
+          reader (future
+                   (let [rdr (clojure.java.io/reader stream)]
+                     (loop []
+                       (when-let [line (.readLine rdr)]
+                         (when (str/starts-with? line "data: ")
+                           (swap! events conj (json/parse-string (subs line 6) true)))
+                         (recur)))))]
+      (is (= "text/event-stream" (str/trim (str/replace (get-in resp [:headers "content-type"] "") #";.*" ""))))
+      ;; wait for the snapshot to arrive
+      (Thread/sleep 200)
+      (is (= :snapshot (-> @events first :op keyword)) "first event is the snapshot")
+      ;; cause a mutation; the subscriber should receive exactly one delta
+      (post "/authoring/create-timeline" {:title "Ordering"})
+      (Thread/sleep 200)
+      (is (= 2 (count @events)))
+      (is (= :CreateTimeline (-> @events second :op keyword)))
+      (future-cancel reader))))
