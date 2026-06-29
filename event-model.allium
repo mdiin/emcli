@@ -522,7 +522,10 @@ contract SchemaCodec {
         -- exports as a distinct embedded schema Element with a unique id but the
         -- element's shared groupId. On import, embedded elements sharing a
         -- groupId collapse into one Element; an element with no groupId becomes
-        -- its own Element.
+        -- its own Element. The schema embeds elements only inside slices, so
+        -- only PLACED elements participate in the round-trip: an element with no
+        -- placement has no embedded representation and is not exported (the
+        -- round-trip is placement-bound).
 
     @invariant DependenciesPerPlacement
         -- Each Connection exports as an OUTBOUND dependency on every embedded

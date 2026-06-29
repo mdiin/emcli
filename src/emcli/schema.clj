@@ -195,6 +195,27 @@
       (let [{:keys [store result]} (r/create-swimlane store {:model model-id :name name})]
         [store (:id result)]))))
 
+(defn- resolve-far
+  "Resolve a dependency's far-end element to a canonical element id. Prefers the
+  groupId the exporter writes into the dependency `id`; falls back to matching a
+  foreign document's dependency by (elementType, title) against element names."
+  [group->el name->el dep]
+  (or (group->el (get dep "id"))
+      (name->el [(type->elkind (get dep "elementType")) (get dep "title")])))
+
+(defn- apply-step-extras
+  "Re-attach a step's expectEmptyList and examples after creation, so both
+  round-trip (SpecStep.expect_empty and SpecStep.examples are canonical)."
+  [store step st]
+  (let [store    (if (get st "expectEmptyList")
+                   (:store (r/set-step-expect-empty store {:step (:id step) :value true}))
+                   store)
+        examples (mapv (fn [e] {:field_name (get e "name") :field_value (get e "value")})
+                       (get st "examples" []))]
+    (if (seq examples)
+      (:store (r/set-step-examples store {:step (:id step) :examples examples}))
+      store)))
+
 (defn import-model
   "Import a schema document into a fresh store. Returns [store model-id]."
   [document]
@@ -230,8 +251,8 @@
                         s2  (if lane (m/set-field s2 :element eid :swimlane lane) s2)]
                     [s2 (assoc acc g eid)]))
                 [store {}] by-group)
-        embedid->group (into {} (map (fn [e] [(get e "id") (get e "groupId" (str "anon-" (get e "id")))]))
-                             all-embedded)
+        ;; [kind name] -> element id, for resolving foreign dep/step references.
+        name->el (into {} (for [e (m/elements store mid)] [[(:kind e) (:name e)] (:id e)]))
         ;; --- slices, placements, screenImages, specifications --------------
         [store embedid->placement slice-id-map]
         (reduce
@@ -261,22 +282,20 @@
                             s3 (get ss "screenImages" []))]
              [s4 pmap2 (assoc smap (get ss "id") slid)]))
          [store {} {}] slices)
-        ;; --- connections: dedup deps by (from groupId, to groupId) ----------
+        ;; --- connections: dedup deps into (from element, to element) edges --
         edges (reduce
                (fn [acc e]
-                 (let [g (get e "groupId" (str "anon-" (get e "id")))]
+                 (let [near (group->el (get e "groupId" (str "anon-" (get e "id"))))]
                    (reduce (fn [a d]
-                             (case (get d "type")
-                               "OUTBOUND" (conj a [g (get d "id")])
-                               "INBOUND"  (conj a [(get d "id") g])
-                               a))
+                             (let [far (resolve-far group->el name->el d)]
+                               (cond
+                                 (or (nil? near) (nil? far)) a
+                                 (= "OUTBOUND" (get d "type")) (conj a [near far])
+                                 (= "INBOUND"  (get d "type")) (conj a [far near])
+                                 :else a)))
                            acc (get e "dependencies" []))))
                #{} all-embedded)
-        store (reduce (fn [s [fg tg]]
-                        (let [from (group->el fg) to (group->el tg)]
-                          (if (and from to)
-                            (:store (r/connect s {:from from :to to}))
-                            s)))
+        store (reduce (fn [s [from to]] (:store (r/connect s {:from from :to to})))
                       store edges)
         ;; --- specifications + steps ----------------------------------------
         store (reduce
@@ -291,18 +310,16 @@
                            (reduce
                             (fn [s st]
                               (if (= "SPEC_ERROR" (get st "type"))
-                                (:store (r/add-error-step s {:spec spid :error-name (get st "title")
-                                                             :index (get st "index" 0)}))
+                                (let [res (r/add-error-step s {:spec spid :error-name (get st "title")
+                                                               :index (get st "index" 0)})]
+                                  (if (r/error? res) s (apply-step-extras (:store res) (:result res) st)))
                                 (let [kind (spectype->elkind (get st "type"))
-                                      el   (first (filter #(and (= kind (:kind %))
-                                                                (= (get st "title") (:name %)))
-                                                          (m/elements s mid)))
+                                      el   (name->el [kind (get st "title")])
                                       res  (when el (r/add-spec-step s {:spec spid :clause clause
-                                                                        :element (:id el) :index (get st "index" 0)}))
-                                      s'   (if (and res (not (r/error? res))) (:store res) s)]
-                                  (if (and el res (not (r/error? res)) (get st "expectEmptyList"))
-                                    (:store (r/set-step-expect-empty s' {:step (:id (:result res)) :value true}))
-                                    s'))))
+                                                                        :element el :index (get st "index" 0)}))]
+                                  (if (and res (not (r/error? res)))
+                                    (apply-step-extras (:store res) (:result res) st)
+                                    s))))
                             s steps))
                          s2 [[:given_step (get spec "given" [])]
                              [:when_step (get spec "when" [])]

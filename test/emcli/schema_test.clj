@@ -44,6 +44,9 @@
         store       (:store (s/ok store r/add-specification {:slice sc1 :title "places an order"}))
         sp1         (:id (first (m/specs store sc1)))
         store       (:store (s/ok store r/add-spec-step {:spec sp1 :clause :when_step :element cmd :index 0}))
+        wstep       (:id (first (m/spec-steps store sp1)))
+        store       (:store (s/ok store r/set-step-examples {:step wstep
+                                                             :examples [{:field_name "id" :field_value "abc-123"}]}))
         store       (:store (s/ok store r/add-spec-step {:spec sp1 :clause :then_step :element evt :index 1}))
         ;; timeline 2: a complete state_view slice; reuse the read_model + screen
         store       (:store (s/ok store r/create-timeline {:model mid :title "Viewing"}))
@@ -82,7 +85,10 @@
                                       :steps (for [st (m/spec-steps store (:id sp))]
                                                {:clause (:clause st)
                                                 :element (some->> (:element st) (m/fetch store :element) :name)
-                                                :is_error (:is_error st)})})})})})
+                                                :is_error (:is_error st)
+                                                :expect_empty (:expect_empty st)
+                                                :examples (mapv #(select-keys % [:field_name :field_value])
+                                                                (:examples st))})})})})})
 
 ;; --- contract signatures ---------------------------------------------------
 
@@ -134,6 +140,62 @@
           doc           (-> (sc/export store mid) sc/write-json sc/read-json)
           [store2 mid2] (sc/import-model doc)]
       (is (= (normalise store mid) (normalise store2 mid2))))))
+
+;; --- SchemaRoundtrip (foreign document) ------------------------------------
+
+(def foreign-doc
+  "A document in the eventmodeling.schema.json shape, NOT produced by our own
+  exporter: dependency far-ends are referenced by title (not by our groupId
+  scheme), and steps carry examples. Exercises the foreign-import path."
+  {"name" "Imported"
+   "slices"
+   [{"id" "sl-1" "title" "Place order" "index" 0 "status" "Created"
+     "context" "Ordering" "sliceType" "STATE_CHANGE"
+     "commands" [{"id" "emb-cmd" "groupId" "grp-cmd" "title" "PlaceOrder" "type" "COMMAND"
+                  "context" "INTERNAL" "aggregate" "Orders"
+                  "fields" [{"name" "id" "type" "UUID" "cardinality" "Single" "optional" false}]
+                  "dependencies" [{"id" "ignored-foreign-id" "title" "OrderPlaced"
+                                   "type" "OUTBOUND" "elementType" "EVENT"}]}]
+     "events" [{"id" "emb-evt" "groupId" "grp-evt" "title" "OrderPlaced" "type" "EVENT"
+                "context" "INTERNAL" "fields" [] "dependencies" []}]
+     "specifications" [{"id" "spec-1" "title" "places order" "linkedId" "sl-1"
+                        "given" []
+                        "when" [{"id" "w1" "title" "PlaceOrder" "type" "SPEC_COMMAND" "index" 0
+                                 "examples" [{"name" "id" "value" "abc-123"}]}]
+                        "then" [{"id" "t1" "title" "OrderPlaced" "type" "SPEC_EVENT" "index" 1}]}]}
+    {"id" "sl-2" "title" "View orders" "index" 0 "status" "Created"
+     "context" "Viewing" "sliceType" "STATE_VIEW"
+     "readmodels" [{"id" "emb-rm" "groupId" "grp-rm" "title" "OrderList" "type" "READMODEL"
+                    "context" "INTERNAL" "fields" [] "dependencies" []}]
+     "screens" [{"id" "emb-scr" "groupId" "grp-scr" "title" "OrderScreen" "type" "SCREEN"
+                 "context" "INTERNAL" "fields" [] "dependencies" []}]
+     "screenImages" [{"url" "http://x/s.png" "elementId" "emb-scr"}]
+     "specifications" [{"id" "spec-2" "title" "shows orders" "linkedId" "sl-2"
+                        "given" [] "when" []
+                        "then" [{"id" "t2" "title" "OrderList" "type" "SPEC_READMODEL" "index" 0}]}]}]})
+
+(deftest schema-roundtrip-preserves-canonical-subset
+  (testing "export(import(document)) preserves the canonical subset of a foreign document"
+    (let [[store1 mid1] (sc/import-model foreign-doc)
+          doc2          (sc/export store1 mid1)
+          [store2 mid2] (sc/import-model doc2)]
+      (is (= (normalise store1 mid1) (normalise store2 mid2)))
+      (testing "canonical content survived the foreign import"
+        (is (= #{"PlaceOrder" "OrderPlaced" "OrderList" "OrderScreen"}
+               (set (map :name (m/elements store1 mid1)))))
+        (testing "dependency referenced by title became a Connection"
+          (is (contains? (set (for [c (m/connections store1 mid1)]
+                                [(:name (m/fetch store1 :element (:from c)))
+                                 (:name (m/fetch store1 :element (:to c)))]))
+                         ["PlaceOrder" "OrderPlaced"])))
+        (testing "step examples survived import"
+          (let [steps (mapcat #(m/spec-steps store1 (:id %))
+                              (mapcat #(m/specs store1 (:id %))
+                                      (mapcat #(m/slices store1 (:id %)) (m/timelines store1 mid1))))]
+            (is (some #(seq (:examples %)) steps))))
+        (testing "screenImages.url became Element.image_url"
+          (is (= "http://x/s.png"
+                 (:image_url (first (filter #(= "OrderScreen" (:name %)) (m/elements store1 mid1)))))))))))
 
 ;; --- GroupIdIsElementIdentity ----------------------------------------------
 
