@@ -93,8 +93,7 @@
       (and (= :post request-method) (= uri "/import"))
       (let [doc (read-json-body req)
             [store mid] (schema/import-model doc)]
-        (swap! app assoc :store store :model mid)
-        (doseq [send-fn (vals (:subscribers @app))] (send-fn (app/snapshot app)))
+        (app/replace-model! app store mid)
         (json-response 200 {:ok true :model mid}))
 
       ;; POST /authoring/<command>
@@ -111,9 +110,11 @@
       (json-response 404 {:ok false :message (str "no route for " (name request-method) " " uri)}))))
 
 (defn start!
-  "Start the server on `port` holding a model named `model-name`. Returns a map
-  with :app, :port and :stop (a no-arg fn that shuts the server down)."
-  [{:keys [port model-name] :or {port 8090 model-name "model"}}]
-  (let [app  (app/new-app model-name)
+  "Start the server on `port`. If `file` is given the model is loaded from that
+  EDN file when it exists (else a fresh model named `model-name` is created and
+  persisted there), and every mutation is flushed to it. Returns a map with
+  :app, :port and :stop (a no-arg fn that shuts the server down)."
+  [{:keys [port model-name file] :or {port 8090 model-name "model"}}]
+  (let [app  (app/open-app model-name file)
         stop (http/run-server (fn [req] (handler app req)) {:port port :legacy-return-value? false})]
     {:app app :port port :stop #(http/server-stop! stop)}))

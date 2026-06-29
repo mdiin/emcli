@@ -7,18 +7,78 @@
   enforced.
 
   An app is a plain atom; functions take it explicitly so it is trivially
-  testable without a server or sockets."
-  (:require [emcli.model :as m]
-            [emcli.rules :as r]))
+  testable without a server or sockets.
 
-(defn new-app
-  "Create an app holding a fresh model named `name`. Returns the atom."
-  [name]
-  (let [{:keys [store result]} (r/create-model (m/empty-store) {:name name})]
-    (atom {:store store :model (:id result) :subscribers {} :lock (Object.)})))
+  When an app is opened with a `:file`, the canonical store is flushed to that
+  EDN file after every committed mutation, crash-safely (write a temp file,
+  fsync it, then atomically rename it over the target). On startup the store is
+  reloaded from the file if it exists, so the model survives a crash. Runtime
+  change-stream subscriptions are NOT persisted (existence = connected): they
+  are cleared on save and start empty after a reload."
+  (:require [clojure.edn :as edn]
+            [clojure.java.io :as io]
+            [emcli.model :as m]
+            [emcli.rules :as r])
+  (:import [java.nio.channels FileChannel]
+           [java.nio.file CopyOption Files StandardCopyOption StandardOpenOption]))
 
 (defn store [app] (:store @app))
 (defn model-id [app] (:model @app))
+
+;; ---------------------------------------------------------------------------
+;; Persistence (crash-safe EDN flush on every write)
+;; ---------------------------------------------------------------------------
+
+(defn- persistable
+  "The serialisable subset of the app: the model id and the store with runtime
+  subscriptions cleared. The :seq counter is kept so ids never get reused."
+  [app-val]
+  {:model (:model app-val)
+   :store (assoc (:store app-val) :subscriptions {})})
+
+(defn persist!
+  "Flush the current state to the app's EDN file, durably. No-op without a file.
+  Writes a temp file, fsyncs it, then atomically renames it over the target, so
+  a crash leaves either the previous complete file or the new one — never a
+  partial write. Callers hold the app lock, so writes never interleave."
+  [app]
+  (when-let [file (:file @app)]
+    (let [tmp     (str file ".tmp")
+          tmp-path (.toPath (io/file tmp))
+          target   (.toPath (io/file file))]
+      (spit tmp (pr-str (persistable @app)))
+      (with-open [ch (FileChannel/open tmp-path (into-array StandardOpenOption [StandardOpenOption/WRITE]))]
+        (.force ch true))
+      (Files/move tmp-path target
+                  (into-array CopyOption [StandardCopyOption/ATOMIC_MOVE
+                                          StandardCopyOption/REPLACE_EXISTING])))))
+
+(defn new-app
+  "Create an app holding a fresh model named `name`. With `file`, the store is
+  persisted there on every write (and the initial empty model is flushed now)."
+  ([name] (new-app name nil))
+  ([name file]
+   (let [{:keys [store result]} (r/create-model (m/empty-store) {:name name})
+         app (atom {:store store :model (:id result) :subscribers {} :lock (Object.) :file file})]
+     (persist! app)
+     app)))
+
+(defn load-app
+  "Rehydrate an app from an EDN `file` previously written by persist!. Runtime
+  subscriptions and the broadcast lock are reconstructed fresh."
+  [file]
+  (let [{:keys [store model]} (edn/read-string (slurp file))]
+    (atom {:store (assoc store :subscriptions {}) :model model
+           :subscribers {} :lock (Object.) :file file})))
+
+(defn open-app
+  "Open the app backed by `file`: load it if the file exists, otherwise create a
+  fresh model named `name` persisted to `file`. With no file, just a fresh app."
+  ([name] (new-app name))
+  ([name file]
+   (if (and file (.exists (io/file file)))
+     (load-app file)
+     (new-app name file))))
 
 ;; ---------------------------------------------------------------------------
 ;; Canonical snapshot (ModelChangeStream `exposes` — the canonical shape, NOT
@@ -63,8 +123,21 @@
     (let [res (rule-fn (store app) args)]
       (when-not (r/error? res)
         (swap! app assoc :store (:store res))
+        ;; persist before broadcasting: a client must never observe a delta
+        ;; that did not survive to disk.
+        (persist! app)
         (broadcast! app (:delta res)))
       res)))
+
+(defn replace-model!
+  "Replace the entire model (used by import). Persists and re-snapshots every
+  active subscriber. Runs under the app lock."
+  [app new-store new-model]
+  (locking (:lock @app)
+    (swap! app assoc :store (assoc new-store :subscriptions {}) :model new-model)
+    (persist! app)
+    (let [snap (snapshot app)]
+      (doseq [send-fn (vals (:subscribers @app))] (send-fn snap)))))
 
 (defn subscribe!
   "Register a change-stream subscriber. `send-fn` is called with each message.

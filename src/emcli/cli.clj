@@ -54,9 +54,11 @@
 (defn- do-serve [opts]
   (let [port  (parse-long (str (or (:port opts) "8090")))
         name  (or (:name opts) "model")
-        {:keys [stop]} (server/start! {:port port :model-name name})]
+        file  (:file opts)
+        {:keys [stop]} (server/start! {:port port :model-name name :file file})]
     (.addShutdownHook (Runtime/getRuntime) (Thread. ^Runnable stop))
     (println (str "emcli serving model \"" name "\" on http://localhost:" port))
+    (when file (println (str "  persisting to:        " file)))
     (println "  change stream (SSE):  GET  /stream")
     (println "  authoring:            POST /authoring/<command>")
     (println "  snapshot:             GET  /model")
@@ -92,7 +94,10 @@
   (println "emcli — author Event Models from the command line\n")
   (println "Usage: emcli <command> [--opt value ...] [--server URL]\n")
   (println "Process:")
-  (println "  serve     [--port 8090] [--name NAME]   start the model server (SSE + authoring)\n")
+  (println "  serve     [--port 8090] [--name NAME] [--file PATH]")
+  (println "                                          start the model server (SSE + authoring).")
+  (println "                                          --file loads/persists the model as EDN,")
+  (println "                                          flushed on every write for crash recovery.\n")
   (println "Inspect:")
   (println "  show                                    print the canonical model snapshot")
   (println "  validate                                report slices/specs not yet complete")
