@@ -94,6 +94,39 @@
   "All authoring command names (including the structured ones)."
   (sort (concat (keys registry) ["set-fields" "set-step-examples"])))
 
+(defn authoring-view
+  "The ModelAuthoring `exposes:` read projection (event-model.allium:598-635):
+  the full authoring view, richer than the ChangeStream snapshot — it carries
+  slice/spec is_complete, the spec-step subtree, the events/screens projections,
+  the element list and connection names."
+  [app]
+  (let [s   (app/store app)
+        mid (app/model-id app)]
+    {:name (:name (m/fetch s :event-model mid))
+     :timelines (for [t (m/timelines s mid)]
+                  {:title (:title t)
+                   :slices (for [sl (m/slices s (:id t))
+                                 :let [sid (:id sl)]]
+                             {:title (:title sl) :kind (:kind sl) :status (:status sl)
+                              :index (:index sl) :is_complete (m/slice-complete? s sl)
+                              :timeline_title (:title t)
+                              :placements (map #(:name (m/placement-element s %)) (m/placements s sid))
+                              :events (map #(:name (m/placement-element s %)) (m/slice-events s sid))
+                              :screens (map #(:name (m/placement-element s %)) (m/slice-screens s sid))
+                              :specifications (for [sp (m/specs s sid)]
+                                                {:title (:title sp)
+                                                 :is_complete (m/spec-complete? s sp)
+                                                 :steps (for [st (m/spec-steps s (:id sp))]
+                                                          {:clause (:clause st) :index (:index st)
+                                                           :is_error (:is_error st)
+                                                           :error_name (:error_name st)
+                                                           :spec_title (:title sp)})})})})
+     :swimlanes   (map :name (m/swimlanes s mid))
+     :elements    (for [e (m/elements s mid)] {:name (:name e) :kind (:kind e)})
+     :connections (for [c (m/connections s mid)]
+                    {:from (:name (m/fetch s :element (:from c)))
+                     :to   (:name (m/fetch s :element (:to c)))})}))
+
 ;; ValidateModel (the surface @guidance operation): report slices that are not
 ;; is_complete and specs that are not is_complete.
 (defn validate [app]

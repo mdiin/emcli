@@ -72,7 +72,13 @@
       (and (= :get request-method) (= uri "/stream"))
       (stream-handler app req)
 
+      ;; ModelAuthoring `exposes:` — the full authoring read projection.
       (and (= :get request-method) (= uri "/model"))
+      (json-response 200 (cmd/authoring-view app))
+
+      ;; ModelChangeStream snapshot shape on demand (the same payload /stream
+      ;; sends first), for clients that want a one-shot canonical snapshot.
+      (and (= :get request-method) (= uri "/snapshot"))
       (json-response 200 (app/snapshot app))
 
       (and (= :get request-method) (= uri "/validate"))

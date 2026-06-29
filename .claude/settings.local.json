@@ -12,7 +12,8 @@
       "Bash(allium model *)",
       "Bash(bb *)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(allium analyse *)"
+      "Bash(allium analyse *)",
+      "Bash(allium --version)"
     ]
   }
 }

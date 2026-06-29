@@ -28,11 +28,28 @@
 (defn- get* [path] (http/get (str *base* path) {:throw false}))
 (defn- body-json [resp] (json/parse-string (:body resp) true))
 
-(deftest health-and-snapshot
+(deftest health-snapshot-and-authoring-view
   (is (= 200 (:status (get* "/health"))))
-  (let [snap (body-json (get* "/model"))]
-    (is (= "snapshot" (:op snap)))
-    (is (= "Orders" (get-in snap [:model :name])))))
+  (testing "GET /snapshot is the ModelChangeStream canonical shape"
+    (let [snap (body-json (get* "/snapshot"))]
+      (is (= "snapshot" (:op snap)))
+      (is (= "Orders" (get-in snap [:model :name])))))
+  (testing "GET /model is the richer ModelAuthoring exposes projection"
+    (let [tl   (:result (body-json (post "/authoring/create-timeline" {:title "Ordering"})))
+          sl   (:result (body-json (post "/authoring/add-slice"
+                                         {:timeline (:id tl) :title "Place" :kind "state_change" :index 0})))
+          cmd  (:result (body-json (post "/authoring/create-element" {:name "PlaceOrder" :kind "command"})))
+          _    (post "/authoring/place-element" {:slice (:id sl) :element (:id cmd)})
+          _    (post "/authoring/add-specification" {:slice (:id sl) :title "spec"})
+          view (body-json (get* "/model"))
+          slice (-> view :timelines first :slices first)]
+      (is (= "Orders" (:name view)))
+      (is (= [{:name "PlaceOrder" :kind "command"}] (:elements view)))
+      (is (true? (:is_complete slice)) "slice with one command is complete")
+      (is (= "Ordering" (:timeline_title slice)))
+      (is (= ["PlaceOrder"] (:placements slice)))
+      (is (= 1 (count (:specifications slice))))
+      (is (false? (-> slice :specifications first :is_complete)) "spec has no when-command yet"))))
 
 (deftest authoring-create-and-reject
   (testing "a successful authoring command returns the created entity"
