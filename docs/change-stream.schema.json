@@ -1,0 +1,304 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/emcli/event-model/docs/change-stream.schema.json",
+  "title": "emcli ModelChangeStream SSE event",
+  "description": "Schema for the JSON carried in the `data:` field of each Server-Sent Event on GET /stream. The first event is always a Snapshot; every subsequent event is a Delta. The SSE `event:` line equals the payload's `op` field (\"snapshot\" for the snapshot, the rule name for deltas). GET /snapshot returns a bare SnapshotEvent (same payload, no SSE framing).",
+  "oneOf": [
+    { "$ref": "#/$defs/SnapshotEvent" },
+    { "$ref": "#/$defs/DeltaEvent" }
+  ],
+  "$defs": {
+    "SnapshotEvent": {
+      "type": "object",
+      "description": "The full canonical model, sent once when a client connects (SnapshotThenDeltas). It is NAME-keyed and denormalised: it carries no entity ids. Use it to render the initial view; correlate later deltas by rebuilding your own store from them (see docs/change-stream.md).",
+      "required": ["op", "model"],
+      "additionalProperties": false,
+      "properties": {
+        "op": { "const": "snapshot" },
+        "model": {
+          "type": "object",
+          "required": ["name", "timelines", "swimlanes", "connections"],
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string" },
+            "timelines": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["title", "slices"],
+                "additionalProperties": false,
+                "properties": {
+                  "title": { "type": "string" },
+                  "slices": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": ["title", "kind", "status", "index", "placements"],
+                      "additionalProperties": false,
+                      "properties": {
+                        "title": { "type": "string" },
+                        "kind": { "$ref": "#/$defs/sliceKind" },
+                        "status": { "$ref": "#/$defs/sliceStatus" },
+                        "index": { "type": "integer" },
+                        "placements": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": ["name", "kind"],
+                            "additionalProperties": false,
+                            "properties": {
+                              "name": { "type": "string" },
+                              "kind": { "$ref": "#/$defs/elementKind" }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "swimlanes": { "type": "array", "items": { "type": "string" } },
+            "connections": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["from", "to"],
+                "additionalProperties": false,
+                "properties": {
+                  "from": { "type": "string", "description": "source element name" },
+                  "to": { "type": "string", "description": "target element name" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "DeltaEvent": {
+      "type": "object",
+      "description": "One delta per committed authoring mutation (DeltaPerMutation), delivered in commit order. Carries id-keyed, normalised canonical entities with integer foreign-key references. A cascading delete is a single delta whose `changes` lists every removed entity.",
+      "required": ["op", "changes"],
+      "additionalProperties": false,
+      "properties": {
+        "op": { "$ref": "#/$defs/deltaOp" },
+        "changes": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/Change" }
+        }
+      }
+    },
+
+    "Change": {
+      "oneOf": [
+        {
+          "type": "object",
+          "description": "An entity was created or updated; `entity` is its full new canonical state.",
+          "required": ["action", "type", "id", "entity"],
+          "additionalProperties": false,
+          "properties": {
+            "action": { "enum": ["created", "updated"] },
+            "type": { "$ref": "#/$defs/entityType" },
+            "id": { "type": "integer" },
+            "entity": { "$ref": "#/$defs/Entity" }
+          }
+        },
+        {
+          "type": "object",
+          "description": "An entity was removed. No `entity` payload is sent for deletions.",
+          "required": ["action", "type", "id"],
+          "additionalProperties": false,
+          "properties": {
+            "action": { "const": "deleted" },
+            "type": { "$ref": "#/$defs/entityType" },
+            "id": { "type": "integer" }
+          }
+        }
+      ]
+    },
+
+    "Entity": {
+      "description": "A canonical store entity. The variant is discriminated by `type`. All entities carry an integer `id` and `type`; relationships are integer foreign-key ids.",
+      "oneOf": [
+        { "$ref": "#/$defs/Timeline" },
+        { "$ref": "#/$defs/Swimlane" },
+        { "$ref": "#/$defs/Slice" },
+        { "$ref": "#/$defs/Element" },
+        { "$ref": "#/$defs/Placement" },
+        { "$ref": "#/$defs/Connection" },
+        { "$ref": "#/$defs/Specification" },
+        { "$ref": "#/$defs/SpecStep" }
+      ]
+    },
+
+    "Timeline": {
+      "type": "object",
+      "required": ["id", "type", "model", "title"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "integer" },
+        "type": { "const": "timeline" },
+        "model": { "type": "integer", "description": "owning EventModel id" },
+        "title": { "type": "string" }
+      }
+    },
+    "Swimlane": {
+      "type": "object",
+      "required": ["id", "type", "model", "name"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "integer" },
+        "type": { "const": "swimlane" },
+        "model": { "type": "integer" },
+        "name": { "type": "string" }
+      }
+    },
+    "Slice": {
+      "type": "object",
+      "required": ["id", "type", "timeline", "title", "kind", "index", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "integer" },
+        "type": { "const": "slice" },
+        "timeline": { "type": "integer", "description": "owning Timeline id" },
+        "title": { "type": "string" },
+        "kind": { "$ref": "#/$defs/sliceKind" },
+        "index": { "type": "integer" },
+        "status": { "$ref": "#/$defs/sliceStatus" }
+      }
+    },
+    "Element": {
+      "type": "object",
+      "required": ["id", "type", "model", "name", "kind", "context", "fields"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "integer" },
+        "type": { "const": "element" },
+        "model": { "type": "integer" },
+        "name": { "type": "string" },
+        "kind": { "$ref": "#/$defs/elementKind" },
+        "context": { "$ref": "#/$defs/elementContext" },
+        "fields": { "type": "array", "items": { "$ref": "#/$defs/Field" } },
+        "swimlane": {
+          "type": ["integer", "null"],
+          "description": "assigned Swimlane id; absent until AssignSwimlane is invoked"
+        },
+        "image_url": {
+          "type": "string",
+          "description": "wireframe URL for screen elements; absent until SetImageUrl is invoked"
+        }
+      }
+    },
+    "Placement": {
+      "type": "object",
+      "required": ["id", "type", "slice", "element"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "integer" },
+        "type": { "const": "placement" },
+        "slice": { "type": "integer" },
+        "element": { "type": "integer" }
+      }
+    },
+    "Connection": {
+      "type": "object",
+      "required": ["id", "type", "model", "from", "to"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "integer" },
+        "type": { "const": "connection" },
+        "model": { "type": "integer" },
+        "from": { "type": "integer", "description": "source Element id" },
+        "to": { "type": "integer", "description": "target Element id" }
+      }
+    },
+    "Specification": {
+      "type": "object",
+      "required": ["id", "type", "slice", "title"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "integer" },
+        "type": { "const": "specification" },
+        "slice": { "type": "integer" },
+        "title": { "type": "string" }
+      }
+    },
+    "SpecStep": {
+      "type": "object",
+      "required": ["id", "type", "spec", "clause", "index", "is_error", "expect_empty", "examples"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "integer" },
+        "type": { "const": "spec-step" },
+        "spec": { "type": "integer", "description": "owning Specification id" },
+        "clause": { "$ref": "#/$defs/clause" },
+        "index": { "type": "integer" },
+        "element": {
+          "type": "integer",
+          "description": "Element this step asserts about; absent on an error step (is_error=true)"
+        },
+        "is_error": { "type": "boolean" },
+        "error_name": {
+          "type": "string",
+          "description": "present only when is_error=true"
+        },
+        "expect_empty": { "type": "boolean" },
+        "examples": { "type": "array", "items": { "$ref": "#/$defs/Example" } }
+      }
+    },
+
+    "Field": {
+      "type": "object",
+      "required": ["name", "type", "optional", "cardinality", "subfields"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "type": { "$ref": "#/$defs/fieldType" },
+        "optional": { "type": "boolean" },
+        "cardinality": { "$ref": "#/$defs/fieldCardinality" },
+        "subfields": { "type": "array", "items": { "$ref": "#/$defs/Field" } }
+      }
+    },
+    "Example": {
+      "type": "object",
+      "required": ["field_name", "field_value"],
+      "additionalProperties": false,
+      "properties": {
+        "field_name": { "type": "string" },
+        "field_value": { "type": "string" }
+      }
+    },
+
+    "entityType": {
+      "enum": ["timeline", "swimlane", "slice", "element", "placement",
+               "connection", "specification", "spec-step"]
+    },
+    "sliceKind": { "enum": ["state_change", "state_view", "automation"] },
+    "sliceStatus": { "enum": ["created", "in_progress", "done", "informational"] },
+    "elementKind": { "enum": ["command", "event", "read_model", "screen", "automation"] },
+    "elementContext": { "enum": ["internal", "external"] },
+    "clause": { "enum": ["given_step", "when_step", "then_step"] },
+    "fieldType": {
+      "enum": ["string", "boolean", "double", "decimal", "long", "custom",
+               "date", "date_time", "uuid", "int"]
+    },
+    "fieldCardinality": { "enum": ["single", "list"] },
+    "deltaOp": {
+      "description": "The authoring operation that produced the delta (also the SSE event name).",
+      "enum": [
+        "CreateTimeline", "RenameTimeline", "DeleteTimeline",
+        "CreateSwimlane", "RenameSwimlane", "DeleteSwimlane",
+        "AddSlice", "ReorderSlice", "SetSliceStatus", "SetSliceKind", "DeleteSlice",
+        "CreateElement", "SetFields", "SetElementContext", "AssignSwimlane",
+        "SetImageUrl", "RenameElement", "DeleteElement",
+        "PlaceElement", "RemovePlacement",
+        "Connect", "Disconnect",
+        "AddSpecification", "DeleteSpecification",
+        "AddSpecStep", "AddErrorStep", "RemoveSpecStep",
+        "SetStepExamples", "SetStepExpectEmpty"
+      ]
+    }
+  }
+}
