@@ -1,0 +1,732 @@
+-- allium: 3
+-- event-model.allium
+
+-- Scope: Authoring of Event Models via a CLI tool (create & update)
+-- Includes:
+--   - Canonical model: EventModel, Timeline, Slice, Element
+--     (Command / Event / ReadModel / Screen / Automation), Field,
+--     Specification (Given / When / Then)
+--   - Single-source Elements, referenced from slices across timelines
+--   - Import & export of the eventmodeling.schema.json interchange format,
+--     round-tripped at the semantic level
+--   - A live, read-only change stream a frontend subscribes to in order to
+--     visualise the model as it is edited (snapshot on connect, then deltas)
+-- Excludes:
+--   - Canvas / whiteboard format (an external LLM agent drives this CLI to
+--     recreate canvas models; no native canvas parser)
+--   - Visual layout (positions, colours, handles, node snapshots)
+--   - CLI argument parsing & terminal output (delivery mechanism, not domain)
+-- Interchange format:
+--   github.com/dilgerma/event-modeling-spec  eventmodeling.schema.json
+
+-- ---------------------------------------------------------------------------
+-- Canonical model
+-- ---------------------------------------------------------------------------
+
+entity EventModel {
+    name: String
+
+    -- A model owns its timelines and a single-source registry of elements.
+    timelines: Timeline with model = this
+    swimlanes: Swimlane with model = this
+    elements: Element with model = this
+    connections: Connection with model = this
+    subscriptions: Subscription with model = this
+}
+
+-- A frontend connected to this model's live change stream. One instance per
+-- connected client; many may be active at once. Existence = connected; the
+-- subscription is removed on disconnect (see Unsubscribe).
+entity Subscription {
+    model: EventModel
+}
+
+-- A consistency boundary (the Event Modeling "swimlane") that cuts across
+-- timelines. Maps to the schema's element.aggregate on export/import.
+entity Swimlane {
+    model: EventModel
+    name: String
+}
+
+-- A named flow. Maps to the schema's slice.context: every slice in this
+-- timeline exports with context = title, and slices are grouped back into
+-- timelines by that field on import.
+entity Timeline {
+    model: EventModel
+    title: String
+
+    slices: Slice with timeline = this
+}
+
+entity Slice {
+    timeline: Timeline
+    title: String
+    index: Integer
+    kind: state_change | state_view | automation
+    -- 'informational' tags a pure story-telling slice: not acted on, exempt
+    -- from composition rules, and dropped on schema export. It is a status (not
+    -- a kind) so the slice still carries its pattern kind while being tagged.
+    status: created | in_progress | done | informational
+
+    -- Elements that appear in this slice (single-source, referenced).
+    placements: ElementPlacement with slice = this
+    specifications: Specification with slice = this
+
+    -- Placements grouped by element kind, for the composition rules.
+    commands: placements where element.kind = command
+    events: placements where element.kind = event
+    read_models: placements where element.kind = read_model
+    screens: placements where element.kind = screen
+    automations: placements where element.kind = automation
+
+    -- Export-readiness: the strict composition a slice must satisfy before it
+    -- can be exported. Need not hold during authoring. Slices with status
+    -- 'informational' are excluded from export entirely, regardless of this
+    -- predicate (see SchemaCodec.ExportRequiresComplete).
+    is_complete:
+        (kind = state_change and commands.count = 1) or
+        (kind = state_view and read_models.count = 1) or
+        (kind = automation and commands.count = 1 and automations.count = 1)
+
+    transitions status {
+        created -> in_progress
+        in_progress -> done
+        done -> in_progress
+        in_progress -> created
+        created -> informational
+        informational -> created
+    }
+}
+
+-- A reference to a single-source Element from within a Slice.
+-- The same Element may be placed in many slices and many timelines.
+-- On export, each placement becomes an embedded schema Element sharing a groupId.
+entity ElementPlacement {
+    slice: Slice
+    element: Element
+}
+
+entity Element {
+    model: EventModel
+    name: String                 -- identity for referencing; unique within model
+    kind: command | event | read_model | screen | automation
+    context: internal | external
+
+    fields: List<Field>
+
+    -- The consistency boundary (aggregate) this element belongs to.
+    -- Maps to the schema's element.aggregate. Optional: UI elements (screens)
+    -- typically sit outside any consistency boundary.
+    swimlane: Swimlane?
+
+    -- Screen elements may carry a wireframe reference (image URL or Figma link).
+    image_url: String?
+
+    -- Reverse references, walked by cascade-on-delete.
+    placements: ElementPlacement with element = this
+    outgoing: Connection with from = this
+    incoming: Connection with to = this
+}
+
+-- An explicit, directed wiring between two single-source Elements.
+-- Maps to the schema's dependencies: an OUTBOUND dependency on `from`
+-- and the matching INBOUND dependency on `to` are both derived from this.
+entity Connection {
+    model: EventModel
+    from: Element
+    to: Element
+}
+
+value Field {
+    name: String
+    type: string | boolean | double | decimal | long | custom | date | date_time | uuid | int
+    optional: Boolean
+    cardinality: single | list
+    subfields: List<Field>
+}
+
+entity Specification {
+    slice: Slice
+    title: String
+
+    steps: SpecStep with spec = this
+    given_steps: steps where clause = given_step
+    when_steps: steps where clause = when_step
+    then_steps: steps where clause = then_step
+
+    -- Singletons used by the composition and export-readiness rules.
+    when_commands: steps where clause = when_step and element.kind = command
+    then_read_models: steps where clause = then_step and element.kind = read_model
+
+    -- Export-readiness: the singleton each shape requires. Need not hold during
+    -- authoring (steps are added incrementally); enforced only at export.
+    is_complete:
+        ((slice.kind = state_change or slice.kind = automation) and when_commands.count = 1) or
+        (slice.kind = state_view and then_read_models.count = 1)
+}
+
+-- A single Given/When/Then step. References the model Element it asserts about
+-- (single-source link; none for an error outcome). The element's kind gives the
+-- schema step type (event -> SPEC_EVENT, command -> SPEC_COMMAND,
+-- read_model -> SPEC_READMODEL); an error step maps to SPEC_ERROR.
+entity SpecStep {
+    spec: Specification
+    clause: given_step | when_step | then_step
+    index: Integer
+
+    element: Element?
+    is_error: Boolean
+    error_name: String?
+
+    -- expectEmptyList in the schema: a then-step asserting an empty result.
+    expect_empty: Boolean
+
+    -- Concrete example values for the referenced element's fields (test data).
+    examples: List<Example>
+}
+
+value Example {
+    field_name: String
+    field_value: String
+}
+
+-- ---------------------------------------------------------------------------
+-- Authoring operations
+-- ---------------------------------------------------------------------------
+
+-- Timelines ----------------------------------------------------------------
+
+rule CreateTimeline {
+    when: CreateTimeline(model, title)
+    ensures: Timeline.created(model: model, title: title)
+}
+
+rule RenameTimeline {
+    when: RenameTimeline(timeline, new_title)
+    ensures: timeline.title = new_title
+}
+
+-- Swimlanes -----------------------------------------------------------------
+
+rule CreateSwimlane {
+    when: CreateSwimlane(model, name)
+    ensures: Swimlane.created(model: model, name: name)
+}
+
+rule RenameSwimlane {
+    when: RenameSwimlane(lane, new_name)
+    ensures: lane.name = new_name
+}
+
+rule RenameElement {
+    when: RenameElement(element, new_name)
+    ensures: element.name = new_name
+}
+
+-- Deleting a swimlane unassigns it from any elements, then removes it.
+rule DeleteSwimlaneCascades {
+    when: DeleteSwimlane(lane)
+    ensures:
+        for e in Elements where swimlane = lane:
+            e.swimlane = null
+    ensures: not exists lane
+}
+
+-- Slices --------------------------------------------------------------------
+
+rule AddSlice {
+    when: AddSlice(timeline, title, kind, index)
+    ensures: Slice.created(
+        timeline: timeline,
+        title: title,
+        kind: kind,
+        index: index,
+        status: created
+    )
+}
+
+rule ReorderSlice {
+    when: ReorderSlice(slice, new_index)
+    ensures: slice.index = new_index
+}
+
+rule SetSliceStatus {
+    when: SetSliceStatus(slice, new_status)
+    ensures: slice.status = new_status
+}
+
+rule SetSliceKind {
+    when: SetSliceKind(slice, new_kind)
+    ensures: slice.kind = new_kind
+}
+
+-- Elements ------------------------------------------------------------------
+
+rule CreateElement {
+    when: CreateElement(model, name, kind)
+    ensures: Element.created(
+        model: model,
+        name: name,
+        kind: kind,
+        context: internal
+    )
+}
+
+-- Field editing replaces the element's whole field list (subfields included).
+rule SetFields {
+    when: SetFields(element, fields)
+    ensures: element.fields = fields
+}
+
+rule SetElementContext {
+    when: SetElementContext(element, new_context)
+    ensures: element.context = new_context
+}
+
+rule AssignSwimlane {
+    when: AssignSwimlane(element, lane)
+    ensures: element.swimlane = lane
+}
+
+rule SetImageUrl {
+    when: SetImageUrl(element, url)
+    ensures: element.image_url = url
+}
+
+-- Placements ----------------------------------------------------------------
+
+rule PlaceElement {
+    when: PlaceElement(slice, element)
+    ensures: ElementPlacement.created(slice: slice, element: element)
+}
+
+rule RemovePlacement {
+    when: RemovePlacement(placement)
+    ensures: not exists placement
+}
+
+-- Connections ---------------------------------------------------------------
+
+rule Connect {
+    when: Connect(from, to)
+    ensures: Connection.created(model: from.model, from: from, to: to)
+}
+
+rule Disconnect {
+    when: Disconnect(connection)
+    ensures: not exists connection
+}
+
+-- Specifications (Given / When / Then) --------------------------------------
+
+rule AddSpecification {
+    when: AddSpecification(slice, title)
+    ensures: Specification.created(slice: slice, title: title)
+}
+
+-- Add a normal step that asserts about an existing element.
+rule AddSpecStep {
+    when: AddSpecStep(spec, clause, element, index)
+    ensures: SpecStep.created(
+        spec: spec,
+        clause: clause,
+        element: element,
+        index: index,
+        is_error: false,
+        expect_empty: false
+    )
+}
+
+-- Add an error outcome (a then-step with no element).
+rule AddErrorStep {
+    when: AddErrorStep(spec, error_name, index)
+    ensures: SpecStep.created(
+        spec: spec,
+        clause: then_step,
+        error_name: error_name,
+        index: index,
+        is_error: true,
+        expect_empty: false
+    )
+}
+
+rule RemoveSpecStep {
+    when: RemoveSpecStep(step)
+    ensures: not exists step
+}
+
+-- Set the concrete example field values for a step (replaces them).
+rule SetStepExamples {
+    when: SetStepExamples(step, examples)
+    ensures: step.examples = examples
+}
+
+rule SetStepExpectEmpty {
+    when: SetStepExpectEmpty(step, value)
+    ensures: step.expect_empty = value
+}
+
+-- Change stream subscriptions -----------------------------------------------
+
+-- A frontend connects to a model's live change stream. Creating the
+-- subscription is what triggers the initial snapshot (see ChangeStream).
+rule Subscribe {
+    when: Subscribe(model)
+    ensures: Subscription.created(model: model)
+}
+
+-- A frontend disconnects; its subscription is removed.
+rule Unsubscribe {
+    when: Unsubscribe(subscription)
+    ensures: not exists subscription
+}
+
+-- Deletion & rename ---------------------------------------------------------
+
+-- Deleting a timeline cascades to its slices. Each slice deletion is emitted
+-- as a DeleteSlice trigger, reusing the slice-deletion cascade below.
+rule DeleteTimelineCascades {
+    when: DeleteTimeline(timeline)
+    ensures:
+        for s in timeline.slices:
+            DeleteSlice(s)
+    ensures: not exists timeline
+}
+
+-- Deleting a slice removes its placements and specifications. The single-source
+-- Elements those placements referenced survive in the model's registry.
+rule DeleteSliceCascades {
+    when: DeleteSlice(slice)
+    ensures:
+        for p in slice.placements:
+            not exists p
+    ensures:
+        for sp in slice.specifications:
+            DeleteSpecification(sp)
+    ensures: not exists slice
+}
+
+-- Deleting a specification cascades to its steps.
+rule DeleteSpecificationCascades {
+    when: DeleteSpecification(spec)
+    ensures:
+        for st in spec.steps:
+            not exists st
+    ensures: not exists spec
+}
+
+-- Deleting an element cascades to every placement that references it and every
+-- connection it participates in (inbound or outbound).
+rule DeleteElementCascades {
+    when: DeleteElement(element)
+    ensures:
+        for p in element.placements:
+            not exists p
+    ensures:
+        for c in element.outgoing:
+            not exists c
+    ensures:
+        for c in element.incoming:
+            not exists c
+    ensures: not exists element
+}
+
+-- Renaming an element. Because elements are single-source and referenced by
+-- identity, all placements, connections and spec steps reflect the new name
+-- automatically; there is nothing to cascade.
+
+-- ---------------------------------------------------------------------------
+-- Invariants
+-- ---------------------------------------------------------------------------
+
+-- Authoring invariant (always holds, even mid-edit): a slice may never contain
+-- an element kind that is a category error for it, and never more than one of
+-- each singleton kind. Singletons MAY be absent during incremental authoring;
+-- their presence is required only at export (see Slice.is_complete).
+invariant PlacementMatchesSliceKind {
+    for s in Slices:
+        s.status != informational implies (
+            (s.kind = state_change implies
+                (s.commands.count <= 1
+                 and s.read_models.count = 0 and s.automations.count = 0)) and
+            (s.kind = state_view implies
+                (s.read_models.count <= 1
+                 and s.commands.count = 0 and s.automations.count = 0)) and
+            (s.kind = automation implies
+                (s.commands.count <= 1 and s.automations.count <= 1
+                 and s.read_models.count = 0)))
+}
+
+-- A specification's Given/When/Then steps must match its slice's pattern.
+-- state_change and automation share one shape; state_view has its own.
+-- Always-on (loosened for incremental authoring): given steps are events; When
+-- steps are commands only; for state_change/automation, Then holds events
+-- (multiple) and/or an error; for state_view, Then is the read_model only (no
+-- events, no error steps) and there is no When. The "exactly one
+-- command/read_model" requirement is deferred to export (Specification.is_complete).
+invariant SpecificationComposition {
+    for spec in Specifications:
+        spec.given_steps.all(s => s.element?.kind = event) and
+        spec.when_steps.all(s => s.element?.kind = command) and
+        ((spec.slice.kind = state_change or spec.slice.kind = automation) implies (
+            spec.when_commands.count <= 1 and
+            spec.then_steps.all(s => s.is_error or s.element?.kind = event))) and
+        (spec.slice.kind = state_view implies (
+            spec.when_steps.count = 0 and
+            spec.then_read_models.count <= 1 and
+            spec.then_steps.all(s => s.element?.kind = read_model)))
+}
+
+-- Connections may only follow the Event Modeling patterns.
+invariant ValidConnectionKinds {
+    for c in Connections:
+        (c.from.kind = screen and c.to.kind = command) or
+        (c.from.kind = command and c.to.kind = event) or
+        (c.from.kind = event and c.to.kind = read_model) or
+        (c.from.kind = read_model and c.to.kind = screen) or
+        (c.from.kind = read_model and c.to.kind = automation) or
+        (c.from.kind = automation and c.to.kind = command)
+}
+
+-- ---------------------------------------------------------------------------
+-- Interchange format contract
+-- ---------------------------------------------------------------------------
+
+contract SchemaCodec {
+    import: (document: Any) -> EventModel
+    export: (model: EventModel) -> Any
+
+    @invariant ExportRequiresComplete
+        -- export is defined only for an export-ready model: every Slice whose
+        -- status is not 'informational' must satisfy Slice.is_complete, and
+        -- every Specification must satisfy Specification.is_complete. Incomplete
+        -- models are rejected with the offending slices/specs reported, never
+        -- silently exported. Slices tagged informational carry no actionable
+        -- content and are dropped on export.
+
+    @invariant ModelRoundtrip
+        -- For any export-ready model the CLI can author, import(export(model))
+        -- reproduces model exactly. The canonical model is the source of truth,
+        -- so everything it represents round-trips without loss.
+
+    @invariant SchemaRoundtrip
+        -- Round-tripping a foreign document is semantic, not byte-lossless. For
+        -- a document valid against eventmodeling.schema.json,
+        -- export(import(document)) preserves the canonical subset of the
+        -- document - the fields this model represents - normalising ids and
+        -- ordering and dropping visual layout. Fields outside the canonical
+        -- model (see the dropped-fields guidance below) are NOT preserved.
+
+    @invariant GroupIdIsElementIdentity
+        -- A canonical Element's identity is its schema groupId. Each placement
+        -- exports as a distinct embedded schema Element with a unique id but the
+        -- element's shared groupId. On import, embedded elements sharing a
+        -- groupId collapse into one Element; an element with no groupId becomes
+        -- its own Element.
+
+    @invariant DependenciesPerPlacement
+        -- Each Connection exports as an OUTBOUND dependency on every embedded
+        -- copy of its 'from' element and an INBOUND dependency on every embedded
+        -- copy of its 'to' element. On import, dependencies are deduplicated by
+        -- (from groupId, to groupId) back into a single Connection.
+
+    @guidance
+        -- Dropped fields (deliberate, documented loss in favour of a clean
+        -- model): they have no canonical representation, are emitted empty/
+        -- absent on export and discarded on import.
+        --   * technical element fields: apiEndpoint, service, sketched,
+        --     prototype, listElement, createsAggregate, aggregateDependencies
+        --   * tags (no element categorisation in this model)
+        --   * element.domain (no subdomain concept; emitted empty)
+        --   * element.triggers and Slice.actors (no Actor concept; triggers are
+        --     captured as screen/automation -> command connections)
+        --   * slices tagged informational (no schema sliceType for them)
+        -- Preserved mappings: slice.context <-> Timeline.title;
+        --   element.aggregate <-> Swimlane.name; sliceType <-> Slice.kind;
+        --   element.context <-> Element.context;
+        --   screenImages.url <-> Element.image_url; dependencies <-> Connection;
+        --   slice index/status <-> Slice.index/status.
+}
+
+-- @note ASPIRATIONAL: SchemaCodec import/export is declared but not yet
+-- implemented. The contract defines the required behaviour; the functions
+-- stubs exist in the codebase but do not perform actual schema parsing.
+
+-- The live change stream a frontend consumes to visualise a model as it is
+-- edited. Outbound only: the frontend receives changes, never issues edits over
+-- this boundary (authoring happens through ModelAuthoring).
+contract ChangeStream {
+    -- A full snapshot of the canonical model, sent once when a client connects.
+    snapshot: (model: EventModel) -> Any
+    -- A single incremental change, sent for each subsequent mutation.
+    delta: (change: Any) -> Any
+
+    @invariant SnapshotThenDeltas
+        -- On subscribe, the first message a client receives is exactly one
+        -- snapshot of the current canonical model. Every message thereafter is
+        -- a delta. The snapshot-then-delta sequence has no gap: no mutation
+        -- committed after the snapshot is taken is lost or duplicated.
+
+    @invariant DeltaPerMutation
+        -- Every authoring operation that mutates the model (every mutating
+        -- operation of the ModelAuthoring surface) produces exactly one delta,
+        -- delivered in commit order to every active Subscription on that model.
+
+    @invariant CanonicalShape
+        -- Snapshots and deltas carry the canonical model shape - timelines,
+        -- swimlanes, single-source elements, connections, slices and specs -
+        -- NOT the eventmodeling.schema.json projection. The stream is for
+        -- visualisation, so timelines and swimlanes (absent from the schema)
+        -- are present.
+}
+
+-- ---------------------------------------------------------------------------
+-- Authoring surface (the CLI boundary)
+-- ---------------------------------------------------------------------------
+
+surface ModelAuthoring {
+    -- No facing actor: a local CLI has a single operator with no modelled
+    -- identity or auth. The surface is scoped to one model at a time.
+    context model: EventModel
+
+    exposes:
+        model.name
+
+        for t in model.timelines:
+            t.title
+            for s in t.slices:
+                s.title
+                s.kind
+                s.status
+                s.index
+                s.is_complete
+                s.timeline.title
+                for p in s.placements:
+                    p.element.name
+                for e in s.events:
+                    e.element.name
+                for sc in s.screens:
+                    sc.element.name
+                for spec in s.specifications:
+                    spec.title
+                    spec.is_complete
+                    for st in spec.steps:
+                        st.clause
+                        st.index
+                        st.is_error
+                        st.error_name
+                        st.spec.title
+
+        for sw in model.swimlanes:
+            sw.name
+
+        for el in model.elements:
+            el.name
+            el.kind
+
+        for c in model.connections:
+            c.from.name
+            c.to.name
+
+    provides:
+        -- Timelines
+        CreateTimeline(model, title)
+        RenameTimeline(timeline, new_title)
+        DeleteTimeline(timeline)
+
+        -- Swimlanes
+        CreateSwimlane(model, name)
+        RenameSwimlane(lane, new_name)
+        DeleteSwimlane(lane)
+
+        -- Slices
+        AddSlice(timeline, title, kind, index)
+        ReorderSlice(slice, new_index)
+        SetSliceStatus(slice, new_status)
+        SetSliceKind(slice, new_kind)
+        DeleteSlice(slice)
+
+        -- Elements
+        CreateElement(model, name, kind)
+        SetFields(element, fields)
+        SetElementContext(element, new_context)
+        AssignSwimlane(element, lane)
+        SetImageUrl(element, url)
+        RenameElement(element, new_name)
+        DeleteElement(element)
+
+        -- Placements
+        PlaceElement(slice, element)
+        RemovePlacement(placement)
+
+        -- Connections (a command is triggered only via a screen -> command or
+        -- automation -> command connection)
+        Connect(from, to)
+        Disconnect(connection)
+
+        -- Specifications (Given / When / Then)
+        AddSpecification(slice, title)
+        DeleteSpecification(spec)
+        AddSpecStep(spec, clause, element, index)
+        AddErrorStep(spec, error_name, index)
+        RemoveSpecStep(step)
+        SetStepExamples(step, examples)
+        SetStepExpectEmpty(step, value)
+
+    contracts:
+        fulfils SchemaCodec
+
+    @guidance
+        -- A ValidateModel operation (report slices that are not is_complete)
+        -- and the SchemaCodec import/export operations are also invoked through
+        -- this surface; import/export are governed by the SchemaCodec contract.
+}
+
+-- ---------------------------------------------------------------------------
+-- Change stream surface (the frontend visualisation boundary)
+-- ---------------------------------------------------------------------------
+
+-- One surface instance per connected client. The client receives the canonical
+-- model (snapshot then deltas) and can only disconnect; it never edits here.
+surface ModelChangeStream {
+    context subscription: Subscription
+
+    exposes:
+        -- The canonical model the client visualises, streamed as snapshot+deltas.
+        subscription.model.name
+        for t in subscription.model.timelines:
+            t.title
+            for s in t.slices:
+                s.title
+                s.kind
+                s.status
+                s.index
+                for p in s.placements:
+                    p.element.name
+                    p.element.kind
+        for sw in subscription.model.swimlanes:
+            sw.name
+        for c in subscription.model.connections:
+            c.from.name
+            c.to.name
+
+    provides:
+        Subscribe(model)
+        Unsubscribe(subscription)
+
+    contracts:
+        fulfils ChangeStream
+
+    @guidance
+        -- Transport is an SSE server over HTTP (one event stream per connected
+        -- client); a WebSocket would satisfy the same contract. Subscribe opens
+        -- the stream and triggers the initial snapshot; the server then pushes a
+        -- delta per committed authoring mutation. This boundary is outbound only.
+}
+
+-- ---------------------------------------------------------------------------
+-- Open questions
+-- ---------------------------------------------------------------------------
+
+-- None outstanding. Schema mapping & round-trip fidelity decisions are
+-- documented on the SchemaCodec contract above.
