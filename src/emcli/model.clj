@@ -189,3 +189,51 @@
              (= 1 (count (spec-when-commands store id))))
         (and (= :state_view slice-kind)
              (= 1 (count (spec-then-read-models store id)))))))
+
+;; ---------------------------------------------------------------------------
+;; Information completeness (Element.is_information_complete)
+;; ---------------------------------------------------------------------------
+
+(defn- field-carried?
+  "Some incoming connection's `from` element has a field of this name."
+  [store element-id field-name]
+  (boolean (some (fn [c]
+                   (let [from (fetch store :element (:from c))]
+                     (some #(= field-name (:name %)) (:fields from))))
+                 (incoming store element-id))))
+
+(defn- field-derived?
+  "Some incoming connection carries a derivation naming this field, whose every
+  source field exists on that connection's `from` element."
+  [store element-id field-name]
+  (boolean (some (fn [c]
+                   (let [from-names (set (map :name (:fields (fetch store :element (:from c)))))]
+                     (some (fn [d]
+                             (and (= field-name (:target_field d))
+                                  (every? from-names (:source_fields d))))
+                           (:derivations c))))
+                 (incoming store element-id))))
+
+(defn- field-introduced?
+  "The element carries a field-origin override for this field."
+  [element field-name]
+  (boolean (some #(= field-name (:field %)) (:field_origins element))))
+
+(defn field-sourced?
+  "Whether a field of `element` is sourced — carried, derived, or introduced."
+  [store element field-name]
+  (or (field-carried? store (:id element) field-name)
+      (field-derived? store (:id element) field-name)
+      (field-introduced? element field-name)))
+
+(defn unsourced-fields
+  "Names of the element's fields that are not sourced (the completeness gap)."
+  [store element]
+  (->> (:fields element)
+       (remove #(field-sourced? store element (:name %)))
+       (mapv :name)))
+
+(defn information-complete?
+  "Element.is_information_complete — STRICT: every declared field is sourced."
+  [store element]
+  (empty? (unsourced-fields store element)))

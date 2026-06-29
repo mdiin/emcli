@@ -39,12 +39,19 @@
     (assoc :fields (json/parse-string (:fields-json opts) true))
 
     (and (= command "set-step-examples") (:examples-json opts))
-    (assoc :examples (json/parse-string (:examples-json opts) true))))
+    (assoc :examples (json/parse-string (:examples-json opts) true))
+
+    (and (= command "set-field-origins") (:origins-json opts))
+    (assoc :origins (json/parse-string (:origins-json opts) true))
+
+    (and (= command "set-connection-derivations") (:derivations-json opts))
+    (assoc :derivations (json/parse-string (:derivations-json opts) true))))
 
 ;; --- subcommands -----------------------------------------------------------
 
 (defn- do-authoring [command opts]
-  (let [payload (-> (prepare command opts) (dissoc :server :fields-json :examples-json))
+  (let [payload (-> (prepare command opts)
+                    (dissoc :server :fields-json :examples-json :origins-json :derivations-json))
         resp    (request :post (str (server-url opts) "/authoring/" command) payload)
         body    (parse-body resp)]
     (if (and (= 200 (:status resp)) (:ok body))

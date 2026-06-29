@@ -109,7 +109,8 @@
                                       :placements (for [p (m/placements s (:id sl))
                                                         :let [el (m/placement-element s p)]]
                                                     {:id (:id p)
-                                                     :element {:id (:id el) :name (:name el) :kind (:kind el)}})})})
+                                                     :element {:id (:id el) :name (:name el) :kind (:kind el)
+                                                               :is_information_complete (m/information-complete? s el)}})})})
              :swimlanes   (for [sw (m/swimlanes s mid)]
                             {:id (:id sw) :name (:name sw)})
              :connections (for [c (m/connections s mid)
@@ -117,7 +118,10 @@
                                       to   (m/fetch s :element (:to c))]]
                             {:id (:id c)
                              :from {:id (:id from) :name (:name from)}
-                             :to   {:id (:id to)   :name (:name to)}})}}))
+                             :to   {:id (:id to)   :name (:name to)}
+                             :derivations (for [d (:derivations c)]
+                                            {:target_field (:target_field d)
+                                             :source_fields (vec (:source_fields d))})})}}))
 
 ;; ---------------------------------------------------------------------------
 ;; Subscriber registry

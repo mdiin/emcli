@@ -62,7 +62,8 @@ Populated:
         "slices": [
           { "id": 6, "title": "Place order", "kind": "state_change", "status": "created", "index": 0,
             "placements": [
-              { "id": 7, "element": { "id": 2, "name": "PlaceOrder", "kind": "command" } }
+              { "id": 7, "element": { "id": 2, "name": "PlaceOrder", "kind": "command",
+                                      "is_information_complete": true } }
             ] }
         ] }
     ],
@@ -70,11 +71,17 @@ Populated:
     "connections": [
       { "id": 8,
         "from": { "id": 2, "name": "PlaceOrder" },
-        "to":   { "id": 3, "name": "OrderPlaced" } }
+        "to":   { "id": 3, "name": "OrderPlaced" },
+        "derivations": [ { "target_field": "total", "source_fields": ["amount"] } ] }
     ]
   }
 }
 ```
+
+Each placed element carries `is_information_complete` (true iff every field on
+it is sourced — carried, derived, or introduced), and each connection carries
+its `derivations` (per-field provenance: `target_field` ← `source_fields`), so a
+visualiser can render completeness and field flow directly from the snapshot.
 
 The ids correlate directly with deltas: the placement `id` matches a
 `PlaceElement` delta's entity id, `element.id` matches `CreateElement`,
@@ -130,12 +137,13 @@ data: {"op":"DeleteTimeline","changes":[{"action":"deleted","type":"placement","
 | `ReorderSlice` / `SetSliceStatus` / `SetSliceKind` | updated | slice |
 | `DeleteSlice` | deleted | slice (+ cascaded placements, specifications, spec-steps) |
 | `CreateElement` | created | element |
-| `SetFields` / `SetElementContext` / `AssignSwimlane` / `SetImageUrl` / `RenameElement` | updated | element |
+| `SetFields` / `SetElementContext` / `AssignSwimlane` / `SetImageUrl` / `SetFieldOrigins` / `RenameElement` | updated | element |
 | `DeleteElement` | deleted | element (+ cascaded placements, connections) |
 | `PlaceElement` | created | placement |
 | `RemovePlacement` | deleted | placement |
 | `Connect` | created | connection |
 | `Disconnect` | deleted | connection |
+| `SetConnectionDerivations` | updated | connection |
 | `AddSpecification` | created | specification |
 | `DeleteSpecification` | deleted | specification (+ cascaded spec-steps) |
 | `AddSpecStep` / `AddErrorStep` | created | spec-step |
@@ -151,9 +159,9 @@ All entities carry integer `id` and `type`; relationships are integer ids.
 | `timeline` | `id, type, model, title` |
 | `swimlane` | `id, type, model, name` |
 | `slice` | `id, type, timeline, title, kind, index, status` |
-| `element` | `id, type, model, name, kind, context, fields[], swimlane?, image_url?` |
+| `element` | `id, type, model, name, kind, context, fields[], field_origins[], swimlane?, image_url?` |
 | `placement` | `id, type, slice, element` |
-| `connection` | `id, type, model, from, to` |
+| `connection` | `id, type, model, from, to, derivations[]` |
 | `specification` | `id, type, slice, title` |
 | `spec-step` | `id, type, spec, clause, index, element?, is_error, error_name?, expect_empty, examples[]` |
 
@@ -164,6 +172,8 @@ All entities carry integer `id` and `type`; relationships are integer ids.
 Embedded value objects:
 - **Field**: `{ name, type, optional, cardinality, subfields[] }`
 - **Example**: `{ field_name, field_value }`
+- **FieldDerivation** (on `connection.derivations`): `{ target_field, source_fields[] }` — a target field derived from one or more source fields (one with a different name = rename; many = aggregation)
+- **FieldOrigin** (on `element.field_origins`): `{ field, origin }` — a field legitimately introduced rather than sourced upstream
 
 ### Enum values
 
@@ -174,6 +184,7 @@ Embedded value objects:
 - `spec-step.clause`: `given_step`, `when_step`, `then_step`
 - `field.type`: `string`, `boolean`, `double`, `decimal`, `long`, `custom`, `date`, `date_time`, `uuid`, `int`
 - `field.cardinality`: `single`, `list`
+- `field_origin.origin`: `user_input`, `generated`, `external`
 
 ## Consuming the stream
 

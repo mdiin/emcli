@@ -81,6 +81,18 @@
                                                 :examples (vec (get opts :examples))})
       {:error :missing-args :message "set-step-examples requires :step and :examples"})
 
+    (= command "set-field-origins")
+    (if (and (get opts :element) (contains? opts :origins))
+      (app/apply-rule! app r/set-field-origins {:element (->int (get opts :element))
+                                                :origins (vec (get opts :origins))})
+      {:error :missing-args :message "set-field-origins requires :element and :origins"})
+
+    (= command "set-connection-derivations")
+    (if (and (get opts :connection) (contains? opts :derivations))
+      (app/apply-rule! app r/set-connection-derivations {:connection (->int (get opts :connection))
+                                                         :derivations (vec (get opts :derivations))})
+      {:error :missing-args :message "set-connection-derivations requires :connection and :derivations"})
+
     :else
     (if-let [{:keys [rule] :as entry} (registry command)]
       (let [args (build-args entry app opts)]
@@ -92,7 +104,8 @@
 
 (def commands
   "All authoring command names (including the structured ones)."
-  (sort (concat (keys registry) ["set-fields" "set-step-examples"])))
+  (sort (concat (keys registry)
+                ["set-fields" "set-step-examples" "set-field-origins" "set-connection-derivations"])))
 
 (defn authoring-view
   "The ModelAuthoring `exposes:` read projection (event-model.allium:598-635):
@@ -122,13 +135,17 @@
                                                            :error_name (:error_name st)
                                                            :spec_title (:title sp)})})})})
      :swimlanes   (map :name (m/swimlanes s mid))
-     :elements    (for [e (m/elements s mid)] {:name (:name e) :kind (:kind e)})
+     :elements    (for [e (m/elements s mid)]
+                    {:name (:name e) :kind (:kind e)
+                     :is_information_complete (m/information-complete? s e)})
      :connections (for [c (m/connections s mid)]
                     {:from (:name (m/fetch s :element (:from c)))
                      :to   (:name (m/fetch s :element (:to c)))})}))
 
-;; ValidateModel (the surface @guidance operation): report slices that are not
-;; is_complete and specs that are not is_complete.
+;; ValidateModel (the surface @guidance operation): report slices/specs that are
+;; not is_complete, elements that are not is_information_complete, and orphaned
+;; derivations whose target/source field names do not exist on the relevant
+;; element (a derivation that silently fails to source its target).
 (defn validate [app]
   (let [s   (app/store app)
         mid (app/model-id app)]
@@ -141,4 +158,18 @@
                                   sl (m/slices s (:id t))
                                   sp (m/specs s (:id sl))
                                   :when (not (m/spec-complete? s sp))]
-                              {:specification (:id sp) :title (:title sp)}))}))
+                              {:specification (:id sp) :title (:title sp)}))
+     :incomplete-elements (vec (for [e (m/elements s mid)
+                                     :when (not (m/information-complete? s e))]
+                                 {:element (:id e) :name (:name e)
+                                  :unsourced (m/unsourced-fields s e)}))
+     :orphaned-derivations (vec (for [c (m/connections s mid)
+                                      :let [to-names   (set (map :name (:fields (m/fetch s :element (:to c)))))
+                                            from-names (set (map :name (:fields (m/fetch s :element (:from c)))))]
+                                      d (:derivations c)
+                                      :let [missing-sources (vec (remove from-names (:source_fields d)))
+                                            target-missing  (not (contains? to-names (:target_field d)))]
+                                      :when (or target-missing (seq missing-sources))]
+                                  {:connection (:id c) :target_field (:target_field d)
+                                   :target_exists (not target-missing)
+                                   :missing_source_fields missing-sources}))}))

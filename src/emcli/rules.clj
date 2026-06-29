@@ -133,7 +133,8 @@
 (defn create-element [store {:keys [model name kind]}]
   (or (require-entity store :event-model model)
       (let [[store el] (m/create store :element {:model model :name name :kind kind
-                                                 :context :internal :fields []})]
+                                                 :context :internal :fields []
+                                                 :field_origins []})]
         (commit store :CreateElement [(created :element el)] el))))
 
 (defn set-fields [store {:keys [element fields]}]
@@ -159,6 +160,12 @@
   (or (require-entity store :element element)
       (let [store (m/set-field store :element element :image_url url)]
         (commit store :SetImageUrl [(updated store :element element)]
+                (m/fetch store :element element)))))
+
+(defn set-field-origins [store {:keys [element origins]}]
+  (or (require-entity store :element element)
+      (let [store (m/set-field store :element element :field_origins (vec origins))]
+        (commit store :SetFieldOrigins [(updated store :element element)]
                 (m/fetch store :element element)))))
 
 (defn rename-element [store {:keys [element new-name]}]
@@ -190,13 +197,20 @@
   (or (require-entity store :element from)
       (require-entity store :element to)
       (let [model      (:model (m/fetch store :element from))
-            [store c]  (m/create store :connection {:model model :from from :to to})]
+            [store c]  (m/create store :connection {:model model :from from :to to
+                                                    :derivations []})]
         (commit store :Connect [(created :connection c)] c))))
 
 (defn disconnect [store {:keys [connection]}]
   (or (require-entity store :connection connection)
       (let [store (m/delete store :connection connection)]
         (commit store :Disconnect [(deleted :connection connection)] connection))))
+
+(defn set-connection-derivations [store {:keys [connection derivations]}]
+  (or (require-entity store :connection connection)
+      (let [store (m/set-field store :connection connection :derivations (vec derivations))]
+        (commit store :SetConnectionDerivations [(updated store :connection connection)]
+                (m/fetch store :connection connection)))))
 
 ;; ---------------------------------------------------------------------------
 ;; Specifications (Given / When / Then)

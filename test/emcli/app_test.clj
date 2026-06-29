@@ -52,7 +52,8 @@
       (is (= (:id sl) (:id s1)))
       (is (= (:id sw) (:id (first (:swimlanes model)))))
       (is (= (:id pl) (:id p1)))
-      (is (= {:id (:id cmd') :name "PlaceOrder" :kind :command} (:element p1)))
+      (is (= {:id (:id cmd') :name "PlaceOrder" :kind :command :is_information_complete true}
+             (:element p1)))
       (is (= (:id cn) (:id c1)))
       (is (= {:id (:id cmd') :name "PlaceOrder"} (:from c1)))
       (is (= {:id (:id evt) :name "OrderPlaced"} (:to c1))))))

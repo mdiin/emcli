@@ -53,12 +53,16 @@
                               "id": { "type": "integer", "description": "ElementPlacement id" },
                               "element": {
                                 "type": "object",
-                                "required": ["id", "name", "kind"],
+                                "required": ["id", "name", "kind", "is_information_complete"],
                                 "additionalProperties": false,
                                 "properties": {
                                   "id": { "type": "integer", "description": "Element id (correlates with element deltas)" },
                                   "name": { "type": "string" },
-                                  "kind": { "$ref": "#/$defs/elementKind" }
+                                  "kind": { "$ref": "#/$defs/elementKind" },
+                                  "is_information_complete": {
+                                    "type": "boolean",
+                                    "description": "True iff every field on the element is sourced (carried, derived or introduced)."
+                                  }
                                 }
                               }
                             }
@@ -86,13 +90,26 @@
               "type": "array",
               "items": {
                 "type": "object",
-                "required": ["id", "from", "to"],
                 "additionalProperties": false,
                 "properties": {
                   "id": { "type": "integer", "description": "Connection id" },
                   "from": { "$ref": "#/$defs/connectionEnd", "description": "source element" },
-                  "to": { "$ref": "#/$defs/connectionEnd", "description": "target element" }
-                }
+                  "to": { "$ref": "#/$defs/connectionEnd", "description": "target element" },
+                  "derivations": {
+                    "type": "array",
+                    "description": "Connection-local field provenance: how named target fields are derived from source fields.",
+                    "items": {
+                      "type": "object",
+                      "required": ["target_field", "source_fields"],
+                      "additionalProperties": false,
+                      "properties": {
+                        "target_field": { "type": "string" },
+                        "source_fields": { "type": "array", "items": { "type": "string" } }
+                      }
+                    }
+                  }
+                },
+                "required": ["id", "from", "to", "derivations"]
               }
             }
           }
@@ -222,6 +239,11 @@
         "image_url": {
           "type": "string",
           "description": "wireframe URL for screen elements; absent until SetImageUrl is invoked"
+        },
+        "field_origins": {
+          "type": "array",
+          "description": "operator overrides marking fields that are legitimately introduced here",
+          "items": { "$ref": "#/$defs/FieldOrigin" }
         }
       }
     },
@@ -245,7 +267,12 @@
         "type": { "const": "connection" },
         "model": { "type": "integer" },
         "from": { "type": "integer", "description": "source Element id" },
-        "to": { "type": "integer", "description": "target Element id" }
+        "to": { "type": "integer", "description": "target Element id" },
+        "derivations": {
+          "type": "array",
+          "description": "connection-local field provenance",
+          "items": { "$ref": "#/$defs/FieldDerivation" }
+        }
       }
     },
     "Specification": {
@@ -304,6 +331,26 @@
         "field_value": { "type": "string" }
       }
     },
+    "FieldDerivation": {
+      "type": "object",
+      "description": "Connection-local provenance: a target field derived from one or more source fields (one with a different name = rename; many = aggregation).",
+      "required": ["target_field", "source_fields"],
+      "additionalProperties": false,
+      "properties": {
+        "target_field": { "type": "string", "description": "field on the connection's `to` element" },
+        "source_fields": { "type": "array", "items": { "type": "string" }, "description": "field(s) on the `from` element it derives from" }
+      }
+    },
+    "FieldOrigin": {
+      "type": "object",
+      "description": "Override declaring a field is legitimately introduced rather than sourced upstream.",
+      "required": ["field", "origin"],
+      "additionalProperties": false,
+      "properties": {
+        "field": { "type": "string" },
+        "origin": { "enum": ["user_input", "generated", "external"] }
+      }
+    },
 
     "entityType": {
       "enum": ["timeline", "swimlane", "slice", "element", "placement",
@@ -326,9 +373,9 @@
         "CreateSwimlane", "RenameSwimlane", "DeleteSwimlane",
         "AddSlice", "ReorderSlice", "SetSliceStatus", "SetSliceKind", "DeleteSlice",
         "CreateElement", "SetFields", "SetElementContext", "AssignSwimlane",
-        "SetImageUrl", "RenameElement", "DeleteElement",
+        "SetImageUrl", "SetFieldOrigins", "RenameElement", "DeleteElement",
         "PlaceElement", "RemovePlacement",
-        "Connect", "Disconnect",
+        "Connect", "Disconnect", "SetConnectionDerivations",
         "AddSpecification", "DeleteSpecification",
         "AddSpecStep", "AddErrorStep", "RemoveSpecStep",
         "SetStepExamples", "SetStepExpectEmpty"
