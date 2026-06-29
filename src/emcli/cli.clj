@@ -49,14 +49,38 @@
 
 ;; --- subcommands -----------------------------------------------------------
 
-(defn- do-authoring [command opts]
+;; --- entity-grouped subcommands -------------------------------------------
+;; Commands are grouped under their entity noun for a nicer authoring UX
+;; (`slice add`, `timeline delete`, ...). This is a CLI affordance only: each
+;; (group, verb) resolves to the flat command the server's /authoring/<command>
+;; endpoint expects (and which maps to a ModelAuthoring operation).
+(def command-groups
+  {"timeline"   {"add" "create-timeline" "rename" "rename-timeline" "delete" "delete-timeline"}
+   "swimlane"   {"add" "create-swimlane" "rename" "rename-swimlane" "delete" "delete-swimlane"}
+   "slice"      {"add" "add-slice" "reorder" "reorder-slice" "status" "set-slice-status"
+                 "kind" "set-slice-kind" "delete" "delete-slice"}
+   "element"    {"add" "create-element" "fields" "set-fields" "context" "set-element-context"
+                 "swimlane" "assign-swimlane" "image" "set-image-url" "origins" "set-field-origins"
+                 "rename" "rename-element" "delete" "delete-element"}
+   "placement"  {"add" "place-element" "remove" "remove-placement"}
+   "connection" {"add" "connect" "remove" "disconnect" "derivations" "set-connection-derivations"}
+   "spec"       {"add" "add-specification" "delete" "delete-specification"}
+   "step"       {"add" "add-spec-step" "error" "add-error-step" "remove" "remove-spec-step"
+                 "examples" "set-step-examples" "expect-empty" "set-step-expect-empty"}})
+
+(defn resolve-command
+  "The flat authoring command for an (entity, verb) pair, or nil."
+  [group verb]
+  (get-in command-groups [group verb]))
+
+(defn- do-authoring [command opts & [label]]
   (let [payload (-> (prepare command opts)
                     (dissoc :server :fields-json :examples-json :origins-json :derivations-json))
         resp    (request :post (str (server-url opts) "/authoring/" command) payload)
         body    (parse-body resp)]
     (if (and (= 200 (:status resp)) (:ok body))
       (emit (:result body))
-      (die (str "✗ " command ": " (:message body))))))
+      (die (str "✗ " (or label command) ": " (:message body))))))
 
 (defn- do-serve [opts]
   (let [port  (parse-long (str (or (:port opts) "8090")))
@@ -97,9 +121,16 @@
 
 ;; --- help & dispatch -------------------------------------------------------
 
+(defn- print-group [group]
+  (let [verbs (command-groups group)]
+    (println (str "  " group))
+    (doseq [v (sort (keys verbs))]
+      (println (str "    " group " " v)))))
+
 (defn- print-help []
   (println "emcli — author Event Models from the command line\n")
-  (println "Usage: emcli <command> [--opt value ...] [--server URL]\n")
+  (println "Usage: emcli <entity> <verb> [--opt value ...] [--server URL]")
+  (println "       emcli <command> [...]            (process / inspect commands)\n")
   (println "Process:")
   (println "  serve     [--port 8090] [--name NAME] [--file PATH]")
   (println "                                          start the model server (SSE + authoring).")
@@ -107,26 +138,43 @@
   (println "                                          flushed on every write for crash recovery.\n")
   (println "Inspect:")
   (println "  show                                    print the canonical model snapshot")
-  (println "  validate                                report slices/specs not yet complete")
+  (println "  validate                                report slices/specs/elements not yet complete")
   (println "  export    [--out FILE]                  export the eventmodeling.schema.json")
   (println "  import    --in FILE                     import an eventmodeling.schema.json\n")
-  (println "Authoring commands (each maps to a ModelAuthoring operation):")
-  (doseq [c cmd/commands] (println (str "  " c))))
+  (println "Authoring (grouped by entity — `emcli <entity>` lists an entity's verbs):")
+  (doseq [group (keys command-groups)] (print-group group)))
+
+(defn- print-group-help [group]
+  (println (str "emcli " group " <verb> [--opt value ...]\n"))
+  (println "Verbs:")
+  (doseq [v (sort (keys (command-groups group)))]
+    (println (str "  " group " " v))))
 
 (def ^:private meta-commands #{"serve" "show" "validate" "export" "import" "help"})
 
 (defn -main [& argv]
-  (let [argv    (vec (or (seq argv) *command-line-args*))
-        command (first argv)
-        opts    (cli/parse-opts (rest argv))]
+  (let [argv (vec (or (seq argv) *command-line-args*))
+        head (first argv)]
     (cond
-      (or (nil? command) (= "help" command)) (print-help)
-      (= "serve" command)    (do-serve opts)
-      (= "show" command)     (do-show opts)
-      (= "validate" command) (do-validate opts)
-      (= "export" command)   (do-export opts)
-      (= "import" command)   (do-import opts)
-      (some #{command} cmd/commands) (do-authoring command opts)
-      :else (do (binding [*out* *err*] (println (str "Unknown command: " command "\n")))
+      (or (nil? head) (= "help" head)) (print-help)
+      (= "serve" head)    (do-serve (cli/parse-opts (rest argv)))
+      (= "show" head)     (do-show (cli/parse-opts (rest argv)))
+      (= "validate" head) (do-validate (cli/parse-opts (rest argv)))
+      (= "export" head)   (do-export (cli/parse-opts (rest argv)))
+      (= "import" head)   (do-import (cli/parse-opts (rest argv)))
+
+      (command-groups head)
+      (let [verb (second argv)
+            opts (cli/parse-opts (drop 2 argv))]
+        (cond
+          (or (nil? verb) (= "help" verb)) (print-group-help head)
+          (resolve-command head verb)      (do-authoring (resolve-command head verb)
+                                                          opts (str head " " verb))
+          :else (do (binding [*out* *err*]
+                      (println (str "Unknown verb: " head " " verb "\n")))
+                    (print-group-help head)
+                    (System/exit 2))))
+
+      :else (do (binding [*out* *err*] (println (str "Unknown command: " head "\n")))
                 (print-help)
                 (System/exit 2)))))
