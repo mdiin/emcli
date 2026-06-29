@@ -1,0 +1,324 @@
+(ns emcli.rules
+  "The authoring operations of the ModelAuthoring surface. Each rule is a pure
+  function (store, args) -> result.
+
+  A successful result is {:store store', :delta delta, :result entity-or-id};
+  a rejected one is {:error keyword, ...}. Every mutating rule produces exactly
+  one delta carrying the canonical changes it made (DeltaPerMutation), and no
+  rule commits a store that violates an invariant (the invariants always hold)."
+  (:require [clojure.string :as str]
+            [emcli.model :as m]
+            [emcli.invariants :as inv]))
+
+;; ---------------------------------------------------------------------------
+;; Result helpers
+;; ---------------------------------------------------------------------------
+
+(defn error? [r] (contains? r :error))
+
+(defn- missing [type id]
+  {:error :not-found :type type :id id
+   :message (str (name type) " " id " does not exist")})
+
+(defn- require-entity [store type id]
+  (when-not (m/exists? store type id)
+    (missing type id)))
+
+(defn- created [type entity] {:action :created :type type :id (:id entity) :entity entity})
+(defn- updated [store type id] {:action :updated :type type :id id :entity (m/fetch store type id)})
+(defn- deleted [type id]      {:action :deleted :type type :id id})
+
+(defn- commit
+  "Validate invariants and package a successful mutation. If the candidate
+  store breaks any invariant the mutation is rejected and nothing is applied."
+  [store op changes result]
+  (let [violations (inv/check store)]
+    (if (seq violations)
+      {:error :invariant-violation :op op :violations violations
+       :message (str op " rejected: " (str/join "; " (map :message violations)))}
+      {:store store :delta {:op op :changes changes} :result result})))
+
+;; ---------------------------------------------------------------------------
+;; Models (bootstrap helper — the surface is scoped to one model at a time)
+;; ---------------------------------------------------------------------------
+
+(defn create-model [store {:keys [name]}]
+  (let [[store model] (m/create store :event-model {:name name})]
+    {:store store
+     :delta {:op :CreateModel :changes [(created :event-model model)]}
+     :result model}))
+
+(defn rename-model [store {:keys [model name]}]
+  (or (require-entity store :event-model model)
+      (let [store (m/set-field store :event-model model :name name)]
+        (commit store :RenameModel [(updated store :event-model model)]
+                (m/fetch store :event-model model)))))
+
+;; ---------------------------------------------------------------------------
+;; Timelines
+;; ---------------------------------------------------------------------------
+
+(defn create-timeline [store {:keys [model title]}]
+  (or (require-entity store :event-model model)
+      (let [[store tl] (m/create store :timeline {:model model :title title})]
+        (commit store :CreateTimeline [(created :timeline tl)] tl))))
+
+(defn rename-timeline [store {:keys [timeline new-title]}]
+  (or (require-entity store :timeline timeline)
+      (let [store (m/set-field store :timeline timeline :title new-title)]
+        (commit store :RenameTimeline [(updated store :timeline timeline)]
+                (m/fetch store :timeline timeline)))))
+
+;; ---------------------------------------------------------------------------
+;; Swimlanes
+;; ---------------------------------------------------------------------------
+
+(defn create-swimlane [store {:keys [model name]}]
+  (or (require-entity store :event-model model)
+      (let [[store lane] (m/create store :swimlane {:model model :name name})]
+        (commit store :CreateSwimlane [(created :swimlane lane)] lane))))
+
+(defn rename-swimlane [store {:keys [lane new-name]}]
+  (or (require-entity store :swimlane lane)
+      (let [store (m/set-field store :swimlane lane :name new-name)]
+        (commit store :RenameSwimlane [(updated store :swimlane lane)]
+                (m/fetch store :swimlane lane)))))
+
+;; ---------------------------------------------------------------------------
+;; Slices
+;; ---------------------------------------------------------------------------
+
+(defn add-slice [store {:keys [timeline title kind index]}]
+  (or (require-entity store :timeline timeline)
+      (let [[store sl] (m/create store :slice {:timeline timeline :title title
+                                               :kind kind :index index
+                                               :status :created})]
+        (commit store :AddSlice [(created :slice sl)] sl))))
+
+(defn reorder-slice [store {:keys [slice new-index]}]
+  (or (require-entity store :slice slice)
+      (let [store (m/set-field store :slice slice :index new-index)]
+        (commit store :ReorderSlice [(updated store :slice slice)]
+                (m/fetch store :slice slice)))))
+
+(def slice-transitions
+  "The declared Slice.status transition graph."
+  #{[:created :in_progress]
+    [:in_progress :done]
+    [:done :in_progress]
+    [:in_progress :created]
+    [:created :informational]
+    [:informational :created]})
+
+(defn set-slice-status [store {:keys [slice new-status]}]
+  (or (require-entity store :slice slice)
+      (let [from (:status (m/fetch store :slice slice))]
+        (if-not (slice-transitions [from new-status])
+          {:error :illegal-transition :from from :to new-status
+           :message (str "Illegal slice status transition: " (name from)
+                         " -> " (name new-status))}
+          (let [store (m/set-field store :slice slice :status new-status)]
+            (commit store :SetSliceStatus [(updated store :slice slice)]
+                    (m/fetch store :slice slice)))))))
+
+(defn set-slice-kind [store {:keys [slice new-kind]}]
+  (or (require-entity store :slice slice)
+      (let [store (m/set-field store :slice slice :kind new-kind)]
+        (commit store :SetSliceKind [(updated store :slice slice)]
+                (m/fetch store :slice slice)))))
+
+;; ---------------------------------------------------------------------------
+;; Elements
+;; ---------------------------------------------------------------------------
+
+(defn create-element [store {:keys [model name kind]}]
+  (or (require-entity store :event-model model)
+      (let [[store el] (m/create store :element {:model model :name name :kind kind
+                                                 :context :internal :fields []})]
+        (commit store :CreateElement [(created :element el)] el))))
+
+(defn set-fields [store {:keys [element fields]}]
+  (or (require-entity store :element element)
+      (let [store (m/set-field store :element element :fields (vec fields))]
+        (commit store :SetFields [(updated store :element element)]
+                (m/fetch store :element element)))))
+
+(defn set-element-context [store {:keys [element new-context]}]
+  (or (require-entity store :element element)
+      (let [store (m/set-field store :element element :context new-context)]
+        (commit store :SetElementContext [(updated store :element element)]
+                (m/fetch store :element element)))))
+
+(defn assign-swimlane [store {:keys [element lane]}]
+  (or (require-entity store :element element)
+      (require-entity store :swimlane lane)
+      (let [store (m/set-field store :element element :swimlane lane)]
+        (commit store :AssignSwimlane [(updated store :element element)]
+                (m/fetch store :element element)))))
+
+(defn set-image-url [store {:keys [element url]}]
+  (or (require-entity store :element element)
+      (let [store (m/set-field store :element element :image_url url)]
+        (commit store :SetImageUrl [(updated store :element element)]
+                (m/fetch store :element element)))))
+
+(defn rename-element [store {:keys [element new-name]}]
+  (or (require-entity store :element element)
+      (let [store (m/set-field store :element element :name new-name)]
+        (commit store :RenameElement [(updated store :element element)]
+                (m/fetch store :element element)))))
+
+;; ---------------------------------------------------------------------------
+;; Placements
+;; ---------------------------------------------------------------------------
+
+(defn place-element [store {:keys [slice element]}]
+  (or (require-entity store :slice slice)
+      (require-entity store :element element)
+      (let [[store p] (m/create store :placement {:slice slice :element element})]
+        (commit store :PlaceElement [(created :placement p)] p))))
+
+(defn remove-placement [store {:keys [placement]}]
+  (or (require-entity store :placement placement)
+      (let [store (m/delete store :placement placement)]
+        (commit store :RemovePlacement [(deleted :placement placement)] placement))))
+
+;; ---------------------------------------------------------------------------
+;; Connections
+;; ---------------------------------------------------------------------------
+
+(defn connect [store {:keys [from to]}]
+  (or (require-entity store :element from)
+      (require-entity store :element to)
+      (let [model      (:model (m/fetch store :element from))
+            [store c]  (m/create store :connection {:model model :from from :to to})]
+        (commit store :Connect [(created :connection c)] c))))
+
+(defn disconnect [store {:keys [connection]}]
+  (or (require-entity store :connection connection)
+      (let [store (m/delete store :connection connection)]
+        (commit store :Disconnect [(deleted :connection connection)] connection))))
+
+;; ---------------------------------------------------------------------------
+;; Specifications (Given / When / Then)
+;; ---------------------------------------------------------------------------
+
+(defn add-specification [store {:keys [slice title]}]
+  (or (require-entity store :slice slice)
+      (let [[store spec] (m/create store :specification {:slice slice :title title})]
+        (commit store :AddSpecification [(created :specification spec)] spec))))
+
+(defn add-spec-step [store {:keys [spec clause element index]}]
+  (or (require-entity store :specification spec)
+      (require-entity store :element element)
+      (let [[store st] (m/create store :spec-step
+                                 {:spec spec :clause clause :element element :index index
+                                  :is_error false :expect_empty false :examples []})]
+        (commit store :AddSpecStep [(created :spec-step st)] st))))
+
+(defn add-error-step [store {:keys [spec error-name index]}]
+  (or (require-entity store :specification spec)
+      (let [[store st] (m/create store :spec-step
+                                 {:spec spec :clause :then_step :error_name error-name
+                                  :index index :is_error true :expect_empty false :examples []})]
+        (commit store :AddErrorStep [(created :spec-step st)] st))))
+
+(defn remove-spec-step [store {:keys [step]}]
+  (or (require-entity store :spec-step step)
+      (let [store (m/delete store :spec-step step)]
+        (commit store :RemoveSpecStep [(deleted :spec-step step)] step))))
+
+(defn set-step-examples [store {:keys [step examples]}]
+  (or (require-entity store :spec-step step)
+      (let [store (m/set-field store :spec-step step :examples (vec examples))]
+        (commit store :SetStepExamples [(updated store :spec-step step)]
+                (m/fetch store :spec-step step)))))
+
+(defn set-step-expect-empty [store {:keys [step value]}]
+  (or (require-entity store :spec-step step)
+      (let [store (m/set-field store :spec-step step :expect_empty value)]
+        (commit store :SetStepExpectEmpty [(updated store :spec-step step)]
+                (m/fetch store :spec-step step)))))
+
+;; ---------------------------------------------------------------------------
+;; Change-stream subscriptions
+;; ---------------------------------------------------------------------------
+
+(defn subscribe [store {:keys [model]}]
+  (or (require-entity store :event-model model)
+      (let [[store sub] (m/create store :subscription {:model model})]
+        {:store store
+         :delta {:op :Subscribe :changes [(created :subscription sub)]}
+         :result sub})))
+
+(defn unsubscribe [store {:keys [subscription]}]
+  (or (require-entity store :subscription subscription)
+      {:store (m/delete store :subscription subscription)
+       :delta {:op :Unsubscribe :changes [(deleted :subscription subscription)]}
+       :result subscription}))
+
+;; ---------------------------------------------------------------------------
+;; Deletion cascades
+;; ---------------------------------------------------------------------------
+
+(defn- del [[store changes] type id]
+  [(m/delete store type id) (conj changes (deleted type id))])
+
+(defn- cascade-spec [acc spec-id]
+  (let [[store _] acc
+        acc       (reduce (fn [a st] (del a :spec-step (:id st)))
+                          acc (m/spec-steps store spec-id))]
+    (del acc :specification spec-id)))
+
+(defn- cascade-slice [acc slice-id]
+  (let [[store _] acc
+        acc       (reduce (fn [a p] (del a :placement (:id p)))
+                          acc (m/placements store slice-id))
+        acc       (reduce (fn [a sp] (cascade-spec a (:id sp)))
+                          acc (m/specs store slice-id))]
+    (del acc :slice slice-id)))
+
+(defn- cascade-timeline [acc timeline-id]
+  (let [[store _] acc
+        acc       (reduce (fn [a sl] (cascade-slice a (:id sl)))
+                          acc (m/slices store timeline-id))]
+    (del acc :timeline timeline-id)))
+
+(defn- cascade-element [acc element-id]
+  (let [[store _] acc
+        conns     (vals (into {} (map (juxt :id identity))
+                              (concat (m/outgoing store element-id)
+                                      (m/incoming store element-id))))
+        acc       (reduce (fn [a p] (del a :placement (:id p)))
+                          acc (m/element-placements store element-id))
+        acc       (reduce (fn [a c] (del a :connection (:id c))) acc conns)]
+    (del acc :element element-id)))
+
+(defn delete-specification [store {:keys [spec]}]
+  (or (require-entity store :specification spec)
+      (let [[store changes] (cascade-spec [store []] spec)]
+        (commit store :DeleteSpecification changes spec))))
+
+(defn delete-slice [store {:keys [slice]}]
+  (or (require-entity store :slice slice)
+      (let [[store changes] (cascade-slice [store []] slice)]
+        (commit store :DeleteSlice changes slice))))
+
+(defn delete-timeline [store {:keys [timeline]}]
+  (or (require-entity store :timeline timeline)
+      (let [[store changes] (cascade-timeline [store []] timeline)]
+        (commit store :DeleteTimeline changes timeline))))
+
+(defn delete-element [store {:keys [element]}]
+  (or (require-entity store :element element)
+      (let [[store changes] (cascade-element [store []] element)]
+        (commit store :DeleteElement changes element))))
+
+(defn delete-swimlane [store {:keys [lane]}]
+  (or (require-entity store :swimlane lane)
+      (let [elems    (filter #(= lane (:swimlane %)) (m/all store :element))
+            store    (reduce (fn [s e] (m/set-field s :element (:id e) :swimlane nil))
+                             store elems)
+            changes  (mapv #(updated store :element (:id %)) elems)
+            store    (m/delete store :swimlane lane)]
+        (commit store :DeleteSwimlane (conj changes (deleted :swimlane lane)) lane))))

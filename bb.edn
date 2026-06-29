@@ -1,0 +1,10 @@
+{:paths ["src" "test"]
+ :deps {http-kit/http-kit {:mvn/version "2.8.0"}}
+ :tasks
+ {test {:doc  "Run the test suite"
+        :task (exec 'emcli.test-runner/run)
+        :requires ([emcli.test-runner])}
+  run  {:doc              "Run the emcli CLI"
+        :override-builtin true
+        :requires         ([emcli.cli])
+        :task             (emcli.cli/-main)}}}
