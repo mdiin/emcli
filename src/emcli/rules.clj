@@ -168,6 +168,17 @@
         (commit store :SetFieldOrigins [(updated store :element element)]
                 (m/fetch store :element element)))))
 
+;; Convenience composite (a CLI affordance, not a domain operation): append a
+;; single field-origin override — replacing any existing override for the same
+;; field — preserving the element's others. Decomposes into SetFieldOrigins, so
+;; it emits exactly one SetFieldOrigins delta.
+(defn add-field-origin [store {:keys [element field origin]}]
+  (or (require-entity store :element element)
+      (let [current (:field_origins (m/fetch store :element element))
+            origins (conj (vec (remove #(= field (:field %)) current))
+                          {:field field :origin origin})]
+        (set-field-origins store {:element element :origins origins}))))
+
 (defn rename-element [store {:keys [element new-name]}]
   (or (require-entity store :element element)
       (let [store (m/set-field store :element element :name new-name)]
@@ -211,6 +222,17 @@
       (let [store (m/set-field store :connection connection :derivations (vec derivations))]
         (commit store :SetConnectionDerivations [(updated store :connection connection)]
                 (m/fetch store :connection connection)))))
+
+;; Convenience composite (a CLI affordance, not a domain operation): append a
+;; single derivation — replacing any existing derivation for the same target
+;; field — preserving the connection's others. Decomposes into
+;; SetConnectionDerivations, so it emits exactly one SetConnectionDerivations delta.
+(defn add-derivation [store {:keys [connection target from]}]
+  (or (require-entity store :connection connection)
+      (let [current     (:derivations (m/fetch store :connection connection))
+            derivations (conj (vec (remove #(= target (:target_field %)) current))
+                              {:target_field target :source_fields (vec from)})]
+        (set-connection-derivations store {:connection connection :derivations derivations}))))
 
 ;; ---------------------------------------------------------------------------
 ;; Specifications (Given / When / Then)

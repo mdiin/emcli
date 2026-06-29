@@ -139,6 +139,57 @@
       (is (m/information-complete? store dst)
           "subtotal carried via connection 1, total derived via connection 2"))))
 
+;; --- convenience composites (append one, preserve the rest) ----------------
+
+(deftest add-field-origin-appends-and-replaces
+  (let [[store mid] (s/with-model)
+        store (:store (s/ok store r/create-element {:model mid :name "Cmd" :kind :command}))
+        eid   (:id (first (m/elements store mid)))]
+    (testing "appends preserving existing origins"
+      (let [store (:store (s/ok store r/add-field-origin {:element eid :field "id" :origin :user_input}))
+            store (:store (s/ok store r/add-field-origin {:element eid :field "at" :origin :generated}))]
+        (is (= [{:field "id" :origin :user_input} {:field "at" :origin :generated}]
+               (:field_origins (m/fetch store :element eid))))
+        (testing "re-adding the same field replaces its origin, no duplicate"
+          (let [store (:store (s/ok store r/add-field-origin {:element eid :field "id" :origin :external}))
+                origins (:field_origins (m/fetch store :element eid))]
+            (is (= 2 (count origins)))
+            (is (= :external (:origin (first (filter #(= "id" (:field %)) origins)))))))))
+    (testing "emits a SetFieldOrigins delta (the decomposed operation)"
+      (is (= :SetFieldOrigins
+             (:op (:delta (r/add-field-origin store {:element eid :field "x" :origin :generated}))))))))
+
+(deftest add-derivation-appends-and-replaces
+  (let [[store mid from to] (two-elements :event :read_model)
+        store (:store (s/ok store r/connect {:from from :to to}))
+        cid   (:id (first (m/connections store mid)))]
+    (testing "appends preserving existing derivations"
+      (let [store (:store (s/ok store r/add-derivation {:connection cid :target "customer" :from ["customerId"]}))
+            store (:store (s/ok store r/add-derivation {:connection cid :target "total" :from ["unitPrice" "quantity"]}))]
+        (is (= [{:target_field "customer" :source_fields ["customerId"]}
+                {:target_field "total" :source_fields ["unitPrice" "quantity"]}]
+               (:derivations (m/fetch store :connection cid))))
+        (testing "re-deriving the same target replaces it"
+          (let [store (:store (s/ok store r/add-derivation {:connection cid :target "total" :from ["grandTotal"]}))
+                derivs (:derivations (m/fetch store :connection cid))]
+            (is (= 2 (count derivs)))
+            (is (= ["grandTotal"] (:source_fields (first (filter #(= "total" (:target_field %)) derivs)))))))))
+    (testing "emits a SetConnectionDerivations delta"
+      (is (= :SetConnectionDerivations
+             (:op (:delta (r/add-derivation store {:connection cid :target "z" :from ["a"]}))))))))
+
+(deftest add-derivation-splits-comma-separated-from-over-the-command-layer
+  (let [a   (app/new-app "M")
+        mid (app/model-id a)
+        from (:result (cmd/run a "create-element" {:name "Evt" :kind "event"}))
+        to   (:result (cmd/run a "create-element" {:name "RM" :kind "read_model"}))
+        _    (cmd/run a "connect" {:from (:id from) :to (:id to)})
+        cid  (:id (first (m/connections (app/store a) mid)))
+        res  (cmd/run a "add-derivation" {:connection cid :target "total" :from "unitPrice, quantity"})]
+    (is (not (r/error? res)))
+    (is (= [{:target_field "total" :source_fields ["unitPrice" "quantity"]}]
+           (:derivations (m/fetch (app/store a) :connection cid))))))
+
 ;; --- ValidateModel reporting ----------------------------------------------
 
 (deftest validate-reports-incomplete-and-orphaned

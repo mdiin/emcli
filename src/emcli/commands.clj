@@ -93,6 +93,27 @@
                                                          :derivations (vec (get opts :derivations))})
       {:error :missing-args :message "set-connection-derivations requires :connection and :derivations"})
 
+    ;; Convenience composites (append one entry, preserving the rest). They emit
+    ;; the same SetFieldOrigins / SetConnectionDerivations deltas as the
+    ;; replace-style operations they decompose into.
+    (= command "add-field-origin")
+    (if (and (get opts :element) (get opts :field) (get opts :origin))
+      (app/apply-rule! app r/add-field-origin {:element (->int (get opts :element))
+                                               :field (str (get opts :field))
+                                               :origin (->kw (get opts :origin))})
+      {:error :missing-args :message "add-field-origin requires :element, :field and :origin"})
+
+    (= command "add-derivation")
+    (if (and (get opts :connection) (get opts :target) (contains? opts :from))
+      (app/apply-rule! app r/add-derivation
+                       {:connection (->int (get opts :connection))
+                        :target (str (get opts :target))
+                        :from (let [f (get opts :from)]
+                                (if (string? f)
+                                  (vec (remove str/blank? (map str/trim (str/split f #","))))
+                                  (vec f)))})
+      {:error :missing-args :message "add-derivation requires :connection, :target and :from"})
+
     :else
     (if-let [{:keys [rule] :as entry} (registry command)]
       (let [args (build-args entry app opts)]
@@ -103,9 +124,11 @@
        :message (str "unknown command: " command)})))
 
 (def commands
-  "All authoring command names (including the structured ones)."
+  "All authoring command names: the registry, the structured (list-valued)
+  operations, and the convenience composites."
   (sort (concat (keys registry)
-                ["set-fields" "set-step-examples" "set-field-origins" "set-connection-derivations"])))
+                ["set-fields" "set-step-examples" "set-field-origins" "set-connection-derivations"
+                 "add-field-origin" "add-derivation"])))
 
 (defn authoring-view
   "The ModelAuthoring `exposes:` read projection (event-model.allium:598-635):

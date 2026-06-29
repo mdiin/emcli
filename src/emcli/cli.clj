@@ -60,10 +60,12 @@
    "slice"      {"add" "add-slice" "reorder" "reorder-slice" "status" "set-slice-status"
                  "kind" "set-slice-kind" "delete" "delete-slice"}
    "element"    {"add" "create-element" "fields" "set-fields" "context" "set-element-context"
-                 "swimlane" "assign-swimlane" "image" "set-image-url" "origins" "set-field-origins"
+                 "swimlane" "assign-swimlane" "image" "set-image-url"
+                 "origins" "set-field-origins" "origin" "add-field-origin"
                  "rename" "rename-element" "delete" "delete-element"}
    "placement"  {"add" "place-element" "remove" "remove-placement"}
-   "connection" {"add" "connect" "remove" "disconnect" "derivations" "set-connection-derivations"}
+   "connection" {"add" "connect" "remove" "disconnect"
+                 "derivations" "set-connection-derivations" "derive" "add-derivation"}
    "spec"       {"add" "add-specification" "delete" "delete-specification"}
    "step"       {"add" "add-spec-step" "error" "add-error-step" "remove" "remove-spec-step"
                  "examples" "set-step-examples" "expect-empty" "set-step-expect-empty"}})
