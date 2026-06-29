@@ -10,7 +10,9 @@
       "Bash(bb --version)",
       "Bash(mkdir -p src/emcli test/emcli)",
       "Bash(allium model *)",
-      "Bash(bb *)"
+      "Bash(bb *)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(allium analyse *)"
     ]
   }
 }

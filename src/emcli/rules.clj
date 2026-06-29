@@ -42,17 +42,16 @@
 ;; Models (bootstrap helper — the surface is scoped to one model at a time)
 ;; ---------------------------------------------------------------------------
 
+;; `create-model` is a bootstrap helper, deliberately OUTSIDE the ModelAuthoring
+;; surface: the spec scopes the surface to one already-existing model with no
+;; modelled identity (event-model.allium:588-590), so the model pre-exists any
+;; authoring session. There is intentionally no RenameModel — the spec exposes
+;; `model.name` for reading but provides no operation to change it.
 (defn create-model [store {:keys [name]}]
   (let [[store model] (m/create store :event-model {:name name})]
     {:store store
      :delta {:op :CreateModel :changes [(created :event-model model)]}
      :result model}))
-
-(defn rename-model [store {:keys [model name]}]
-  (or (require-entity store :event-model model)
-      (let [store (m/set-field store :event-model model :name name)]
-        (commit store :RenameModel [(updated store :event-model model)]
-                (m/fetch store :event-model model)))))
 
 ;; ---------------------------------------------------------------------------
 ;; Timelines
