@@ -134,6 +134,28 @@
           [store2 mid2] (sc/import-model doc)]
       (is (= (normalise store mid) (normalise store2 mid2))))))
 
+(deftest information-completeness-provenance-is-dropped-on-roundtrip
+  (testing "Connection.derivations and Element.field_origins are authoring-only
+            metadata with no schema representation: a documented exclusion from
+            ModelRoundtrip (dropped on export, not reconstructed on import)"
+    (let [[store mid] (build-model)
+          ;; add a derivation on a connection and a field origin on an element
+          conn  (first (m/connections store mid))
+          el    (first (m/elements store mid))
+          store (:store (s/ok store r/set-connection-derivations
+                              {:connection (:id conn)
+                               :derivations [{:target_field "x" :source_fields ["y"]}]}))
+          store (:store (s/ok store r/set-field-origins
+                              {:element (:id el)
+                               :origins [{:field "z" :origin :user_input}]}))
+          [store2 mid2] (sc/import-model (sc/export store mid))]
+      (testing "they survive on the live canonical model"
+        (is (seq (:derivations (m/fetch store :connection (:id conn)))))
+        (is (seq (:field_origins (m/fetch store :element (:id el))))))
+      (testing "but are gone after a schema round-trip (documented loss)"
+        (is (every? #(empty? (:derivations %)) (m/connections store2 mid2)))
+        (is (every? #(empty? (:field_origins %)) (m/elements store2 mid2)))))))
+
 (deftest model-roundtrip-survives-json
   (testing "round-trip through JSON text is lossless at the semantic level"
     (let [[store mid]   (build-model)

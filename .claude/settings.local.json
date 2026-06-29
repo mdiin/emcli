@@ -14,7 +14,8 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(allium analyse *)",
       "Bash(allium --version)",
-      "Bash(git checkout *)"
+      "Bash(git checkout *)",
+      "Bash(timeout 300 clojure -M:test -n emcli.completeness-test)"
     ]
   }
 }

@@ -584,8 +584,13 @@ contract SchemaCodec {
 
     @invariant ModelRoundtrip
         -- For any export-ready model the CLI can author, import(export(model))
-        -- reproduces model exactly. The canonical model is the source of truth,
-        -- so everything it represents round-trips without loss.
+        -- reproduces the schema-representable canonical subset exactly. The
+        -- canonical model is the source of truth, so everything the interchange
+        -- format can carry round-trips without loss. Authoring-only provenance
+        -- metadata that the eventmodeling.schema.json format has no place for -
+        -- Connection.derivations and Element.field_origins (see the dropped-
+        -- fields guidance) - is excluded from this guarantee; it is dropped on
+        -- export like the other unrepresentable fields.
 
     @invariant SchemaRoundtrip
         -- Round-tripping a foreign document is semantic, not byte-lossless. For
@@ -622,6 +627,13 @@ contract SchemaCodec {
         --   * element.triggers and Slice.actors (no Actor concept; triggers are
         --     captured as screen/automation -> command connections)
         --   * slices tagged informational (no schema sliceType for them)
+        --   * Connection.derivations and Element.field_origins: information-
+        --     completeness provenance is authoring-only metadata with no
+        --     eventmodeling.schema.json representation (the format carries no
+        --     field-level derivation or field-origin concept), so it is dropped
+        --     on export and not reconstructed on import. A model that relies on
+        --     derivations/overrides to be information-complete will read as
+        --     incomplete after a schema round-trip; this is the documented loss.
         -- Preserved mappings: slice.context <-> Timeline.title;
         --   element.aggregate <-> Swimlane.name; sliceType <-> Slice.kind;
         --   element.context <-> Element.context;
@@ -630,11 +642,14 @@ contract SchemaCodec {
 }
 
 -- @note SchemaCodec import/export is implemented in emcli.schema: export
--- rejects models that are not export-ready, drops informational slices and the
--- documented technical/visual fields, and emits one embedded element per
--- placement sharing the element's groupId; import collapses elements by groupId
--- and deduplicates dependencies back into connections. ModelRoundtrip and the
--- groupId/dependency identity invariants are covered by emcli.schema-test.
+-- rejects models that are not export-ready and drops the fields with no schema
+-- representation - informational slices, the technical/visual fields, and the
+-- information-completeness provenance (Connection.derivations,
+-- Element.field_origins) - emitting one embedded element per placement sharing
+-- the element's groupId; import collapses elements by groupId and deduplicates
+-- dependencies back into connections. ModelRoundtrip (over the schema-
+-- representable subset) and the groupId/dependency identity invariants are
+-- covered by emcli.schema-test.
 
 -- The live change stream a frontend consumes to visualise a model as it is
 -- edited. Outbound only: the frontend receives changes, never issues edits over

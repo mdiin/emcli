@@ -14,7 +14,11 @@
       embedded copy of its `to`; import dedups by (from groupId, to groupId).
     * ExportRequiresComplete    — export is rejected unless every
       non-informational slice and every specification is complete.
-  Informational slices and the documented technical/visual fields are dropped."
+  Informational slices and the documented technical/visual fields are dropped.
+  So is the information-completeness provenance (Connection.derivations and
+  Element.field_origins): the interchange format has no field-level derivation or
+  field-origin concept, so this authoring-only metadata is not exported and not
+  reconstructed on import (a documented exclusion from ModelRoundtrip)."
   (:require [cheshire.core :as json]
             [clojure.set :as set]
             [emcli.model :as m]
