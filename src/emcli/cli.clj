@@ -13,6 +13,8 @@
 
 (def ^:private default-server "http://localhost:8090")
 
+(declare format-usage-line)
+
 (defn- server-url [opts] (or (:server opts) default-server))
 
 (defn- emit [x] (println (json/generate-string x {:pretty true})))
@@ -76,14 +78,16 @@
   [group verb]
   (get-in command-groups [group verb]))
 
-(defn- do-authoring [command opts & [label]]
-  (let [payload (-> (prepare command opts)
+(defn- do-authoring [group verb opts]
+  (let [command (resolve-command group verb)
+        payload (-> (prepare command opts)
                     (dissoc :server :fields-json :examples-json :origins-json :derivations-json))
         resp    (request :post (str (server-url opts) "/authoring/" command) payload)
         body    (parse-body resp)]
     (if (and (= 200 (:status resp)) (:ok body))
       (emit (:result body))
-      (die (str "✗ " (or label command) ": " (:message body))))))
+      (die (str "✗ " group " " verb ": " (:message body)
+                "\n\nUsage: " (format-usage-line group verb))))))
 
 (defn- do-serve [opts]
   (let [port  (parse-long (str (or (:port opts) "8090")))
@@ -202,6 +206,39 @@
                         (for [[verb command] (sort verbs)]
                           [verb {:params (command->manifest-params command)}]))]))})
 
+;; --- human-readable usage formatting ---------------------------------------
+
+(defn- format-param-signature [{:keys [flag type required values]}]
+  (let [type-str (if values (str/join "|" values) type)
+        inner    (str "--" flag " <" type-str ">")]
+    (if required inner (str "[" inner "]"))))
+
+(defn- format-usage-suffix [group verb]
+  (let [params (command->manifest-params (resolve-command group verb))]
+    (str/join " " (map format-param-signature params))))
+
+(defn- format-usage-line [group verb]
+  (let [suffix (format-usage-suffix group verb)]
+    (str "emcli " group " " verb (when (seq suffix) (str " " suffix)))))
+
+(defn- print-verb-help [group verb]
+  (println (str "Usage: " (format-usage-line group verb)))
+  (let [params (command->manifest-params (resolve-command group verb))]
+    (when (seq params)
+      (println "\nOptions:")
+      (let [max-flag (apply max (map #(count (:flag %)) params))]
+        (doseq [{:keys [flag type required values ref note]} params]
+          (let [flag-pad (str/join (repeat (- max-flag (count flag)) " "))
+                type-pad (str/join (repeat (max 0 (- 7 (count type))) " "))
+                detail   (str/join "  "
+                                   (remove nil? [(when values (str/join " | " values))
+                                                 (when ref (str "from " ref " in `emcli show`"))
+                                                 note]))]
+            (println (str "  --" flag flag-pad
+                          "  " type type-pad
+                          "  " (if required "required" "optional")
+                          (when (seq detail) (str "  " detail))))))))))
+
 ;; --- help & dispatch -------------------------------------------------------
 
 (defn- print-group [group]
@@ -216,7 +253,8 @@
   (println "       emcli <command> [...]            (process / inspect commands)\n")
   (println "Discovery:")
   (println "  --manifest                              machine-readable JSON schema of all commands")
-  (println "  <entity>                                list verbs for that entity\n")
+  (println "  <entity>                                list verbs + signatures for that entity")
+  (println "  <entity> <verb> help                   show options for a specific verb\n")
   (println "Process:")
   (println "  serve     [--port 8090] [--name NAME] [--file PATH]")
   (println "                                          start the model server (SSE + authoring).")
@@ -231,10 +269,14 @@
   (doseq [group (keys command-groups)] (print-group group)))
 
 (defn- print-group-help [group]
-  (println (str "emcli " group " <verb> [--opt value ...]\n"))
-  (println "Verbs:")
-  (doseq [v (sort (keys (command-groups group)))]
-    (println (str "  " group " " v))))
+  (println (str "emcli " group " <verb> [--server URL]\n"))
+  (let [verbs    (sort (keys (command-groups group)))
+        max-verb (apply max (map count verbs))]
+    (doseq [v verbs]
+      (let [pad    (str/join (repeat (- max-verb (count v)) " "))
+            suffix (format-usage-suffix group v)]
+        (println (str "  " group " " v pad
+                      (when (seq suffix) (str "  " suffix))))))))
 
 (def ^:private meta-commands #{"serve" "show" "validate" "export" "import" "help"})
 
@@ -251,12 +293,17 @@
       (= "import" head)   (do-import (cli/parse-opts (rest argv)))
 
       (command-groups head)
-      (let [verb (second argv)
-            opts (cli/parse-opts (drop 2 argv))]
+      (let [verb     (second argv)
+            third    (nth argv 2 nil)]
         (cond
           (or (nil? verb) (= "help" verb)) (print-group-help head)
-          (resolve-command head verb)      (do-authoring (resolve-command head verb)
-                                                          opts (str head " " verb))
+          (resolve-command head verb)
+          (if (= "help" third)
+            (print-verb-help head verb)
+            (let [opts (cli/parse-opts (drop 2 argv))]
+              (if (:help opts)
+                (print-verb-help head verb)
+                (do-authoring head verb opts))))
           :else (do (binding [*out* *err*]
                       (println (str "Unknown verb: " head " " verb "\n")))
                     (print-group-help head)
