@@ -99,14 +99,11 @@
 (defn timelines     [store model-id] (by-field store :timeline :model model-id))
 (defn swimlanes
   "Swimlanes of a model, in author-controlled order: by :index then id (ties
-  broken by creation order), like `slices`. Unlike `slices`, the index is
-  nil-guarded: Swimlane.index was added after the model shipped, so a store
-  persisted before then has swimlanes with no :index — this keeps reloading such
-  an EDN file from crashing the sort (those lanes fall back to creation order).
-  Slices never need this: Slice.index has existed since day one."
+  broken by creation order), exactly like `slices`. Swimlane.index is a required
+  Integer set on every creation path, so no nil guard is needed."
   [store model-id]
   (->> (by-field store :swimlane :model model-id)
-       (sort-by (juxt #(or (:index %) 0) :id))))
+       (sort-by (juxt :index :id))))
 (defn elements      [store model-id] (by-field store :element :model model-id))
 (defn connections   [store model-id] (by-field store :connection :model model-id))
 (defn subscriptions [store model-id] (by-field store :subscription :model model-id))
