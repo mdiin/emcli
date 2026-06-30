@@ -108,8 +108,9 @@
                                       :status (:status sl) :index (:index sl)
                                       :placements (for [p (m/placements s (:id sl))
                                                         :let [el (m/placement-element s p)]]
-                                                    {:id (:id p)
+                                                    {:id (:id p) :index (:index p)
                                                      :element {:id (:id el) :name (:name el) :kind (:kind el)
+                                                               :swimlane (:swimlane el)
                                                                :is_information_complete (m/information-complete? s el)}})})})
              :swimlanes   (for [sw (m/swimlanes s mid)]
                             {:id (:id sw) :name (:name sw) :index (:index sw)})
