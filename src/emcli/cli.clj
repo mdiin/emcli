@@ -145,9 +145,9 @@
 ;; Valid keyword values per (command, flag) — only listed when the rule enforces
 ;; a bounded set; free-form keyword flags are left without :values.
 (def ^:private param-enums
-  {"add-slice"        {"kind"       ["state_change" "state_view" "automation" "informational"]}
+  {"add-slice"        {"kind"       ["state_change" "state_view" "automation"]}
    "set-slice-status" {"new-status" ["created" "in_progress" "done" "informational"]}
-   "set-slice-kind"   {"new-kind"   ["state_change" "state_view" "automation" "informational"]}
+   "set-slice-kind"   {"new-kind"   ["state_change" "state_view" "automation"]}
    "create-element"   {"kind"       ["command" "event" "read_model" "screen" "automation"]}
    "add-spec-step"    {"clause"     ["given_step" "when_step" "then_step"]}})
 
@@ -165,7 +165,7 @@
    "set-field-origins"
    [{:flag "element" :type "int" :required true :ref "elements[].id"}
     {:flag "origins-json" :type "json" :required true
-     :note "JSON array of field-origin objects, e.g. [{\"field\":\"orderId\",\"origin\":\"introduced\"}]"}]
+     :note "JSON array of field-origin objects, e.g. [{\"field\":\"orderId\",\"origin\":\"user_input\"}]"}]
    "set-connection-derivations"
    [{:flag "connection" :type "int" :required true :ref "connections[].id"}
     {:flag "derivations-json" :type "json" :required true
@@ -174,7 +174,7 @@
    [{:flag "element" :type "int" :required true :ref "elements[].id"}
     {:flag "field" :type "string" :required true :note "field name on the element"}
     {:flag "origin" :type "keyword" :required true
-     :note "how the field is introduced; common values: introduced, carried, derived"}]
+     :note "how the field is introduced: user_input, generated, external"}]
    "add-derivation"
    [{:flag "connection" :type "int" :required true :ref "connections[].id"}
     {:flag "target" :type "string" :required true :note "target field name on the to-element"}
