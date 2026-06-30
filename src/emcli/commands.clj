@@ -9,7 +9,16 @@
             [emcli.model :as m]
             [emcli.rules :as r]))
 
-(defn- ->int [v] (cond (integer? v) v (string? v) (parse-long (str/trim v)) :else v))
+;; Sentinel for an :int option that is present but not a valid integer. It must
+;; never reach a rule (the spec types these args as Integer, non-optional): the
+;; `run` gate rejects any command carrying one with a :bad-argument error.
+(def ^:private parse-failure ::parse-failure)
+
+(defn- ->int [v]
+  (cond (integer? v) v
+        (nil? v)      nil
+        (string? v)   (or (parse-long (str/trim v)) parse-failure)
+        :else         parse-failure))
 (defn- ->kw  [v] (when v (keyword (str/replace (name v) "-" "_"))))
 (defn- ->bool [v] (cond (boolean? v) v (string? v) (contains? #{"true" "1" "yes"} (str/lower-case v)) :else (boolean v)))
 
@@ -55,6 +64,27 @@
    "remove-spec-step"    {:rule r/remove-spec-step    :params [[:step :step :int true]]}
    "set-step-expect-empty" {:rule r/set-step-expect-empty :params [[:step :step :int true] [:value :value :bool true]]}})
 
+;; The :int option keys per command — from the registry params for registered
+;; commands, and declared here for the structured/composite ones (whose int args
+;; are coerced by hand in `run`). Used to reject non-integer values up front.
+(def ^:private structured-int-params
+  {"set-fields" [:element] "set-step-examples" [:step]
+   "set-field-origins" [:element] "set-connection-derivations" [:connection]
+   "add-field-origin" [:element] "add-derivation" [:connection]})
+
+(defn- int-opt-keys [command]
+  (if-let [params (:params (registry command))]
+    (->> params (filter #(= :int (nth % 2))) (map first))
+    (structured-int-params command [])))
+
+(defn- bad-int-opts
+  "Option keys that are present but not a valid integer — so a spec-declared
+  Integer arg would otherwise silently become nil."
+  [command opts]
+  (->> (int-opt-keys command)
+       (filter #(and (some? (get opts %)) (= parse-failure (->int (get opts %)))))
+       (mapv name)))
+
 (defn- build-args [{:keys [params model?]} app opts]
   (let [missing (for [[opt _ _ req?] params :when (and req? (nil? (get opts opt)))] opt)]
     (if (seq missing)
@@ -67,9 +97,16 @@
   "Run a registered authoring command against `app`, applying the rule through
   app/apply-rule! so the mutation is committed and a delta broadcast. `opts` is
   a map of option-key -> value. Structured rules (set-fields, set-step-examples)
-  accept their list argument directly under :fields / :examples."
+  accept their list argument directly under :fields / :examples.
+
+  Any spec-declared Integer argument that is present but not a valid integer is
+  rejected up front with :bad-argument, so it can never reach a rule as nil."
   [app command opts]
-  (cond
+  (let [bad (bad-int-opts command opts)]
+   (if (seq bad)
+     {:error :bad-argument :args bad
+      :message (str "expected an integer for: " (str/join ", " bad))}
+     (cond
     (= command "set-fields")
     (if (and (get opts :element) (contains? opts :fields))
       (app/apply-rule! app r/set-fields {:element (->int (get opts :element))
@@ -122,7 +159,7 @@
           args
           (app/apply-rule! app rule args)))
       {:error :unknown-command :command command
-       :message (str "unknown command: " command)})))
+       :message (str "unknown command: " command)})))))
 
 (def commands
   "All authoring command names: the registry, the structured (list-valued)

@@ -21,7 +21,10 @@
       "Bash(sed -i 's/r\\\\/create-swimlane {:model mid :name \"Orders\"}/r\\\\/create-swimlane {:model mid :name \"Orders\" :index 0}/' test/emcli/rules_test.clj)",
       "Bash(sed -i 's/r\\\\/create-swimlane {:model mid :name \"OrderLane\"}/r\\\\/create-swimlane {:model mid :name \"OrderLane\" :index 0}/' test/emcli/schema_test.clj)",
       "Bash(sed -i 's/r\\\\/create-swimlane {:model mid :name \"Lane\"}/r\\\\/create-swimlane {:model mid :name \"Lane\" :index 0}/' test/emcli/model_test.clj)",
-      "Bash(sed -i 's/cmd\\\\/run a \"create-swimlane\" {:name \"Lane\"}/cmd\\\\/run a \"create-swimlane\" {:name \"Lane\" :index 0}/g' test/emcli/app_test.clj)"
+      "Bash(sed -i 's/cmd\\\\/run a \"create-swimlane\" {:name \"Lane\"}/cmd\\\\/run a \"create-swimlane\" {:name \"Lane\" :index 0}/g' test/emcli/app_test.clj)",
+      "Bash(command -v allium)",
+      "Bash(timeout 300 clojure -M:test)",
+      "Bash(timeout 120 clojure -e ' *)"
     ]
   }
 }
