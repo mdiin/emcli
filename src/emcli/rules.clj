@@ -72,15 +72,21 @@
 ;; Swimlanes
 ;; ---------------------------------------------------------------------------
 
-(defn create-swimlane [store {:keys [model name]}]
+(defn create-swimlane [store {:keys [model name index]}]
   (or (require-entity store :event-model model)
-      (let [[store lane] (m/create store :swimlane {:model model :name name})]
+      (let [[store lane] (m/create store :swimlane {:model model :name name :index index})]
         (commit store :CreateSwimlane [(created :swimlane lane)] lane))))
 
 (defn rename-swimlane [store {:keys [lane new-name]}]
   (or (require-entity store :swimlane lane)
       (let [store (m/set-field store :swimlane lane :name new-name)]
         (commit store :RenameSwimlane [(updated store :swimlane lane)]
+                (m/fetch store :swimlane lane)))))
+
+(defn reorder-swimlane [store {:keys [lane new-index]}]
+  (or (require-entity store :swimlane lane)
+      (let [store (m/set-field store :swimlane lane :index new-index)]
+        (commit store :ReorderSwimlane [(updated store :swimlane lane)]
                 (m/fetch store :swimlane lane)))))
 
 ;; ---------------------------------------------------------------------------

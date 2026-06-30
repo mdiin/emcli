@@ -18,9 +18,12 @@
             [org.httpkit.server :as http]))
 
 (def ^:private sse-headers
-  {"Content-Type"  "text/event-stream"
-   "Cache-Control" "no-cache"
-   "Connection"    "keep-alive"})
+  {"Content-Type"                "text/event-stream"
+   "Cache-Control"               "no-cache"
+   "Connection"                  "keep-alive"
+   "Access-Control-Allow-Origin" "*"
+   "Access-Control-Allow-Methods" "GET, OPTIONS"
+   "Access-Control-Allow-Headers" "*"})
 
 (defn- sse-event [message]
   ;; one SSE event: an `op:`-tagged event line plus the JSON payload.
@@ -66,6 +69,12 @@
   (let [{:keys [request-method uri]} req
         segments (->> (str/split uri #"/") (remove str/blank?) vec)]
     (cond
+      (and (= :options request-method) (= uri "/stream"))
+      {:status 204
+       :headers {"Access-Control-Allow-Origin" "*"
+                 "Access-Control-Allow-Methods" "GET, OPTIONS"
+                 "Access-Control-Allow-Headers" "*"}}
+
       (and (= :get request-method) (= uri "/health"))
       (json-response 200 {:ok true})
 

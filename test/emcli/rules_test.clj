@@ -11,7 +11,7 @@
 (deftest create-rules-produce-entities-and-deltas
   (let [[store mid] (s/with-model)]
     (doseq [[rule args type] [[r/create-timeline {:model mid :title "T"} :timeline]
-                              [r/create-swimlane {:model mid :name "L"} :swimlane]
+                              [r/create-swimlane {:model mid :name "L" :index 0} :swimlane]
                               [r/create-element  {:model mid :name "E" :kind :command} :element]]]
       (let [{:keys [store delta result]} (s/ok store rule args)]
         (is (= type (:type result)))
@@ -51,10 +51,29 @@
         (is (= "OrderScreen" (:name el)))
         (is (= 1 (count (:fields el))))))))
 
+(deftest swimlane-ordering
+  (testing "swimlanes list by (index, id); ReorderSwimlane changes the order"
+    (let [[store mid] (s/with-model)
+          store (:store (s/ok store r/create-swimlane {:model mid :name "A" :index 0}))
+          store (:store (s/ok store r/create-swimlane {:model mid :name "B" :index 1}))
+          store (:store (s/ok store r/create-swimlane {:model mid :name "C" :index 2}))]
+      (is (= ["A" "B" "C"] (map :name (m/swimlanes store mid))))
+      (testing "create stores the explicit index"
+        (is (= [0 1 2] (map :index (m/swimlanes store mid)))))
+      (testing "reorder moves C to the front"
+        (let [cid   (:id (first (filter #(= "C" (:name %)) (m/swimlanes store mid))))
+              store (:store (s/ok store r/reorder-swimlane {:lane cid :new-index -1}))]
+          (is (= ["C" "A" "B"] (map :name (m/swimlanes store mid))))))
+      (testing "ties broken by creation order (id)"
+        (let [store (:store (s/ok store r/create-swimlane {:model mid :name "D" :index 0}))]
+          ;; A and D both index 0 -> A first (created earlier)
+          (is (= ["A" "D"] (->> (m/swimlanes store mid)
+                                (filter #(zero? (:index %))) (map :name)))))))))
+
 (deftest assign-and-delete-swimlane-cascades
   (testing "DeleteSwimlane unassigns it from elements, then removes it"
     (let [[store mid] (s/with-model)
-          store       (:store (s/ok store r/create-swimlane {:model mid :name "Orders"}))
+          store       (:store (s/ok store r/create-swimlane {:model mid :name "Orders" :index 0}))
           lane        (:id (first (m/swimlanes store mid)))
           store       (:store (s/ok store r/create-element {:model mid :name "Order" :kind :command}))
           eid         (:id (first (m/elements store mid)))

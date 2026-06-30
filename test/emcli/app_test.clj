@@ -35,7 +35,7 @@
   (testing "every snapshot entity exposes its integer id, correlatable with deltas"
     (let [a   (app/new-app "Orders")
           tl  (:result (cmd/run a "create-timeline" {:title "Ordering"}))
-          sw  (:result (cmd/run a "create-swimlane" {:name "Lane"}))
+          sw  (:result (cmd/run a "create-swimlane" {:name "Lane" :index 0}))
           sl  (:result (cmd/run a "add-slice" {:timeline (:id tl) :title "Place" :kind "state_change" :index 0}))
           cmd' (:result (cmd/run a "create-element" {:name "PlaceOrder" :kind "command"}))
           evt (:result (cmd/run a "create-element" {:name "OrderPlaced" :kind "event"}))
@@ -63,7 +63,7 @@
     (let [a (app/new-app "Orders")
           [_ msgs] (recording-sub a)] ; msgs starts with the snapshot
       (cmd/run a "create-timeline" {:title "Ordering"})
-      (cmd/run a "create-swimlane" {:name "Lane"})
+      (cmd/run a "create-swimlane" {:name "Lane" :index 0})
       (is (= 3 (count @msgs)))                       ; snapshot + 2 deltas
       (is (= [:snapshot :CreateTimeline :CreateSwimlane] (map :op @msgs))))))
 

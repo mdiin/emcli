@@ -190,13 +190,16 @@
           (keys array->kind)))
 
 (defn- ensure-swimlane
-  "Find-or-create a swimlane by name; returns [store lane-id]."
+  "Find-or-create a swimlane by name; returns [store lane-id]. The schema carries
+  no aggregate ordering, so reimported swimlanes get an index in creation order
+  (the documented Swimlane.index fallback)."
   [store model-id name]
   (if (or (nil? name) (= "" name))
     [store nil]
     (if-let [lane (first (m/by-field store :swimlane :name name))]
       [store (:id lane)]
-      (let [{:keys [store result]} (r/create-swimlane store {:model model-id :name name})]
+      (let [idx (count (m/swimlanes store model-id))
+            {:keys [store result]} (r/create-swimlane store {:model model-id :name name :index idx})]
         [store (:id result)]))))
 
 (defn- resolve-far

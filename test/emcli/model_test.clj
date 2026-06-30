@@ -63,7 +63,7 @@
   (let [[store mid] (s/with-model)
         store       (:store (s/ok store r/create-timeline {:model mid :title "A"}))
         store       (:store (s/ok store r/create-timeline {:model mid :title "B"}))
-        store       (:store (s/ok store r/create-swimlane {:model mid :name "Lane"}))]
+        store       (:store (s/ok store r/create-swimlane {:model mid :name "Lane" :index 0}))]
     (is (= 2 (count (m/timelines store mid))))
     (is (= 1 (count (m/swimlanes store mid))))
     (is (= ["A" "B"] (map :title (m/timelines store mid))))))

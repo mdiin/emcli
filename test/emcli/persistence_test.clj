@@ -58,7 +58,7 @@
         (let [a (app/open-app "Fresh" file)]
           (is (fs/exists? file))
           (is (= "Fresh" (:name (m/fetch (app/store a) :event-model (app/model-id a)))))
-          (cmd/run a "create-swimlane" {:name "Lane"})))
+          (cmd/run a "create-swimlane" {:name "Lane" :index 0})))
       (testing "open-app on an existing file loads it (ignores the name arg)"
         (let [b (app/open-app "Ignored" file)]
           (is (= "Fresh" (:name (m/fetch (app/store b) :event-model (app/model-id b)))))

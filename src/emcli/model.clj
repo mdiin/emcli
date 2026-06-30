@@ -97,7 +97,12 @@
 ;; ---------------------------------------------------------------------------
 
 (defn timelines     [store model-id] (by-field store :timeline :model model-id))
-(defn swimlanes     [store model-id] (by-field store :swimlane :model model-id))
+(defn swimlanes
+  "Swimlanes of a model, in author-controlled order: by :index then id (ties and
+  any unset index fall back to creation order), mirroring slice ordering."
+  [store model-id]
+  (->> (by-field store :swimlane :model model-id)
+       (sort-by (juxt #(or (:index %) 0) :id))))
 (defn elements      [store model-id] (by-field store :element :model model-id))
 (defn connections   [store model-id] (by-field store :connection :model model-id))
 (defn subscriptions [store model-id] (by-field store :subscription :model model-id))

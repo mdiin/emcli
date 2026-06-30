@@ -56,7 +56,8 @@
 ;; endpoint expects (and which maps to a ModelAuthoring operation).
 (def command-groups
   {"timeline"   {"add" "create-timeline" "rename" "rename-timeline" "delete" "delete-timeline"}
-   "swimlane"   {"add" "create-swimlane" "rename" "rename-swimlane" "delete" "delete-swimlane"}
+   "swimlane"   {"add" "create-swimlane" "rename" "rename-swimlane"
+                 "reorder" "reorder-swimlane" "delete" "delete-swimlane"}
    "slice"      {"add" "add-slice" "reorder" "reorder-slice" "status" "set-slice-status"
                  "kind" "set-slice-kind" "delete" "delete-slice"}
    "element"    {"add" "create-element" "fields" "set-fields" "context" "set-element-context"

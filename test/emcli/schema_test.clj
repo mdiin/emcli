@@ -13,7 +13,7 @@
 ;; complete specification.
 (defn- build-model []
   (let [[store mid] (s/with-model "Orders")
-        store       (:store (s/ok store r/create-swimlane {:model mid :name "OrderLane"}))
+        store       (:store (s/ok store r/create-swimlane {:model mid :name "OrderLane" :index 0}))
         lane        (:id (first (m/swimlanes store mid)))
         ;; elements
         mk          (fn [s name kind] (let [s (:store (s/ok s r/create-element {:model mid :name name :kind kind}))]
@@ -155,6 +155,25 @@
       (testing "but are gone after a schema round-trip (documented loss)"
         (is (every? #(empty? (:derivations %)) (m/connections store2 mid2)))
         (is (every? #(empty? (:field_origins %)) (m/elements store2 mid2)))))))
+
+(deftest swimlane-index-is-dropped-on-roundtrip
+  (testing "Swimlane.index has no schema representation: order is dropped on
+            export, reimported swimlanes fall back to creation order (names kept)"
+    (let [[store mid] (build-model)              ; build-model makes one swimlane "OrderLane"
+          ;; author an order that differs from creation order
+          store (:store (s/ok store r/create-swimlane {:model mid :name "Second" :index 0}))
+          first-lane (:id (first (filter #(= "OrderLane" (:name %)) (m/swimlanes store mid))))
+          store (:store (s/ok store r/reorder-swimlane {:lane first-lane :new-index 5}))]
+      ;; live: "Second" (index 0) now sorts before "OrderLane" (index 5)
+      (is (= ["Second" "OrderLane"] (map :name (m/swimlanes store mid))))
+      (let [[store2 mid2] (sc/import-model (sc/export store mid))
+            lanes (m/swimlanes store2 mid2)]
+        (testing "swimlane names survive (via element.aggregate)"
+          ;; only swimlanes referenced as an aggregate are carried by the schema
+          (is (some #(= "OrderLane" (:name %)) lanes)))
+        (testing "reimported indices are creation-order, not the authored order"
+          (is (= (map :index lanes) (sort (map :index lanes))))
+          (is (apply <= (map :id lanes))))))))
 
 (deftest model-roundtrip-survives-json
   (testing "round-trip through JSON text is lossless at the semantic level"

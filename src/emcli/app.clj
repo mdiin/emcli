@@ -112,7 +112,7 @@
                                                      :element {:id (:id el) :name (:name el) :kind (:kind el)
                                                                :is_information_complete (m/information-complete? s el)}})})})
              :swimlanes   (for [sw (m/swimlanes s mid)]
-                            {:id (:id sw) :name (:name sw)})
+                            {:id (:id sw) :name (:name sw) :index (:index sw)})
              :connections (for [c (m/connections s mid)
                                 :let [from (m/fetch s :element (:from c))
                                       to   (m/fetch s :element (:to c))]]

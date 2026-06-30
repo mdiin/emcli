@@ -24,8 +24,9 @@
    "rename-timeline"     {:rule r/rename-timeline     :params [[:timeline :timeline :int true] [:new-title :new-title :str true]]}
    "delete-timeline"     {:rule r/delete-timeline     :params [[:timeline :timeline :int true]]}
    ;; Swimlanes
-   "create-swimlane"     {:rule r/create-swimlane     :model? true  :params [[:name :name :str true]]}
+   "create-swimlane"     {:rule r/create-swimlane     :model? true  :params [[:name :name :str true] [:index :index :int true]]}
    "rename-swimlane"     {:rule r/rename-swimlane     :params [[:lane :lane :int true] [:new-name :new-name :str true]]}
+   "reorder-swimlane"    {:rule r/reorder-swimlane    :params [[:lane :lane :int true] [:new-index :new-index :int true]]}
    "delete-swimlane"     {:rule r/delete-swimlane     :params [[:lane :lane :int true]]}
    ;; Slices
    "add-slice"           {:rule r/add-slice           :params [[:timeline :timeline :int true] [:title :title :str true] [:kind :kind :kw true] [:index :index :int true]]}
@@ -157,7 +158,7 @@
                                                            :is_error (:is_error st)
                                                            :error_name (:error_name st)
                                                            :spec_title (:title sp)})})})})
-     :swimlanes   (map :name (m/swimlanes s mid))
+     :swimlanes   (for [sw (m/swimlanes s mid)] {:name (:name sw) :index (:index sw)})
      :elements    (for [e (m/elements s mid)]
                     {:name (:name e) :kind (:kind e)
                      :is_information_complete (m/information-complete? s e)})
