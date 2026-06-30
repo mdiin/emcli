@@ -50,6 +50,11 @@ entity Subscription {
 entity Swimlane {
     model: EventModel
     name: String
+    -- Author-controlled display order within the model, so a frontend renders
+    -- swimlanes top-to-bottom as the author arranged them. A sort key only:
+    -- non-unique and non-contiguous, ties broken by creation order. Carries no
+    -- eventmodeling.schema.json representation (see SchemaCodec dropped fields).
+    index: Integer
 }
 
 -- A named flow. Maps to the schema's slice.context: every slice in this
@@ -273,13 +278,18 @@ rule RenameTimeline {
 -- Swimlanes -----------------------------------------------------------------
 
 rule CreateSwimlane {
-    when: CreateSwimlane(model, name)
-    ensures: Swimlane.created(model: model, name: name)
+    when: CreateSwimlane(model, name, index)
+    ensures: Swimlane.created(model: model, name: name, index: index)
 }
 
 rule RenameSwimlane {
     when: RenameSwimlane(lane, new_name)
     ensures: lane.name = new_name
+}
+
+rule ReorderSwimlane {
+    when: ReorderSwimlane(lane, new_index)
+    ensures: lane.index = new_index
 }
 
 rule RenameElement {
@@ -586,10 +596,10 @@ contract SchemaCodec {
         -- For any export-ready model the CLI can author, import(export(model))
         -- reproduces the schema-representable canonical subset exactly. The
         -- canonical model is the source of truth, so everything the interchange
-        -- format can carry round-trips without loss. Authoring-only provenance
-        -- metadata that the eventmodeling.schema.json format has no place for -
-        -- Connection.derivations and Element.field_origins (see the dropped-
-        -- fields guidance) - is excluded from this guarantee; it is dropped on
+        -- format can carry round-trips without loss. Fields the
+        -- eventmodeling.schema.json format has no place for - Connection.derivations,
+        -- Element.field_origins and Swimlane.index (see the dropped-fields
+        -- guidance) - are excluded from this guarantee; they are dropped on
         -- export like the other unrepresentable fields.
 
     @invariant SchemaRoundtrip
@@ -634,6 +644,10 @@ contract SchemaCodec {
         --     on export and not reconstructed on import. A model that relies on
         --     derivations/overrides to be information-complete will read as
         --     incomplete after a schema round-trip; this is the documented loss.
+        --   * Swimlane.index: author-controlled render order. The schema has no
+        --     aggregate ordering (aggregates are bare names on elements), so the
+        --     order is dropped on export; swimlane NAMES still round-trip via
+        --     element.aggregate. Reimported swimlanes fall back to creation order.
         -- Preserved mappings: slice.context <-> Timeline.title;
         --   element.aggregate <-> Swimlane.name; sliceType <-> Slice.kind;
         --   element.context <-> Element.context;
@@ -718,6 +732,7 @@ surface ModelAuthoring {
 
         for sw in model.swimlanes:
             sw.name
+            sw.index
 
         for el in model.elements:
             el.name
@@ -737,8 +752,9 @@ surface ModelAuthoring {
         DeleteTimeline(timeline)
 
         -- Swimlanes
-        CreateSwimlane(model, name)
+        CreateSwimlane(model, name, index)
         RenameSwimlane(lane, new_name)
+        ReorderSwimlane(lane, new_index)
         DeleteSwimlane(lane)
 
         -- Slices
@@ -817,6 +833,8 @@ surface ModelChangeStream {
                     p.element.is_information_complete
         for sw in subscription.model.swimlanes:
             sw.name
+            -- Author-controlled order, so the frontend stacks swimlanes correctly.
+            sw.index
         for c in subscription.model.connections:
             c.from.name
             c.to.name
