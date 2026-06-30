@@ -122,6 +122,86 @@
       (println (str "Imported model from " in))
       (die (str "✗ import: " (:body resp))))))
 
+;; --- manifest (--manifest) -------------------------------------------------
+
+;; Semantic refs for integer flags: the JSON path in the `emcli show` output
+;; where the id can be found.
+(def ^:private param-refs
+  {"timeline"   "timelines[].id"
+   "slice"      "timelines[].slices[].id"
+   "element"    "elements[].id"
+   "lane"       "swimlanes[].id"
+   "placement"  "timelines[].slices[].placements[].id"
+   "connection" "connections[].id"
+   "spec"       "timelines[].slices[].specifications[].id"
+   "step"       "timelines[].slices[].specifications[].steps[].id"
+   "from"       "elements[].id"
+   "to"         "elements[].id"})
+
+;; Valid keyword values per (command, flag) — only listed when the rule enforces
+;; a bounded set; free-form keyword flags are left without :values.
+(def ^:private param-enums
+  {"add-slice"        {"kind"       ["state_change" "state_view" "automation" "informational"]}
+   "set-slice-status" {"new-status" ["created" "in_progress" "done" "informational"]}
+   "set-slice-kind"   {"new-kind"   ["state_change" "state_view" "automation" "informational"]}
+   "create-element"   {"kind"       ["command" "event" "read_model" "screen" "automation"]}
+   "add-spec-step"    {"clause"     ["given_step" "when_step" "then_step"]}})
+
+;; Full param specs for structured (JSON-valued) commands that are not in the
+;; registry — their args are coerced by `prepare` in this ns.
+(def ^:private structured-manifest-params
+  {"set-fields"
+   [{:flag "element" :type "int" :required true :ref "elements[].id"}
+    {:flag "fields-json" :type "json" :required true
+     :note "JSON array of field objects, e.g. [{\"name\":\"orderId\",\"type\":\"string\"}]"}]
+   "set-step-examples"
+   [{:flag "step" :type "int" :required true :ref "timelines[].slices[].specifications[].steps[].id"}
+    {:flag "examples-json" :type "json" :required true
+     :note "JSON array of example objects"}]
+   "set-field-origins"
+   [{:flag "element" :type "int" :required true :ref "elements[].id"}
+    {:flag "origins-json" :type "json" :required true
+     :note "JSON array of field-origin objects, e.g. [{\"field\":\"orderId\",\"origin\":\"introduced\"}]"}]
+   "set-connection-derivations"
+   [{:flag "connection" :type "int" :required true :ref "connections[].id"}
+    {:flag "derivations-json" :type "json" :required true
+     :note "JSON array of derivation objects, e.g. [{\"target_field\":\"orderId\",\"source_fields\":[\"id\"]}]"}]
+   "add-field-origin"
+   [{:flag "element" :type "int" :required true :ref "elements[].id"}
+    {:flag "field" :type "string" :required true :note "field name on the element"}
+    {:flag "origin" :type "keyword" :required true
+     :note "how the field is introduced; common values: introduced, carried, derived"}]
+   "add-derivation"
+   [{:flag "connection" :type "int" :required true :ref "connections[].id"}
+    {:flag "target" :type "string" :required true :note "target field name on the to-element"}
+    {:flag "from" :type "string" :required true
+     :note "comma-separated source field names from the from-element"}]})
+
+(def ^:private type-names {:str "string" :int "int" :kw "keyword" :bool "boolean"})
+
+(defn- registry-param->manifest [command [opt-key _ type required?]]
+  (let [flag (name opt-key)
+        base {:flag flag :type (type-names type) :required required?}
+        ref  (param-refs flag)
+        vals (get-in param-enums [command flag])]
+    (cond-> base
+      ref  (assoc :ref ref)
+      vals (assoc :values vals))))
+
+(defn- command->manifest-params [command]
+  (if-let [reg-params (:params (cmd/registry command))]
+    (mapv #(registry-param->manifest command %) reg-params)
+    (or (structured-manifest-params command) [])))
+
+(defn- build-manifest []
+  {:_instructions "Run `emcli show` to read entity ids required by authoring commands. Pass flags as --flag value."
+   :groups
+   (into (sorted-map)
+         (for [[group verbs] (sort command-groups)]
+           [group (into (sorted-map)
+                        (for [[verb command] (sort verbs)]
+                          [verb {:params (command->manifest-params command)}]))]))})
+
 ;; --- help & dispatch -------------------------------------------------------
 
 (defn- print-group [group]
@@ -134,13 +214,16 @@
   (println "emcli — author Event Models from the command line\n")
   (println "Usage: emcli <entity> <verb> [--opt value ...] [--server URL]")
   (println "       emcli <command> [...]            (process / inspect commands)\n")
+  (println "Discovery:")
+  (println "  --manifest                              machine-readable JSON schema of all commands")
+  (println "  <entity>                                list verbs for that entity\n")
   (println "Process:")
   (println "  serve     [--port 8090] [--name NAME] [--file PATH]")
   (println "                                          start the model server (SSE + authoring).")
   (println "                                          --file loads/persists the model as EDN,")
   (println "                                          flushed on every write for crash recovery.\n")
   (println "Inspect:")
-  (println "  show                                    print the canonical model snapshot")
+  (println "  show                                    print the canonical model snapshot (includes entity ids)")
   (println "  validate                                report slices/specs/elements not yet complete")
   (println "  export    [--out FILE]                  export the eventmodeling.schema.json")
   (println "  import    --in FILE                     import an eventmodeling.schema.json\n")
@@ -160,6 +243,7 @@
         head (first argv)]
     (cond
       (or (nil? head) (= "help" head)) (print-help)
+      (= "--manifest" head) (emit (build-manifest))
       (= "serve" head)    (do-serve (cli/parse-opts (rest argv)))
       (= "show" head)     (do-show (cli/parse-opts (rest argv)))
       (= "validate" head) (do-validate (cli/parse-opts (rest argv)))

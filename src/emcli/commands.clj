@@ -178,30 +178,36 @@
         mid (app/model-id app)]
     {:name (:name (m/fetch s :event-model mid))
      :timelines (for [t (m/timelines s mid)]
-                  {:title (:title t)
+                  {:id (:id t) :title (:title t)
                    :slices (for [sl (m/slices s (:id t))
                                  :let [sid (:id sl)]]
-                             {:title (:title sl) :kind (:kind sl) :status (:status sl)
+                             {:id sid :title (:title sl) :kind (:kind sl) :status (:status sl)
                               :index (:index sl) :is_complete (m/slice-complete? s sl)
                               :timeline_title (:title t)
-                              :placements (map #(:name (m/placement-element s %)) (m/placements s sid))
+                              :placements (for [p (m/placements s sid)]
+                                            {:id (:id p)
+                                             :element_id (:element p)
+                                             :element_name (:name (m/placement-element s p))})
                               :events (map #(:name (m/placement-element s %)) (m/slice-events s sid))
                               :screens (map #(:name (m/placement-element s %)) (m/slice-screens s sid))
                               :specifications (for [sp (m/specs s sid)]
-                                                {:title (:title sp)
+                                                {:id (:id sp) :title (:title sp)
                                                  :is_complete (m/spec-complete? s sp)
                                                  :steps (for [st (m/spec-steps s (:id sp))]
-                                                          {:clause (:clause st) :index (:index st)
+                                                          {:id (:id st) :clause (:clause st) :index (:index st)
                                                            :is_error (:is_error st)
                                                            :error_name (:error_name st)
+                                                           :element_id (:element st)
+                                                           :element_name (some-> (m/step-element s st) :name)
                                                            :spec_title (:title sp)})})})})
-     :swimlanes   (for [sw (m/swimlanes s mid)] {:name (:name sw) :index (:index sw)})
+     :swimlanes   (for [sw (m/swimlanes s mid)] {:id (:id sw) :name (:name sw) :index (:index sw)})
      :elements    (for [e (m/elements s mid)]
-                    {:name (:name e) :kind (:kind e)
+                    {:id (:id e) :name (:name e) :kind (:kind e)
                      :is_information_complete (m/information-complete? s e)})
      :connections (for [c (m/connections s mid)]
-                    {:from (:name (m/fetch s :element (:from c)))
-                     :to   (:name (m/fetch s :element (:to c)))})}))
+                    {:id (:id c)
+                     :from_id (:from c) :from_name (:name (m/fetch s :element (:from c)))
+                     :to_id   (:to c)   :to_name   (:name (m/fetch s :element (:to c)))})}))
 
 ;; ValidateModel (the surface @guidance operation): report slices/specs that are
 ;; not is_complete, elements that are not is_information_complete, and orphaned

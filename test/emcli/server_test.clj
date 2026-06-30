@@ -44,10 +44,12 @@
           view (body-json (get* "/model"))
           slice (-> view :timelines first :slices first)]
       (is (= "Orders" (:name view)))
-      (is (= [{:name "PlaceOrder" :kind "command" :is_information_complete true}] (:elements view)))
+      (is (= ["PlaceOrder"] (map :name (:elements view))))
+      (is (some? (:id (first (:elements view)))) "elements carry id")
       (is (true? (:is_complete slice)) "slice with one command is complete")
       (is (= "Ordering" (:timeline_title slice)))
-      (is (= ["PlaceOrder"] (:placements slice)))
+      (is (= ["PlaceOrder"] (map :element_name (:placements slice))))
+      (is (some? (:id (first (:placements slice)))) "placements carry id")
       (is (= 1 (count (:specifications slice))))
       (is (false? (-> slice :specifications first :is_complete)) "spec has no when-command yet"))))
 
