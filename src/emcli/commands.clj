@@ -52,6 +52,7 @@
    "delete-element"      {:rule r/delete-element      :params [[:element :element :int true]]}
    ;; Placements
    "place-element"       {:rule r/place-element       :params [[:slice :slice :int true] [:element :element :int true]]}
+   "reorder-placement"   {:rule r/reorder-placement   :params [[:placement :placement :int true] [:new-index :new-index :int true]]}
    "remove-placement"    {:rule r/remove-placement    :params [[:placement :placement :int true]]}
    ;; Connections
    "connect"             {:rule r/connect             :params [[:from :from :int true] [:to :to :int true]]}

@@ -66,7 +66,7 @@
                  "swimlane" "assign-swimlane" "image" "set-image-url"
                  "origins" "set-field-origins" "origin" "add-field-origin"
                  "rename" "rename-element" "delete" "delete-element"}
-   "placement"  {"add" "place-element" "remove" "remove-placement"}
+   "placement"  {"add" "place-element" "reorder" "reorder-placement" "remove" "remove-placement"}
    "connection" {"add" "connect" "remove" "disconnect"
                  "derivations" "set-connection-derivations" "derive" "add-derivation"}
    "spec"       {"add" "add-specification" "delete" "delete-specification"}

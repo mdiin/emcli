@@ -114,7 +114,11 @@
   (->> (by-field store :slice :timeline timeline-id)
        (sort-by (juxt :index :id))))
 
-(defn placements   [store slice-id] (by-field store :placement :slice slice-id))
+(defn placements
+  "Placements of a slice, ordered by :index then id."
+  [store slice-id]
+  (->> (by-field store :placement :slice slice-id)
+       (sort-by (juxt :index :id))))
 (defn specs        [store slice-id] (by-field store :specification :slice slice-id))
 (defn spec-steps
   "Steps of a specification, ordered by :index then id."
