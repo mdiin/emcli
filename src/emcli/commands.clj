@@ -52,6 +52,7 @@
    "delete-element"      {:rule r/delete-element      :params [[:element :element :int true]]}
    ;; Placements
    "place-element"       {:rule r/place-element       :params [[:slice :slice :int true] [:element :element :int true]]}
+   "reorder-placement"   {:rule r/reorder-placement   :params [[:placement :placement :int true] [:new-index :new-index :int true]]}
    "remove-placement"    {:rule r/remove-placement    :params [[:placement :placement :int true]]}
    ;; Connections
    "connect"             {:rule r/connect             :params [[:from :from :int true] [:to :to :int true]]}
@@ -185,7 +186,7 @@
                               :index (:index sl) :is_complete (m/slice-complete? s sl)
                               :timeline_title (:title t)
                               :placements (for [p (m/placements s sid)]
-                                            {:id (:id p)
+                                            {:id (:id p) :index (:index p)
                                              :element_id (:element p)
                                              :element_name (:name (m/placement-element s p))})
                               :events (map #(:name (m/placement-element s %)) (m/slice-events s sid))
@@ -203,6 +204,7 @@
      :swimlanes   (for [sw (m/swimlanes s mid)] {:id (:id sw) :name (:name sw) :index (:index sw)})
      :elements    (for [e (m/elements s mid)]
                     {:id (:id e) :name (:name e) :kind (:kind e)
+                     :swimlane (:swimlane e)
                      :is_information_complete (m/information-complete? s e)})
      :connections (for [c (m/connections s mid)]
                     {:id (:id c)

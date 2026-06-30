@@ -198,8 +198,18 @@
 (defn place-element [store {:keys [slice element]}]
   (or (require-entity store :slice slice)
       (require-entity store :element element)
-      (let [[store p] (m/create store :placement {:slice slice :element element})]
+      (let [existing  (m/placements store slice)
+            next-idx  (if (seq existing)
+                        (inc (apply max (map #(or (:index %) 0) existing)))
+                        0)
+            [store p] (m/create store :placement {:slice slice :element element :index next-idx})]
         (commit store :PlaceElement [(created :placement p)] p))))
+
+(defn reorder-placement [store {:keys [placement new-index]}]
+  (or (require-entity store :placement placement)
+      (let [store (m/set-field store :placement placement :index new-index)]
+        (commit store :ReorderPlacement [(updated store :placement placement)]
+                (m/fetch store :placement placement)))))
 
 (defn remove-placement [store {:keys [placement]}]
   (or (require-entity store :placement placement)

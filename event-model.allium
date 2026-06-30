@@ -113,6 +113,10 @@ entity Slice {
 entity ElementPlacement {
     slice: Slice
     element: Element
+    -- Author-controlled display order of this placement within its slice, so a
+    -- frontend renders placements in the order the author arranged them. A sort
+    -- key only: non-unique and non-contiguous, ties broken by creation order.
+    index: Integer
 }
 
 entity Element {
@@ -322,6 +326,11 @@ rule AddSlice {
 rule ReorderSlice {
     when: ReorderSlice(slice, new_index)
     ensures: slice.index = new_index
+}
+
+rule ReorderPlacement {
+    when: ReorderPlacement(placement, new_index)
+    ensures: placement.index = new_index
 }
 
 rule SetSliceStatus {
@@ -776,6 +785,7 @@ surface ModelAuthoring {
 
         -- Placements
         PlaceElement(slice, element)
+        ReorderPlacement(placement, new_index)
         RemovePlacement(placement)
 
         -- Connections (a command is triggered only via a screen -> command or
