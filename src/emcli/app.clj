@@ -111,7 +111,9 @@
                                                     {:id (:id p) :index (:index p)
                                                      :element {:id (:id el) :name (:name el) :kind (:kind el)
                                                                :swimlane (:swimlane el)
-                                                               :is_information_complete (m/information-complete? s el)}})})})
+                                                               :is_information_complete (m/information-complete? s el)
+                                                               :fields (for [f (:fields el)]
+                                                                         (select-keys f [:name :type :optional :cardinality]))}})})})
              :swimlanes   (for [sw (m/swimlanes s mid)]
                             {:id (:id sw) :name (:name sw) :index (:index sw)})
              :connections (for [c (m/connections s mid)

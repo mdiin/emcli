@@ -841,6 +841,16 @@ surface ModelChangeStream {
                     -- Per-element completeness, so the frontend can render which
                     -- elements still have unsourced fields.
                     p.element.is_information_complete
+                    -- Field shape only (name/type/optional/cardinality), so the
+                    -- frontend can render an element's fields directly on the
+                    -- canvas. Nested subfields are not streamed here; the full
+                    -- Field shape (subfields included) is only ever set whole
+                    -- via SetFields and read back through SchemaCodec export.
+                    for f in p.element.fields:
+                        f.name
+                        f.type
+                        f.optional
+                        f.cardinality
         for sw in subscription.model.swimlanes:
             sw.name
             -- Author-controlled order, so the frontend stacks swimlanes correctly.

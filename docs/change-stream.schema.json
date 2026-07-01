@@ -53,7 +53,7 @@
                               "id": { "type": "integer", "description": "ElementPlacement id" },
                               "element": {
                                 "type": "object",
-                                "required": ["id", "name", "kind", "is_information_complete"],
+                                "required": ["id", "name", "kind", "is_information_complete", "fields"],
                                 "additionalProperties": false,
                                 "properties": {
                                   "id": { "type": "integer", "description": "Element id (correlates with element deltas)" },
@@ -62,6 +62,11 @@
                                   "is_information_complete": {
                                     "type": "boolean",
                                     "description": "True iff every field on the element is sourced (carried, derived or introduced)."
+                                  },
+                                  "fields": {
+                                    "type": "array",
+                                    "description": "Shape only (subfields are not streamed here); see SnapshotField.",
+                                    "items": { "$ref": "#/$defs/SnapshotField" }
                                   }
                                 }
                               }
@@ -320,6 +325,19 @@
         "optional": { "type": "boolean" },
         "cardinality": { "$ref": "#/$defs/fieldCardinality" },
         "subfields": { "type": "array", "items": { "$ref": "#/$defs/Field" } }
+      }
+    },
+
+    "SnapshotField": {
+      "description": "A field as streamed on a snapshot placement's element: shape only, no subfields. The full recursive Field shape (subfields included) travels only in delta entities.",
+      "type": "object",
+      "required": ["name", "type", "optional", "cardinality"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "type": { "$ref": "#/$defs/fieldType" },
+        "optional": { "type": "boolean" },
+        "cardinality": { "$ref": "#/$defs/fieldCardinality" }
       }
     },
     "Example": {

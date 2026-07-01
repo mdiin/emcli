@@ -52,11 +52,30 @@
       (is (= (:id sl) (:id s1)))
       (is (= (:id sw) (:id (first (:swimlanes model)))))
       (is (= (:id pl) (:id p1)))
-      (is (= {:id (:id cmd') :name "PlaceOrder" :kind :command :swimlane nil :is_information_complete true}
+      (is (= {:id (:id cmd') :name "PlaceOrder" :kind :command :swimlane nil :is_information_complete true :fields []}
              (:element p1)))
       (is (= (:id cn) (:id c1)))
       (is (= {:id (:id cmd') :name "PlaceOrder"} (:from c1)))
       (is (= {:id (:id evt) :name "OrderPlaced"} (:to c1))))))
+
+(deftest snapshot-carries-placed-element-fields
+  (testing "an element's fields are streamed flat under its placement (subfields dropped)"
+    (let [a    (app/new-app "Orders")
+          tl   (:result (cmd/run a "create-timeline" {:title "Ordering"}))
+          sl   (:result (cmd/run a "add-slice" {:timeline (:id tl) :title "Place" :kind "state_change" :index 0}))
+          cmd' (:result (cmd/run a "create-element" {:name "PlaceOrder" :kind "command"}))
+          _    (cmd/run a "set-fields" {:element (:id cmd')
+                                        :fields [{:name "id" :type :uuid :optional false
+                                                  :cardinality :single
+                                                  :subfields [{:name "nested" :type :string
+                                                               :optional false :cardinality :single
+                                                               :subfields []}]}]})
+          _    (cmd/run a "place-element" {:slice (:id sl) :element (:id cmd')})
+          [_ msgs] (recording-sub a)
+          model (:model (first @msgs))
+          p1    (first (:placements (first (:slices (first (:timelines model))))))]
+      (is (= [{:name "id" :type :uuid :optional false :cardinality :single}]
+             (:fields (:element p1)))))))
 
 (deftest delta-per-mutation
   (testing "DeltaPerMutation: each ModelAuthoring mutation yields exactly one delta"
