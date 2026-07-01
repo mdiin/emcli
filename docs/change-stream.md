@@ -63,7 +63,9 @@ Populated:
           { "id": 6, "title": "Place order", "kind": "state_change", "status": "created", "index": 0,
             "placements": [
               { "id": 7, "element": { "id": 2, "name": "PlaceOrder", "kind": "command",
-                                      "is_information_complete": true } }
+                                      "is_information_complete": true,
+                                      "fields": [ { "name": "id", "type": "uuid",
+                                                    "optional": false, "cardinality": "single" } ] } }
             ] }
         ] }
     ],
@@ -82,6 +84,12 @@ Each placed element carries `is_information_complete` (true iff every field on
 it is sourced — carried, derived, or introduced), and each connection carries
 its `derivations` (per-field provenance: `target_field` ← `source_fields`), so a
 visualiser can render completeness and field flow directly from the snapshot.
+
+Each placed element's `fields` gives the shape only — `name`, `type`,
+`optional`, `cardinality` — so a visualiser can render an element's fields
+directly on the canvas. Nested `subfields` are NOT streamed here (only the
+canonical delta `entity.fields` carries the full recursive Field shape); fetch
+`GET /model` or the SchemaCodec export for that.
 
 The ids correlate directly with deltas: the placement `id` matches a
 `PlaceElement` delta's entity id, `element.id` matches `CreateElement`,
