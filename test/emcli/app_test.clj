@@ -77,6 +77,28 @@
       (is (= [{:name "id" :type :uuid :optional false :cardinality :single}]
              (:fields (:element p1)))))))
 
+(deftest snapshot-carries-specifications-with-examples
+  (testing "a slice's specifications, steps and their examples are streamed in the snapshot"
+    (let [a    (app/new-app "Orders")
+          tl   (:result (cmd/run a "create-timeline" {:title "Ordering"}))
+          sl   (:result (cmd/run a "add-slice" {:timeline (:id tl) :title "Place" :kind "state_change" :index 0}))
+          el   (:result (cmd/run a "create-element" {:name "PlaceOrder" :kind "command"}))
+          sp   (:result (cmd/run a "add-specification" {:slice (:id sl) :title "Happy path"}))
+          st   (:result (cmd/run a "add-spec-step" {:spec (:id sp) :clause :when_step :element (:id el) :index 0}))
+          _    (cmd/run a "set-step-examples" {:step (:id st)
+                                                :examples [{:field_name "id" :field_value "1"}]})
+          [_ msgs] (recording-sub a)
+          model (:model (first @msgs))
+          slice (first (:slices (first (:timelines model))))
+          spec1 (first (:specifications slice))
+          step1 (first (:steps spec1))]
+      (is (= (:id sp) (:id spec1)))
+      (is (= "Happy path" (:title spec1)))
+      (is (true? (:is_complete spec1)))
+      (is (= (:id st) (:id step1)))
+      (is (= :when_step (:clause step1)))
+      (is (= [{:field_name "id" :field_value "1"}] (:examples step1))))))
+
 (deftest delta-per-mutation
   (testing "DeltaPerMutation: each ModelAuthoring mutation yields exactly one delta"
     (let [a (app/new-app "Orders")

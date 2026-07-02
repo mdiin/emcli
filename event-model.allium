@@ -738,6 +738,9 @@ surface ModelAuthoring {
                         st.is_error
                         st.error_name
                         st.spec.title
+                        for ex in st.examples:
+                            ex.field_name
+                            ex.field_value
 
         for sw in model.swimlanes:
             sw.name
@@ -851,6 +854,17 @@ surface ModelChangeStream {
                         f.type
                         f.optional
                         f.cardinality
+                for spec in s.specifications:
+                    spec.title
+                    spec.is_complete
+                    for st in spec.steps:
+                        st.clause
+                        st.index
+                        st.is_error
+                        st.error_name
+                        for ex in st.examples:
+                            ex.field_name
+                            ex.field_value
         for sw in subscription.model.swimlanes:
             sw.name
             -- Author-controlled order, so the frontend stacks swimlanes correctly.

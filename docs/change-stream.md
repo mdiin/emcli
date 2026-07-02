@@ -66,6 +66,13 @@ Populated:
                                       "is_information_complete": true,
                                       "fields": [ { "name": "id", "type": "uuid",
                                                     "optional": false, "cardinality": "single" } ] } }
+            ],
+            "specifications": [
+              { "id": 9, "title": "Happy path", "is_complete": true,
+                "steps": [
+                  { "id": 10, "clause": "when_step", "index": 0, "is_error": false, "error_name": null,
+                    "examples": [ { "field_name": "id", "field_value": "1" } ] }
+                ] }
             ] }
         ] }
     ],
@@ -84,6 +91,14 @@ Each placed element carries `is_information_complete` (true iff every field on
 it is sourced — carried, derived, or introduced), and each connection carries
 its `derivations` (per-field provenance: `target_field` ← `source_fields`), so a
 visualiser can render completeness and field flow directly from the snapshot.
+
+Each slice also carries its `specifications[]`: each one's `is_complete` (see
+`SpecificationCompleteness` — one `when_step` naming a command for a
+`state_change`/`automation` slice, or one `then_step` naming a read model for a
+`state_view` slice) and its `steps[]` in order, each step carrying its
+`examples[]` (`field_name`/`field_value` pairs). This is the same shape
+`GET /model` exposes per step, so a visualiser can render given/when/then rows
+with example data straight from either source.
 
 Each placed element's `fields` gives the shape only — `name`, `type`,
 `optional`, `cardinality` — so a visualiser can render an element's fields

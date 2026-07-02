@@ -200,7 +200,9 @@
                                                            :error_name (:error_name st)
                                                            :element_id (:element st)
                                                            :element_name (some-> (m/step-element s st) :name)
-                                                           :spec_title (:title sp)})})})})
+                                                           :spec_title (:title sp)
+                                                           :examples (for [e (:examples st)]
+                                                                       (select-keys e [:field_name :field_value]))})})})})
      :swimlanes   (for [sw (m/swimlanes s mid)] {:id (:id sw) :name (:name sw) :index (:index sw)})
      :elements    (for [e (m/elements s mid)]
                     {:id (:id e) :name (:name e) :kind (:kind e)

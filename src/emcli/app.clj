@@ -113,7 +113,16 @@
                                                                :swimlane (:swimlane el)
                                                                :is_information_complete (m/information-complete? s el)
                                                                :fields (for [f (:fields el)]
-                                                                         (select-keys f [:name :type :optional :cardinality]))}})})})
+                                                                         (select-keys f [:name :type :optional :cardinality]))}})
+                                      :specifications (for [sp (m/specs s (:id sl))]
+                                                        {:id (:id sp) :title (:title sp)
+                                                         :is_complete (m/spec-complete? s sp)
+                                                         :steps (for [st (m/spec-steps s (:id sp))]
+                                                                  {:id (:id st) :clause (:clause st) :index (:index st)
+                                                                   :is_error (:is_error st)
+                                                                   :error_name (:error_name st)
+                                                                   :examples (for [e (:examples st)]
+                                                                               (select-keys e [:field_name :field_value]))})})})})
              :swimlanes   (for [sw (m/swimlanes s mid)]
                             {:id (:id sw) :name (:name sw) :index (:index sw)})
              :connections (for [c (m/connections s mid)

@@ -40,9 +40,15 @@
                                          {:timeline (:id tl) :title "Place" :kind "state_change" :index 0})))
           cmd  (:result (body-json (post "/authoring/create-element" {:name "PlaceOrder" :kind "command"})))
           _    (post "/authoring/place-element" {:slice (:id sl) :element (:id cmd)})
-          _    (post "/authoring/add-specification" {:slice (:id sl) :title "spec"})
+          spec (:result (body-json (post "/authoring/add-specification" {:slice (:id sl) :title "spec"})))
+          st   (:result (body-json (post "/authoring/add-spec-step"
+                                         {:spec (:id spec) :clause "when_step"
+                                          :element (:id cmd) :index 0})))
+          _    (post "/authoring/set-step-examples"
+                     {:step (:id st) :examples [{:field_name "id" :field_value "1"}]})
           view (body-json (get* "/model"))
-          slice (-> view :timelines first :slices first)]
+          slice (-> view :timelines first :slices first)
+          step1 (-> slice :specifications first :steps first)]
       (is (= "Orders" (:name view)))
       (is (= ["PlaceOrder"] (map :name (:elements view))))
       (is (some? (:id (first (:elements view)))) "elements carry id")
@@ -51,7 +57,9 @@
       (is (= ["PlaceOrder"] (map :element_name (:placements slice))))
       (is (some? (:id (first (:placements slice)))) "placements carry id")
       (is (= 1 (count (:specifications slice))))
-      (is (false? (-> slice :specifications first :is_complete)) "spec has no when-command yet"))))
+      (is (true? (-> slice :specifications first :is_complete)) "spec has a when-command now")
+      (is (= [{:field_name "id" :field_value "1"}] (:examples step1))
+          "GET /model exposes each step's examples"))))
 
 (deftest authoring-create-and-reject
   (testing "a successful authoring command returns the created entity"
