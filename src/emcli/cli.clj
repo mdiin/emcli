@@ -35,6 +35,36 @@
 
 ;; --- structured argument prep (set-fields / set-step-examples) -------------
 
+;; Per the @guidance on rule SetStepExamples in the spec: the CLI must
+;; map/validate --examples-json against the Example shape (field_name/
+;; field_value, both non-empty) before invoking set-step-examples, rather
+;; than relying solely on the ExamplesWellFormed invariant to reject bad
+;; data after it's already been sent. A historical bug accepted objects
+;; keyed field/value and forwarded them verbatim, degrading to empty strings.
+(defn- example-shape-error
+  "nil if `examples` is a well-formed array of Example maps, otherwise a
+  human-readable description of the problem."
+  [examples]
+  (cond
+    (not (sequential? examples))
+    "--examples-json must be a JSON array"
+
+    (not (every? map? examples))
+    "--examples-json must be an array of objects"
+
+    (not (every? #(and (contains? % :field_name) (contains? % :field_value)) examples))
+    "each example must have \"field_name\" and \"field_value\" keys"
+
+    (not (every? #(and (string? (:field_name %)) (string? (:field_value %))) examples))
+    "each example's field_name and field_value must be strings"
+
+    (not (every? #(and (not (str/blank? (:field_name %)))
+                        (not (str/blank? (:field_value %))))
+                 examples))
+    "each example's field_name and field_value must be non-empty"
+
+    :else nil))
+
 (defn- prepare [command opts]
   (cond-> opts
     (and (= command "set-fields") (:fields-json opts))
@@ -81,13 +111,17 @@
 (defn- do-authoring [group verb opts]
   (let [command (resolve-command group verb)
         payload (-> (prepare command opts)
-                    (dissoc :server :fields-json :examples-json :origins-json :derivations-json))
-        resp    (request :post (str (server-url opts) "/authoring/" command) payload)
-        body    (parse-body resp)]
-    (if (and (= 200 (:status resp)) (:ok body))
-      (emit (:result body))
-      (die (str "✗ " group " " verb ": " (:message body)
-                "\n\nUsage: " (format-usage-line group verb))))))
+                    (dissoc :server :fields-json :examples-json :origins-json :derivations-json))]
+    (when (= command "set-step-examples")
+      (when-let [err (example-shape-error (:examples payload))]
+        (die (str "✗ " group " " verb ": " err
+                  "\n\nExpected shape: [{\"field_name\": \"...\", \"field_value\": \"...\"}, ...]"))))
+    (let [resp (request :post (str (server-url opts) "/authoring/" command) payload)
+          body (parse-body resp)]
+      (if (and (= 200 (:status resp)) (:ok body))
+        (emit (:result body))
+        (die (str "✗ " group " " verb ": " (:message body)
+                  "\n\nUsage: " (format-usage-line group verb)))))))
 
 (defn- do-serve [opts]
   (let [port  (parse-long (str (or (:port opts) "8090")))
