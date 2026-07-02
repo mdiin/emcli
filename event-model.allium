@@ -456,6 +456,21 @@ rule RemoveSpecStep {
 rule SetStepExamples {
     when: SetStepExamples(step, examples)
     ensures: step.examples = examples
+
+    @guidance
+        -- Authoring adapters MUST hand this rule well-formed Example
+        -- values: each example populated with both field_name and
+        -- field_value (see the Example value type). An adapter that
+        -- accepts free-form JSON and forwards it verbatim without mapping
+        -- to the Example shape lets malformed examples slip in and read
+        -- back as empty/missing on every consumer of step.examples. A
+        -- historical bug did exactly this: the CLI accepted
+        -- --examples-json objects keyed `field`/`value` and persisted them
+        -- unchanged, so read paths (GET model, ModelChangeStream) saw
+        -- empty examples. Adapters must map/validate incoming payloads
+        -- against the Example shape before invoking SetStepExamples; the
+        -- ExamplesWellFormed invariant catches any residual empty-string
+        -- degradation.
 }
 
 rule SetStepExpectEmpty {
@@ -572,6 +587,17 @@ invariant SpecificationComposition {
             spec.when_steps.count = 0 and
             spec.then_read_models.count <= 1 and
             spec.then_steps.all(s => s.element?.kind = read_model)))
+}
+
+-- Every recorded example on a spec step must carry both a non-empty
+-- field_name and a non-empty field_value. The Example value type already
+-- forces both fields to be present non-optional Strings; this invariant
+-- additionally forbids the empty-string degradation a lax authoring
+-- adapter can produce when it forwards a JSON payload with unexpected
+-- keys and lets missing/absent values default to empty on read.
+invariant ExamplesWellFormed {
+    for step in SpecSteps:
+        step.examples.all(e => e.field_name != "" and e.field_value != "")
 }
 
 -- Connections may only follow the Event Modeling patterns.
