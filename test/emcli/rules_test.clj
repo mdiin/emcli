@@ -121,6 +121,21 @@
         stid        (:id (first (m/spec-steps store spid)))]
     {:store store :mid mid :tlid tlid :slid slid :eid eid :pid pid :spid spid :stid stid}))
 
+(deftest set-step-examples-enforces-well-formed-examples
+  (let [{:keys [store stid]} (full-timeline)]
+    (testing "well-formed examples are accepted"
+      (let [res (r/set-step-examples store {:step stid :examples [{:field_name "id" :field_value "42"}]})]
+        (is (not (r/error? res)))
+        (is (= [{:field_name "id" :field_value "42"}] (:examples (m/fetch (:store res) :spec-step stid))))))
+    (testing "wrong keys (e.g. field/value) are rejected, not silently stored empty"
+      (let [res (r/set-step-examples store {:step stid :examples [{:field "id" :value "42"}]})]
+        (is (r/error? res))
+        (is (= :invariant-violation (:error res)))))
+    (testing "blank field_name/field_value are rejected"
+      (let [res (r/set-step-examples store {:step stid :examples [{:field_name "" :field_value "42"}]})]
+        (is (r/error? res))
+        (is (= :invariant-violation (:error res)))))))
+
 (deftest delete-timeline-cascades-to-slices-specs-placements
   (let [{:keys [store tlid slid pid spid stid eid]} (full-timeline)
         store (:store (s/ok store r/delete-timeline {:timeline tlid}))]

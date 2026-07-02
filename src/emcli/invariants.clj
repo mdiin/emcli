@@ -3,7 +3,8 @@
   empty) vector of violations for a store; the authoring rules consult it to
   reject any mutation that would break an invariant, so the invariants hold at
   every observable state."
-  (:require [emcli.model :as m]))
+  (:require [clojure.string :as str]
+            [emcli.model :as m]))
 
 (defn- step-kind [store step]
   (:kind (m/step-element store step)))
@@ -81,12 +82,26 @@
                       "pattern: " (some-> from :kind name) " -> "
                       (some-> to :kind name))}))
 
+;; ExamplesWellFormed ---------------------------------------------------------
+;; Every recorded example on a spec step must carry a non-empty field_name and
+;; field_value. Catches malformed payloads (e.g. wrong JSON keys) that
+;; set-step-examples stores verbatim without validation.
+(defn- example-violations [store]
+  (for [st          (m/all store :spec-step)
+        [idx e]     (map-indexed vector (:examples st))
+        :when       (or (str/blank? (:field_name e)) (str/blank? (:field_value e)))]
+    {:invariant :ExamplesWellFormed
+     :step      (:id st)
+     :message   (str "SpecStep " (:id st) " example[" idx "] must have a "
+                     "non-empty field_name and field_value")}))
+
 (defn check
   "Return every invariant violation in `store` (empty when the store is valid)."
   [store]
   (vec (concat (placement-violations store)
                (spec-violations store)
-               (connection-violations store))))
+               (connection-violations store)
+               (example-violations store))))
 
 (defn valid? [store]
   (empty? (check store)))
