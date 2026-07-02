@@ -81,7 +81,7 @@ For each `boardId`:
    - `stepIndex = 0`; for `clause in [("given_step", scenario.given), ("when_step", scenario.when), ("then_step", scenario.then)]`, for each step entry in that array (each references an element by `id`/`type`/`title` plus `fields[]` with `name`+`example`):
      - Resolve the element id from the `sourceNodeId -> emcli element id` map (it should already exist from step 3).
      - `step add --spec <specId> --clause <clause> --element <elementId> --index <stepIndex>`; increment `stepIndex`.
-     - If the step has `fields`, attach them: `step examples --step <stepId> --examples-json '[{"field": f.name, "value": f.example}, ...]'` (verified shape).
+     - If the step has `fields`, attach them: `step examples --step <stepId> --examples-json '[{"field_name": f.name, "field_value": f.example}, ...]'`. Use exactly these two keys — `field_name`/`field_value` is the canonical shape (see `docs/change-stream.schema.json`); `set-step-examples` stores whatever keys it's given with no validation, so any other key name (e.g. `field`/`value`) silently produces empty `{}` objects on every read path.
    - If `scenario.expectError`: the source format has no observed field carrying the error name. Ask the human once for the error name (scenario title for context), then `step error --spec <specId> --error-name <name> --index <nextIndex>`.
    - If `scenario.expectEmptyList`: `step expect-empty --step <thenStepId> --value true` on the relevant `then` step (typically the read-model step).
 
