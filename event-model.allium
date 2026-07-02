@@ -763,6 +763,8 @@ surface ModelAuthoring {
                         st.index
                         st.is_error
                         st.error_name
+                        -- Which element this step is about (absent for an error step).
+                        st.element.name
                         st.spec.title
                         for ex in st.examples:
                             ex.field_name
@@ -775,6 +777,9 @@ surface ModelAuthoring {
         for el in model.elements:
             el.name
             el.kind
+            -- Which swimlane row this element is assigned to (absent if
+            -- unassigned), so the UI can group elements by lane.
+            el.swimlane
             -- Whether every field on this element is sourced (carried, derived
             -- or introduced); drives the completeness affordance in the UI.
             el.is_information_complete
@@ -864,9 +869,13 @@ surface ModelChangeStream {
                 s.kind
                 s.status
                 s.index
+                s.is_complete
                 for p in s.placements:
                     p.element.name
                     p.element.kind
+                    -- Which swimlane row this element is assigned to (absent if
+                    -- unassigned), so the frontend can group elements by lane.
+                    p.element.swimlane
                     -- Per-element completeness, so the frontend can render which
                     -- elements still have unsourced fields.
                     p.element.is_information_complete
@@ -888,6 +897,8 @@ surface ModelChangeStream {
                         st.index
                         st.is_error
                         st.error_name
+                        -- Which element this step is about (absent for an error step).
+                        st.element.name
                         for ex in st.examples:
                             ex.field_name
                             ex.field_value

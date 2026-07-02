@@ -51,6 +51,7 @@
       (is (= (:id tl) (:id t1)))
       (is (= (:id sl) (:id s1)))
       (is (= (:id sw) (:id (first (:swimlanes model)))))
+      (is (true? (:is_complete s1)) "state_change slice with one placed command is complete")
       (is (= (:id pl) (:id p1)))
       (is (= {:id (:id cmd') :name "PlaceOrder" :kind :command :swimlane nil :is_information_complete true :fields []}
              (:element p1)))
@@ -97,7 +98,22 @@
       (is (true? (:is_complete spec1)))
       (is (= (:id st) (:id step1)))
       (is (= :when_step (:clause step1)))
+      (is (= {:id (:id el) :name "PlaceOrder"} (:element step1))
+          "the step's element is streamed as a nested {:id :name} ref, like placements and connections")
       (is (= [{:field_name "id" :field_value "1"}] (:examples step1))))))
+
+(deftest snapshot-error-step-has-no-element
+  (testing "an error step has no element to reference"
+    (let [a    (app/new-app "Orders")
+          tl   (:result (cmd/run a "create-timeline" {:title "Ordering"}))
+          sl   (:result (cmd/run a "add-slice" {:timeline (:id tl) :title "Place" :kind "state_change" :index 0}))
+          sp   (:result (cmd/run a "add-specification" {:slice (:id sl) :title "Rejected"}))
+          _    (cmd/run a "add-error-step" {:spec (:id sp) :error-name "AlreadyPlaced" :index 0})
+          [_ msgs] (recording-sub a)
+          model (:model (first @msgs))
+          step1 (-> model :timelines first :slices first :specifications first :steps first)]
+      (is (true? (:is_error step1)))
+      (is (nil? (:element step1))))))
 
 (deftest delta-per-mutation
   (testing "DeltaPerMutation: each ModelAuthoring mutation yields exactly one delta"

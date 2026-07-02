@@ -172,8 +172,8 @@
 (defn authoring-view
   "The ModelAuthoring `exposes:` read projection (event-model.allium:598-635):
   the full authoring view, richer than the ChangeStream snapshot — it carries
-  slice/spec is_complete, the spec-step subtree, the events/screens projections,
-  the element list and connection names."
+  the events/screens projections, timeline_title and spec_title denormalised
+  onto their child slices/steps, and the element list and connection names."
   [app]
   (let [s   (app/store app)
         mid (app/model-id app)]

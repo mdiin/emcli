@@ -106,6 +106,7 @@
                            :slices (for [sl (m/slices s (:id t))]
                                      {:id (:id sl) :title (:title sl) :kind (:kind sl)
                                       :status (:status sl) :index (:index sl)
+                                      :is_complete (m/slice-complete? s sl)
                                       :placements (for [p (m/placements s (:id sl))
                                                         :let [el (m/placement-element s p)]]
                                                     {:id (:id p) :index (:index p)
@@ -117,10 +118,12 @@
                                       :specifications (for [sp (m/specs s (:id sl))]
                                                         {:id (:id sp) :title (:title sp)
                                                          :is_complete (m/spec-complete? s sp)
-                                                         :steps (for [st (m/spec-steps s (:id sp))]
+                                                         :steps (for [st (m/spec-steps s (:id sp))
+                                                                      :let [el (m/step-element s st)]]
                                                                   {:id (:id st) :clause (:clause st) :index (:index st)
                                                                    :is_error (:is_error st)
                                                                    :error_name (:error_name st)
+                                                                   :element (when el {:id (:id el) :name (:name el)})
                                                                    :examples (for [e (:examples st)]
                                                                                (select-keys e [:field_name :field_value]))})})})})
              :swimlanes   (for [sw (m/swimlanes s mid)]
