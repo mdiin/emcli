@@ -14,8 +14,6 @@ jobs:
             asset: linux-amd64
           - os: macos-latest
             asset: macos-arm64
-          - os: macos-13
-            asset: macos-amd64
           - os: windows-latest
             asset: windows-amd64
     runs-on: ${{ matrix.os }}
