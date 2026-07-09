@@ -1,3 +1,11 @@
+## Install
+
+```
+bbin install io.github.mdiin/emcli
+```
+
+Requires [bbin](https://github.com/babashka/bbin). Or grab a prebuilt binary from [Releases](https://github.com/mdiin/emcli/releases).
+
 ## Why?
 
 I don't want Event Modeling to be tied to a visual tool or web platform. This project is one piece of that puzzle, allowing textual input of event model changes. With this in place, other interfaces can be built on top, such as:

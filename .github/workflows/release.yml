@@ -1,0 +1,82 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            asset: linux-amd64
+          - os: macos-latest
+            asset: macos-arm64
+          - os: macos-13
+            asset: macos-amd64
+          - os: windows-latest
+            asset: windows-amd64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: babashka/setup-babashka@v0
+        with:
+          babashka-version: 1.12.218
+
+      - name: Build uberjar
+        run: bb uberjar emcli.jar -m emcli.cli
+
+      - name: Package (unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          dist="emcli-${version}-${{ matrix.asset }}"
+          mkdir "$dist"
+          cp "$(command -v bb)" "$dist/bb"
+          cp emcli.jar "$dist/"
+          cat > "$dist/emcli" <<'EOF'
+          #!/usr/bin/env bash
+          dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+          exec "$dir/bb" "$dir/emcli.jar" "$@"
+          EOF
+          chmod +x "$dist/emcli" "$dist/bb"
+          tar -czf "${dist}.tar.gz" "$dist"
+
+      - name: Package (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = "${env:GITHUB_REF_NAME}".TrimStart("v")
+          $dist = "emcli-$version-${{ matrix.asset }}"
+          New-Item -ItemType Directory -Path $dist | Out-Null
+          Copy-Item (Get-Command bb).Source "$dist/bb.exe"
+          Copy-Item emcli.jar "$dist/"
+          Set-Content -Path "$dist/emcli.bat" -Value "@echo off`r`n`"%~dp0bb.exe`" `"%~dp0emcli.jar`" %*"
+          Compress-Archive -Path $dist -DestinationPath "$dist.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: |
+            emcli-*.tar.gz
+            emcli-*.zip
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

@@ -1,5 +1,6 @@
 {:paths ["src" "test"]
  :deps {http-kit/http-kit {:mvn/version "2.8.0"}}
+ :bbin/bin {emcli {:main-opts ["-m" "emcli.cli"]}}
  :tasks
  {test {:doc  "Run the test suite"
         :task (exec 'emcli.test-runner/run)
