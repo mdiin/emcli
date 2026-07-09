@@ -22,9 +22,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: babashka/setup-babashka@v0
+      - uses: DeLaGuardo/setup-clojure@13.4
         with:
-          babashka-version: 1.12.218
+          bb: "1.12.218"
 
       - name: Build uberjar
         run: bb uberjar emcli.jar -m emcli.cli
