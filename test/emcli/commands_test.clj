@@ -41,3 +41,41 @@
           res (cmd/run a "create-swimlane" {:name "X"})]
       (is (= :missing-args (:error res)))
       (is (= [:index] (:missing res))))))
+
+;; NameResolution.resolve (event-model.allium): batched name -> candidate
+;; lookup, so an LLM never has to pull the whole model to resolve a name.
+(deftest resolve-names-test
+  (let [a  (app/new-app "M")
+        tl (:id (:result (cmd/run a "create-timeline" {:title "Checkout"})))]
+    (cmd/run a "add-slice" {:timeline tl :title "Baz" :kind "state_change" :index 0})
+    (cmd/run a "create-element" {:name "Snaz" :kind "read_model"})
+    (cmd/run a "create-element" {:name "Snazzz" :kind "read_model"})
+
+    (testing "exact match wins outright, carries its breadcrumb"
+      (let [[res] (cmd/resolve-names a [{:name "Baz"}])]
+        (is (= [:exact] (map :match_type (:candidates res))))
+        (is (= "Checkout" (get-in res [:candidates 0 :breadcrumb :timeline_title])))
+        (is (= 1 (:total_matches res)))
+        (is (false? (:truncated res)))))
+
+    (testing "substring is only tried once exact yields nothing"
+      (let [[res] (cmd/resolve-names a [{:name "naz"}])]
+        (is (= #{:substring} (set (map :match_type (:candidates res)))))
+        (is (= #{"Snaz" "Snazzz"} (set (map :name (:candidates res)))))))
+
+    (testing "near-miss only fires when neither exact nor substring matched anything"
+      (let [[res] (cmd/resolve-names a [{:name "Foobar"}])]
+        (is (seq (:candidates res)))
+        (is (every? #(= :near_miss (:match_type %)) (:candidates res)))
+        (is (apply <= (map :distance (:candidates res)))
+            "near-miss candidates are ordered nearest-first")))
+
+    (testing "kind_hint ranks matches of the hinted kind first, never filters others out"
+      (cmd/run a "create-swimlane" {:name "Snaz" :index 0})
+      (let [[res] (cmd/resolve-names a [{:name "Snaz" :kind_hint "swimlane"}])]
+        (is (= :swimlane (get-in res [:candidates 0 :kind])))
+        (is (= #{:swimlane :element} (set (map :kind (:candidates res))))
+            "the element match is still present, just ranked after the hint")))
+
+    (testing "zero queries is a no-op, not an error"
+      (is (= [] (cmd/resolve-names a []))))))

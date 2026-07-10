@@ -120,6 +120,16 @@
   (->> (by-field store :placement :slice slice-id)
        (sort-by (juxt :index :id))))
 (defn specs        [store slice-id] (by-field store :specification :slice slice-id))
+
+(defn model-slices
+  "All slices across every timeline of a model."
+  [store model-id]
+  (mapcat #(slices store (:id %)) (timelines store model-id)))
+
+(defn model-specs
+  "All specifications across every slice of a model."
+  [store model-id]
+  (mapcat #(specs store (:id %)) (model-slices store model-id)))
 (defn spec-steps
   "Steps of a specification, ordered by :index then id."
   [store spec-id]

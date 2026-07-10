@@ -5,7 +5,8 @@
       a client receives exactly one snapshot, then one delta per committed
       mutation (SnapshotThenDeltas, DeltaPerMutation). Outbound only.
     * ModelAuthoring   — POST /authoring/<command> applies an authoring rule;
-      GET /model, GET /export, POST /import, GET /validate round out the surface.
+      GET /model, GET /export, POST /import, GET /validate, POST /resolve round
+      out the surface.
 
   No web framework: requests are routed by method + path by hand
   (org.httpkit.server only), per the project guidelines."
@@ -92,6 +93,13 @@
 
       (and (= :get request-method) (= uri "/validate"))
       (json-response 200 (cmd/validate app))
+
+      ;; NameResolution.resolve (event-model.allium) — batched name -> candidate
+      ;; lookup, so an LLM client never has to pull the whole model to turn
+      ;; a mentioned name into the id an authoring command requires.
+      (and (= :post request-method) (= uri "/resolve"))
+      (let [queries (:queries (or (read-json-body req) {}))]
+        (json-response 200 {:results (cmd/resolve-names app queries)}))
 
       (and (= :get request-method) (= uri "/export"))
       (try

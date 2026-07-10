@@ -729,6 +729,95 @@ contract ChangeStream {
 }
 
 -- ---------------------------------------------------------------------------
+-- Name resolution query (server-side name -> candidate resolution)
+-- ---------------------------------------------------------------------------
+
+-- The human-nameable entity kinds a caller can resolve a name against. These
+-- are exactly the entities the ModelAuthoring mutating operations take by
+-- reference: Timeline (title), Swimlane (name), Slice (title), Element (name)
+-- and Specification (title). ElementPlacement, Connection and SpecStep are not
+-- nameable and are out of scope.
+enum ResolvableKind { timeline | swimlane | slice | element | specification }
+
+-- One name to resolve within a batch. The optional kind_hint records which kind
+-- the caller believes the name denotes; it only influences candidate ranking,
+-- never inclusion (see NameResolution.HintRanksNeverFilters).
+value NameQuery {
+    name: String
+    kind_hint: ResolvableKind?
+}
+
+-- A read-only, non-mutating query that resolves the (few) human-readable names
+-- mentioned in a single turn to concrete model entities, so an LLM driving the
+-- CLI can turn names into the entity references the mutating ModelAuthoring
+-- operations require - without ever dumping the whole model, or a full id/name
+-- index, into its context window. Fulfilled by the ModelAuthoring surface,
+-- alongside SchemaCodec import/export.
+contract NameResolution {
+    -- Resolve a batch of names against one model in a single round trip,
+    -- returning the candidate set for each queried name. The result shape is
+    -- opaque here (as with the SchemaCodec and ChangeStream payloads); its
+    -- semantics are pinned by the invariants below.
+    resolve: (model: EventModel, queries: List<NameQuery>) -> Any
+
+    @invariant ResolvableScope
+        -- Names are matched only against the human-nameable fields of the
+        -- resolvable kinds: Timeline.title, Swimlane.name, Slice.title,
+        -- Element.name and Specification.title. ElementPlacement, Connection and
+        -- SpecStep carry no name and are never returned as candidates.
+
+    @invariant MatchTiersWithFallback
+        -- For each queried name, matching proceeds in tiers against the relevant
+        -- name/title field:
+        --   exact     - case-insensitive equality;
+        --   substring - case-insensitive containment, used only as a fallback;
+        --   near_miss - a small, bounded set of nearest candidates by edit
+        --               distance ("did you mean"), produced if and ONLY if
+        --               neither exact nor substring matched anything for that
+        --               name.
+        -- Near-miss candidates never dilute a result that already has exact or
+        -- substring matches. Every returned candidate is tagged with the tier
+        -- that produced it, so the caller can tell a typo of an existing entity
+        -- apart from a genuinely new name.
+
+    @invariant HintRanksNeverFilters
+        -- A query's kind_hint only influences the ordering/ranking of candidates
+        -- for that name. It is never a hard filter: a real exact or substring
+        -- match is never silently excluded because it is of a different kind than
+        -- the one hinted.
+
+    @invariant NoImplicitBestPick
+        -- resolve always returns the full candidate set for each name and never
+        -- collapses it into a synthetic "best guess" field, even when exactly one
+        -- candidate matches. Disambiguation among multiple candidates is left to
+        -- the caller (the LLM or the user), never decided by this operation.
+
+    @invariant CandidateDisambiguation
+        -- Each candidate carries enough breadcrumb/location context to be told
+        -- apart from same-named siblings: a Slice candidate carries its
+        -- Timeline's title; an Element candidate carries its assigned Swimlane's
+        -- name when it has one; a Specification candidate carries its Slice's
+        -- title and that Slice's Timeline's title. (Two identically-named
+        -- entities whose breadcrumbs also tie are an accepted, unsolved edge
+        -- case.)
+
+    @invariant BoundedByQueryCount
+        -- THE core architectural property: the size of a resolve response scales
+        -- with the number of names queried (times a bounded per-name candidate
+        -- cap), NOT with the total size of the model. Resolving a handful of
+        -- names costs the same against a model of thousands of elements as
+        -- against a small one. This is what keeps name resolution cheap on a
+        -- local LLM's context, versus dumping the model or a full id/name index.
+
+    @guidance
+        -- Free-text / semantic resolution ("the event that fires when checkout
+        -- completes") is out of scope; that inference is the caller's job. Stale
+        -- ids across a long conversation are handled elsewhere (mutation
+        -- responses carry full entity state; deleting a referenced entity yields
+        -- a helpful error), not by this operation.
+}
+
+-- ---------------------------------------------------------------------------
 -- Authoring surface (the CLI boundary)
 -- ---------------------------------------------------------------------------
 
@@ -839,15 +928,18 @@ surface ModelAuthoring {
 
     contracts:
         fulfils SchemaCodec
+        fulfils NameResolution
 
     @guidance
         -- A ValidateModel operation (report slices that are not is_complete,
         -- elements that are not is_information_complete, and any derivation whose
         -- target_field or source_fields reference a field name that does not
         -- exist on the relevant element - an orphaned derivation that silently
-        -- fails to source its target) and the SchemaCodec import/export
-        -- operations are also invoked through this surface; import/export are
-        -- governed by the SchemaCodec contract.
+        -- fails to source its target), the SchemaCodec import/export operations,
+        -- and the NameResolution.resolve query are also invoked through this
+        -- surface (none of them being plain mutating provides: rules):
+        -- import/export are governed by the SchemaCodec contract, and name
+        -- resolution by the NameResolution contract.
 }
 
 -- ---------------------------------------------------------------------------
@@ -933,5 +1025,7 @@ surface ModelChangeStream {
 -- Open questions
 -- ---------------------------------------------------------------------------
 
--- None outstanding. Schema mapping & round-trip fidelity decisions are
--- documented on the SchemaCodec contract above.
+-- Schema mapping & round-trip fidelity decisions are documented on the
+-- SchemaCodec contract above.
+
+open question "NameResolution.NameQuery.kind_hint currently records only the resolvable entity kind (Timeline/Swimlane/Slice/Element/Specification). Should it also carry a finer sub-kind hint (Element.kind: command/event/read_model/screen/automation, or Slice.kind: state_change/state_view/automation) to further rank candidates? Those are inline enums on Element/Slice today; supporting them as hint fields requires promoting them to named enums (a change to existing entities) or a parallel named enum duplicating their literals. Deferred pending a decision on whether the extra ranking signal is worth that."

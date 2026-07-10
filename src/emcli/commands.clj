@@ -213,6 +213,101 @@
                      :from_id (:from c) :from_name (:name (m/fetch s :element (:from c)))
                      :to_id   (:to c)   :to_name   (:name (m/fetch s :element (:to c)))})}))
 
+;; NameResolution.resolve (event-model.allium): resolve a batch of human-readable
+;; names to candidate entities, without ever listing the whole model. Matching
+;; is a fixed ladder per query — exact, then substring as fallback, then a
+;; bounded near-miss (edit-distance) suggestion list only when neither matched
+;; anything — so response size scales with the number of names queried, not
+;; with model size (BoundedByQueryCount).
+(def ^:private resolve-candidate-cap 5)
+
+(defn- levenshtein
+  "Edit distance between two strings, for the near-miss ('did you mean') tier."
+  [s1 s2]
+  (let [s1 (vec s1)
+        s2 (vec s2)
+        n  (count s2)]
+    (loop [i 0 prev (vec (range (inc n)))]
+      (if (= i (count s1))
+        (peek prev)
+        (let [ci  (nth s1 i)
+              cur (reduce
+                   (fn [row j]
+                     (let [cost (if (= ci (nth s2 j)) 0 1)]
+                       (conj row (min (inc (peek row))
+                                      (inc (nth prev (inc j)))
+                                      (+ (nth prev j) cost)))))
+                   [(inc i)]
+                   (range n))]
+          (recur (inc i) cur))))))
+
+;; The human-nameable entities in scope (ResolvableKind), each carrying enough
+;; breadcrumb context to disambiguate same-named siblings (CandidateDisambiguation).
+(defn- resolvable-entities [s mid]
+  (concat
+   (for [t (m/timelines s mid)]
+     {:kind :timeline :id (:id t) :name (:title t) :breadcrumb {}})
+   (for [sw (m/swimlanes s mid)]
+     {:kind :swimlane :id (:id sw) :name (:name sw) :breadcrumb {}})
+   (for [sl (m/model-slices s mid)]
+     {:kind :slice :id (:id sl) :name (:title sl)
+      :breadcrumb {:timeline_title (:title (m/fetch s :timeline (:timeline sl)))}})
+   (for [e (m/elements s mid)]
+     {:kind :element :id (:id e) :name (:name e)
+      :breadcrumb (if-let [lane (:swimlane e)]
+                    {:swimlane_name (:name (m/fetch s :swimlane lane))}
+                    {})})
+   (for [sp (m/model-specs s mid)
+         :let [sl (m/fetch s :slice (:slice sp))]]
+     {:kind :specification :id (:id sp) :name (:title sp)
+      :breadcrumb {:slice_title (:title sl)
+                   :timeline_title (:title (m/fetch s :timeline (:timeline sl)))}})))
+
+(defn- name-matches? [pred entity name] (pred (str/lower-case (:name entity)) (str/lower-case name)))
+(defn- exact-matches [entities name] (filter #(name-matches? = % name) entities))
+(defn- substring-matches [entities name] (filter #(name-matches? str/includes? % name) entities))
+
+(defn- near-miss-matches [entities name cap]
+  (let [n (str/lower-case name)]
+    (->> entities
+         (map #(assoc % :distance (levenshtein n (str/lower-case (:name %)))))
+         (sort-by :distance)
+         (take cap))))
+
+;; HintRanksNeverFilters: kind_hint only reorders an already-computed match set,
+;; never excludes from it.
+(defn- rank-by-hint [candidates kind-hint]
+  (if kind-hint
+    (let [hinted? #(= kind-hint (:kind %))]
+      (concat (filter hinted? candidates) (remove hinted? candidates)))
+    candidates))
+
+(defn- resolve-one [entities {:keys [name kind_hint]}]
+  (let [kind-hint (->kw kind_hint)
+        exact     (exact-matches entities name)
+        substr    (when (empty? exact) (substring-matches entities name))]
+    (if (or (seq exact) (seq substr))
+      (let [tier    (if (seq exact) :exact :substring)
+            matched (if (seq exact) exact substr)
+            total   (count matched)]
+        {:name name :kind_hint kind-hint
+         :candidates (mapv #(assoc % :match_type tier) (take resolve-candidate-cap (rank-by-hint matched kind-hint)))
+         :total_matches total
+         :truncated (> total resolve-candidate-cap)})
+      (let [near (rank-by-hint (near-miss-matches entities name resolve-candidate-cap) kind-hint)]
+        {:name name :kind_hint kind-hint
+         :candidates (mapv #(assoc % :match_type :near_miss) near)
+         :total_matches (count near)
+         :truncated false}))))
+
+(defn resolve-names
+  "NameResolution.resolve — resolve a batch of human-readable names to candidate
+  model entities in one round trip. `queries` is a seq of {:name str :kind_hint
+  kw-or-nil}; returns one result per query, in the same order."
+  [app queries]
+  (let [entities (resolvable-entities (app/store app) (app/model-id app))]
+    (mapv #(resolve-one entities %) queries)))
+
 ;; ValidateModel (the surface @guidance operation): report slices/specs that are
 ;; not is_complete, elements that are not is_information_complete, and orphaned
 ;; derivations whose target/source field names do not exist on the relevant

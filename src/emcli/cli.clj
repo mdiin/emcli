@@ -136,6 +136,7 @@
     (println "  snapshot:             GET  /model")
     (println "  export / validate:    GET  /export | /validate")
     (println "  import:               POST /import")
+    (println "  resolve:              POST /resolve")
     @(promise)))
 
 (defn- do-show [opts]
@@ -143,6 +144,24 @@
 
 (defn- do-validate [opts]
   (emit (parse-body (request :get (str (server-url opts) "/validate")))))
+
+;; --queries "name[:kind_hint],..." — a batch, so a whole turn's worth of
+;; mentioned names resolves in one request (NameResolution.resolve).
+(defn- parse-resolve-queries [s]
+  (->> (str/split (str s) #",")
+       (remove str/blank?)
+       (mapv (fn [tok]
+               (let [[n k] (str/split (str/trim tok) #":" 2)]
+                 (cond-> {:name (str/trim n)}
+                   (not (str/blank? (or k ""))) (assoc :kind_hint (str/trim k))))))))
+
+(defn- do-resolve [opts]
+  (let [queries (or (:queries opts) (die "resolve requires --queries \"name[:kind_hint][,name[:kind_hint]...]\""))
+        resp    (request :post (str (server-url opts) "/resolve") {:queries (parse-resolve-queries queries)})
+        body    (parse-body resp)]
+    (if (= 200 (:status resp))
+      (emit (:results body))
+      (die (str "✗ resolve: " (:message body))))))
 
 (defn- do-export [opts]
   (let [resp (request :get (str (server-url opts) "/export"))
@@ -213,7 +232,10 @@
    [{:flag "connection" :type "int" :required true :ref "connections[].id"}
     {:flag "target" :type "string" :required true :note "target field name on the to-element"}
     {:flag "from" :type "string" :required true
-     :note "comma-separated source field names from the from-element"}]})
+     :note "comma-separated source field names from the from-element"}]
+   "resolve"
+   [{:flag "queries" :type "string" :required true
+     :note "comma-separated name[:kind_hint] entries, e.g. \"Baz:slice,Snaz\"; kind_hint is one of timeline|swimlane|slice|element|specification and only ranks candidates, never filters them"}]})
 
 (def ^:private type-names {:str "string" :int "int" :kw "keyword" :bool "boolean"})
 
@@ -232,7 +254,11 @@
     (or (structured-manifest-params command) [])))
 
 (defn- build-manifest []
-  {:_instructions "Run `emcli show` to read entity ids required by authoring commands. Pass flags as --flag value."
+  {:_instructions (str "Run `emcli show` to read entity ids required by authoring commands, or "
+                       "`emcli resolve` to look up ids by name (e.g. from an LLM's conversational "
+                       "context) without pulling the whole model. Pass flags as --flag value.")
+   :commands
+   {"resolve" {:params (command->manifest-params "resolve")}}
    :groups
    (into (sorted-map)
          (for [[group verbs] (sort command-groups)]
@@ -297,6 +323,8 @@
   (println "Inspect:")
   (println "  show                                    print the canonical model snapshot (includes entity ids)")
   (println "  validate                                report slices/specs/elements not yet complete")
+  (println "  resolve   --queries \"name[:kind],...\"    resolve human-readable names to candidate entity ids")
+  (println "                                          kind is one of timeline|swimlane|slice|element|specification")
   (println "  export    [--out FILE]                  export the eventmodeling.schema.json")
   (println "  import    --in FILE                     import an eventmodeling.schema.json\n")
   (println "Authoring (grouped by entity — `emcli <entity>` lists an entity's verbs):")
@@ -312,7 +340,7 @@
         (println (str "  " group " " v pad
                       (when (seq suffix) (str "  " suffix))))))))
 
-(def ^:private meta-commands #{"serve" "show" "validate" "export" "import" "help"})
+(def ^:private meta-commands #{"serve" "show" "validate" "resolve" "export" "import" "help"})
 
 (defn -main [& argv]
   (let [argv (vec (or (seq argv) *command-line-args*))
@@ -323,6 +351,7 @@
       (= "serve" head)    (do-serve (cli/parse-opts (rest argv)))
       (= "show" head)     (do-show (cli/parse-opts (rest argv)))
       (= "validate" head) (do-validate (cli/parse-opts (rest argv)))
+      (= "resolve" head)  (do-resolve (cli/parse-opts (rest argv)))
       (= "export" head)   (do-export (cli/parse-opts (rest argv)))
       (= "import" head)   (do-import (cli/parse-opts (rest argv)))
 

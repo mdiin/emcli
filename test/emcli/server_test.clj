@@ -97,6 +97,21 @@
             (is (= 200 (:status resp)) "now complete")
             (is (seq (get (body-json resp) :slices)))))))))
 
+(deftest resolve-endpoint
+  (testing "POST /resolve batches name lookups without exposing the whole model"
+    (let [tl (:result (body-json (post "/authoring/create-timeline" {:title "Checkout"})))
+          _  (post "/authoring/add-slice" {:timeline (:id tl) :title "Baz" :kind "state_change" :index 0})
+          _  (post "/authoring/create-element" {:name "Snaz" :kind "read_model"})
+          resp (post "/resolve" {:queries [{:name "Baz"} {:name "Snaz"} {:name "Nope"}]})
+          results (:results (body-json resp))]
+      (is (= 200 (:status resp)))
+      (is (= 3 (count results)))
+      (is (= :exact (keyword (get-in (first results) [:candidates 0 :match_type]))))
+      (is (= "Baz" (get-in (first results) [:candidates 0 :name])))
+      (is (= "Checkout" (get-in (first results) [:candidates 0 :breadcrumb :timeline_title])))
+      (is (every? #(= :near_miss (keyword (:match_type %))) (get-in (nth results 2) [:candidates]))
+          "an unmatched name falls back to near-miss suggestions, not an empty model dump"))))
+
 (deftest sse-stream-delivers-snapshot-then-delta
   (testing "GET /stream sends a snapshot, then one delta per mutation"
     (let [resp   (http/get (str *base* "/stream") {:as :stream :throw false

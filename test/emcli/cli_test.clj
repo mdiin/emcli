@@ -51,3 +51,15 @@
     (is (some? (#'cli/example-shape-error {:field_name "orderId" :field_value "123"}))))
   (testing "a non-object element in the array is rejected"
     (is (some? (#'cli/example-shape-error ["not-a-map"])))))
+
+;; --queries "name[:kind_hint],..." parsing for `emcli resolve`.
+(deftest parse-resolve-queries-test
+  (testing "bare names carry no kind_hint"
+    (is (= [{:name "Baz"}] (#'cli/parse-resolve-queries "Baz"))))
+  (testing "a trailing :kind adds a kind_hint"
+    (is (= [{:name "Snaz" :kind_hint "element"}] (#'cli/parse-resolve-queries "Snaz:element"))))
+  (testing "a batch mixes hinted and bare names, trimming whitespace"
+    (is (= [{:name "Baz" :kind_hint "slice"} {:name "Snaz"} {:name "Foobar"}]
+           (#'cli/parse-resolve-queries " Baz:slice, Snaz , Foobar "))))
+  (testing "blank entries are dropped"
+    (is (= [{:name "Baz"}] (#'cli/parse-resolve-queries "Baz,,")))))
