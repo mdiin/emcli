@@ -204,6 +204,12 @@
    "create-element"   {"kind"       ["command" "event" "read_model" "screen" "automation"]}
    "add-spec-step"    {"clause"     ["given_step" "when_step" "then_step"]}})
 
+;; Free-text notes per (registry) flag name — shown in `--manifest` and
+;; `<entity> <verb> help`. Currently only "id" needs one: it's the one
+;; optional flag every entity-creating command shares.
+(def ^:private param-notes
+  {"id" "pre-assign this entity's id instead of auto-generating one; must not already be in use"})
+
 ;; Full param specs for structured (JSON-valued) commands that are not in the
 ;; registry — their args are coerced by `prepare` in this ns.
 (def ^:private structured-manifest-params
@@ -243,10 +249,12 @@
   (let [flag (name opt-key)
         base {:flag flag :type (type-names type) :required required?}
         ref  (param-refs flag)
-        vals (get-in param-enums [command flag])]
+        vals (get-in param-enums [command flag])
+        note (param-notes flag)]
     (cond-> base
       ref  (assoc :ref ref)
-      vals (assoc :values vals))))
+      vals (assoc :values vals)
+      note (assoc :note note))))
 
 (defn- command->manifest-params [command]
   (if-let [reg-params (:params (cmd/registry command))]

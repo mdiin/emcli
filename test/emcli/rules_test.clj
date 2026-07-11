@@ -19,6 +19,29 @@
         (is (= 1 (count (:changes delta))))
         (is (= :created (:action (first (:changes delta)))))))))
 
+;; --- explicit --id (a scripting affordance: pin an id instead of reading it
+;; back out of the create response) --------------------------------------
+
+(deftest explicit-id-is-honored-and-blocks-future-collisions
+  (let [[store mid]        (s/with-model)
+        {tl :result store :store} (s/ok store r/create-timeline {:model mid :title "T" :id 100})]
+    (is (= 100 (:id tl)))
+    (testing "the next auto-allocated id is past the explicit one"
+      (let [store' (:store (s/ok store r/create-timeline {:model mid :title "T2"}))
+            tl2    (first (filter #(= "T2" (:title %)) (m/timelines store' mid)))]
+        (is (> (:id tl2) 100))))))
+
+(deftest explicit-id-conflict-is-rejected
+  (let [[store mid] (s/with-model)
+        store       (:store (s/ok store r/create-timeline {:model mid :title "T" :id 5}))]
+    (testing "same id, same type"
+      (let [err (s/err store r/create-timeline {:model mid :title "Dup" :id 5})]
+        (is (= :id-conflict (:error err)))
+        (is (= 5 (:id err)))))
+    (testing "same id, different type -- ids are one sequence shared across all types"
+      (let [err (s/err store r/create-swimlane {:model mid :name "L" :index 0 :id 5})]
+        (is (= :id-conflict (:error err)))))))
+
 (deftest subscribe-creates-subscription
   (let [[store mid] (s/with-model)
         sub         (:result (s/ok store r/subscribe {:model mid}))]

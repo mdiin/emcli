@@ -28,6 +28,20 @@
 (defn- updated [store type id] {:action :updated :type type :id id :entity (m/fetch store type id)})
 (defn- deleted [type id]      {:action :deleted :type type :id id})
 
+;; --id (a CLI/scripting affordance): every create-* rule accepts an optional
+;; pre-assigned id instead of letting the store auto-allocate one, so a script
+;; can reference an entity's id before creating it. Rejected up front if the
+;; id is already in use by any entity, of any type (ids share one sequence).
+(defn- id-conflict [id]
+  {:error :id-conflict :id id :message (str "id " id " is already in use")})
+
+(defn- require-id-available [store id]
+  (when (and id (m/id-taken? store id))
+    (id-conflict id)))
+
+(defn- with-id [attrs id]
+  (cond-> attrs id (assoc :id id)))
+
 (defn- commit
   "Validate invariants and package a successful mutation. If the candidate
   store breaks any invariant the mutation is rejected and nothing is applied."
@@ -57,9 +71,10 @@
 ;; Timelines
 ;; ---------------------------------------------------------------------------
 
-(defn create-timeline [store {:keys [model title]}]
+(defn create-timeline [store {:keys [model title id]}]
   (or (require-entity store :event-model model)
-      (let [[store tl] (m/create store :timeline {:model model :title title})]
+      (require-id-available store id)
+      (let [[store tl] (m/create store :timeline (with-id {:model model :title title} id))]
         (commit store :CreateTimeline [(created :timeline tl)] tl))))
 
 (defn rename-timeline [store {:keys [timeline new-title]}]
@@ -72,9 +87,10 @@
 ;; Swimlanes
 ;; ---------------------------------------------------------------------------
 
-(defn create-swimlane [store {:keys [model name index]}]
+(defn create-swimlane [store {:keys [model name index id]}]
   (or (require-entity store :event-model model)
-      (let [[store lane] (m/create store :swimlane {:model model :name name :index index})]
+      (require-id-available store id)
+      (let [[store lane] (m/create store :swimlane (with-id {:model model :name name :index index} id))]
         (commit store :CreateSwimlane [(created :swimlane lane)] lane))))
 
 (defn rename-swimlane [store {:keys [lane new-name]}]
@@ -93,11 +109,12 @@
 ;; Slices
 ;; ---------------------------------------------------------------------------
 
-(defn add-slice [store {:keys [timeline title kind index]}]
+(defn add-slice [store {:keys [timeline title kind index id]}]
   (or (require-entity store :timeline timeline)
-      (let [[store sl] (m/create store :slice {:timeline timeline :title title
-                                               :kind kind :index index
-                                               :status :created})]
+      (require-id-available store id)
+      (let [[store sl] (m/create store :slice (with-id {:timeline timeline :title title
+                                                        :kind kind :index index
+                                                        :status :created} id))]
         (commit store :AddSlice [(created :slice sl)] sl))))
 
 (defn reorder-slice [store {:keys [slice new-index]}]
@@ -122,11 +139,12 @@
 ;; Elements
 ;; ---------------------------------------------------------------------------
 
-(defn create-element [store {:keys [model name kind]}]
+(defn create-element [store {:keys [model name kind id]}]
   (or (require-entity store :event-model model)
-      (let [[store el] (m/create store :element {:model model :name name :kind kind
-                                                 :context :internal :fields []
-                                                 :field_origins []})]
+      (require-id-available store id)
+      (let [[store el] (m/create store :element (with-id {:model model :name name :kind kind
+                                                           :context :internal :fields []
+                                                           :field_origins []} id))]
         (commit store :CreateElement [(created :element el)] el))))
 
 (defn set-fields [store {:keys [element fields]}]
@@ -181,14 +199,15 @@
 ;; Placements
 ;; ---------------------------------------------------------------------------
 
-(defn place-element [store {:keys [slice element]}]
+(defn place-element [store {:keys [slice element id]}]
   (or (require-entity store :slice slice)
       (require-entity store :element element)
+      (require-id-available store id)
       (let [existing  (m/placements store slice)
             next-idx  (if (seq existing)
                         (inc (apply max (map #(or (:index %) 0) existing)))
                         0)
-            [store p] (m/create store :placement {:slice slice :element element :index next-idx})]
+            [store p] (m/create store :placement (with-id {:slice slice :element element :index next-idx} id))]
         (commit store :PlaceElement [(created :placement p)] p))))
 
 (defn reorder-placement [store {:keys [placement new-index]}]
@@ -206,12 +225,13 @@
 ;; Connections
 ;; ---------------------------------------------------------------------------
 
-(defn connect [store {:keys [from to]}]
+(defn connect [store {:keys [from to id]}]
   (or (require-entity store :element from)
       (require-entity store :element to)
+      (require-id-available store id)
       (let [model      (:model (m/fetch store :element from))
-            [store c]  (m/create store :connection {:model model :from from :to to
-                                                    :derivations []})]
+            [store c]  (m/create store :connection (with-id {:model model :from from :to to
+                                                             :derivations []} id))]
         (commit store :Connect [(created :connection c)] c))))
 
 (defn disconnect [store {:keys [connection]}]
@@ -240,24 +260,27 @@
 ;; Specifications (Given / When / Then)
 ;; ---------------------------------------------------------------------------
 
-(defn add-specification [store {:keys [slice title]}]
+(defn add-specification [store {:keys [slice title id]}]
   (or (require-entity store :slice slice)
-      (let [[store spec] (m/create store :specification {:slice slice :title title})]
+      (require-id-available store id)
+      (let [[store spec] (m/create store :specification (with-id {:slice slice :title title} id))]
         (commit store :AddSpecification [(created :specification spec)] spec))))
 
-(defn add-spec-step [store {:keys [spec clause element index]}]
+(defn add-spec-step [store {:keys [spec clause element index id]}]
   (or (require-entity store :specification spec)
       (require-entity store :element element)
+      (require-id-available store id)
       (let [[store st] (m/create store :spec-step
-                                 {:spec spec :clause clause :element element :index index
-                                  :is_error false :expect_empty false :examples []})]
+                                 (with-id {:spec spec :clause clause :element element :index index
+                                          :is_error false :expect_empty false :examples []} id))]
         (commit store :AddSpecStep [(created :spec-step st)] st))))
 
-(defn add-error-step [store {:keys [spec error-name index]}]
+(defn add-error-step [store {:keys [spec error-name index id]}]
   (or (require-entity store :specification spec)
+      (require-id-available store id)
       (let [[store st] (m/create store :spec-step
-                                 {:spec spec :clause :then_step :error_name error-name
-                                  :index index :is_error true :expect_empty false :examples []})]
+                                 (with-id {:spec spec :clause :then_step :error_name error-name
+                                          :index index :is_error true :expect_empty false :examples []} id))]
         (commit store :AddErrorStep [(created :spec-step st)] st))))
 
 (defn remove-spec-step [store {:keys [step]}]

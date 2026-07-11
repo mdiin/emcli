@@ -42,6 +42,20 @@
       (is (= :missing-args (:error res)))
       (is (= [:index] (:missing res))))))
 
+;; --- explicit --id (CLI-level: string coercion + conflict surfacing) ------
+
+(deftest explicit-id-flows-through-cmd-run
+  (let [a (app/new-app "M")]
+    (testing "string --id coerces to int and is honored"
+      (let [res (cmd/run a "create-timeline" {:title "T" :id "9"})]
+        (is (not (r/error? res)))
+        (is (= 9 (:id (:result res))))))
+    (testing "conflicting id is rejected, same as any other rule error"
+      (let [res (cmd/run a "create-swimlane" {:name "L" :index 0 :id "9"})]
+        (is (= :id-conflict (:error res)))))
+    (testing "non-integer --id is a bad-argument, same as any other int param"
+      (is (= :bad-argument (:error (cmd/run a "create-element" {:name "E" :kind "command" :id "nope"})))))))
+
 ;; NameResolution.resolve (event-model.allium): batched name -> candidate
 ;; lookup, so an LLM never has to pull the whole model to resolve a name.
 (deftest resolve-names-test

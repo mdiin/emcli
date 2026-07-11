@@ -29,39 +29,39 @@
 ;; :model? injects {:model <app model id>}.
 (def registry
   {;; Timelines
-   "create-timeline"     {:rule r/create-timeline    :model? true  :params [[:title :title :str true]]}
+   "create-timeline"     {:rule r/create-timeline    :model? true  :params [[:title :title :str true] [:id :id :int false]]}
    "rename-timeline"     {:rule r/rename-timeline     :params [[:timeline :timeline :int true] [:new-title :new-title :str true]]}
    "delete-timeline"     {:rule r/delete-timeline     :params [[:timeline :timeline :int true]]}
    ;; Swimlanes
-   "create-swimlane"     {:rule r/create-swimlane     :model? true  :params [[:name :name :str true] [:index :index :int true]]}
+   "create-swimlane"     {:rule r/create-swimlane     :model? true  :params [[:name :name :str true] [:index :index :int true] [:id :id :int false]]}
    "rename-swimlane"     {:rule r/rename-swimlane     :params [[:lane :lane :int true] [:new-name :new-name :str true]]}
    "reorder-swimlane"    {:rule r/reorder-swimlane    :params [[:lane :lane :int true] [:new-index :new-index :int true]]}
    "delete-swimlane"     {:rule r/delete-swimlane     :params [[:lane :lane :int true]]}
    ;; Slices
-   "add-slice"           {:rule r/add-slice           :params [[:timeline :timeline :int true] [:title :title :str true] [:kind :kind :kw true] [:index :index :int true]]}
+   "add-slice"           {:rule r/add-slice           :params [[:timeline :timeline :int true] [:title :title :str true] [:kind :kind :kw true] [:index :index :int true] [:id :id :int false]]}
    "reorder-slice"       {:rule r/reorder-slice       :params [[:slice :slice :int true] [:new-index :new-index :int true]]}
    "set-slice-status"    {:rule r/set-slice-status    :params [[:slice :slice :int true] [:new-status :new-status :kw true]]}
    "set-slice-kind"      {:rule r/set-slice-kind      :params [[:slice :slice :int true] [:new-kind :new-kind :kw true]]}
    "delete-slice"        {:rule r/delete-slice        :params [[:slice :slice :int true]]}
    ;; Elements
-   "create-element"      {:rule r/create-element      :model? true  :params [[:name :name :str true] [:kind :kind :kw true]]}
+   "create-element"      {:rule r/create-element      :model? true  :params [[:name :name :str true] [:kind :kind :kw true] [:id :id :int false]]}
    "set-element-context" {:rule r/set-element-context :params [[:element :element :int true] [:new-context :new-context :kw true]]}
    "assign-swimlane"     {:rule r/assign-swimlane     :params [[:element :element :int true] [:lane :lane :int true]]}
    "set-image-url"       {:rule r/set-image-url       :params [[:element :element :int true] [:url :url :str true]]}
    "rename-element"      {:rule r/rename-element      :params [[:element :element :int true] [:new-name :new-name :str true]]}
    "delete-element"      {:rule r/delete-element      :params [[:element :element :int true]]}
    ;; Placements
-   "place-element"       {:rule r/place-element       :params [[:slice :slice :int true] [:element :element :int true]]}
+   "place-element"       {:rule r/place-element       :params [[:slice :slice :int true] [:element :element :int true] [:id :id :int false]]}
    "reorder-placement"   {:rule r/reorder-placement   :params [[:placement :placement :int true] [:new-index :new-index :int true]]}
    "remove-placement"    {:rule r/remove-placement    :params [[:placement :placement :int true]]}
    ;; Connections
-   "connect"             {:rule r/connect             :params [[:from :from :int true] [:to :to :int true]]}
+   "connect"             {:rule r/connect             :params [[:from :from :int true] [:to :to :int true] [:id :id :int false]]}
    "disconnect"          {:rule r/disconnect          :params [[:connection :connection :int true]]}
    ;; Specifications
-   "add-specification"   {:rule r/add-specification   :params [[:slice :slice :int true] [:title :title :str true]]}
+   "add-specification"   {:rule r/add-specification   :params [[:slice :slice :int true] [:title :title :str true] [:id :id :int false]]}
    "delete-specification"{:rule r/delete-specification :params [[:spec :spec :int true]]}
-   "add-spec-step"       {:rule r/add-spec-step       :params [[:spec :spec :int true] [:clause :clause :kw true] [:element :element :int true] [:index :index :int true]]}
-   "add-error-step"      {:rule r/add-error-step      :params [[:spec :spec :int true] [:error-name :error-name :str true] [:index :index :int true]]}
+   "add-spec-step"       {:rule r/add-spec-step       :params [[:spec :spec :int true] [:clause :clause :kw true] [:element :element :int true] [:index :index :int true] [:id :id :int false]]}
+   "add-error-step"      {:rule r/add-error-step      :params [[:spec :spec :int true] [:error-name :error-name :str true] [:index :index :int true] [:id :id :int false]]}
    "remove-spec-step"    {:rule r/remove-spec-step    :params [[:step :step :int true]]}
    "set-step-expect-empty" {:rule r/set-step-expect-empty :params [[:step :step :int true] [:value :value :bool true]]}})
 

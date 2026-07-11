@@ -106,6 +106,18 @@
 
 ;; --- derived: Specification.is_complete ------------------------------------
 
+;; --- explicit --id (create with a pre-assigned id) ------------------------
+
+(deftest create-with-explicit-id
+  (let [[store mid] (s/with-model)
+        [store' tl] (m/create store :timeline {:model mid :title "T" :id 42})]
+    (is (= 42 (:id tl)))
+    (is (m/id-taken? store' 42))
+    (is (not (m/id-taken? store' 43)))
+    (testing "seq advances past the explicit id, so future auto ids never collide"
+      (let [[_ auto-id] (m/next-id store')]
+        (is (> auto-id 42))))))
+
 (deftest spec-is-complete
   (let [[store mid slid] (seed-slice :state_change)
         store            (:store (s/ok store r/create-element {:model mid :name "PlaceOrder" :kind :command}))

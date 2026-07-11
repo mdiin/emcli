@@ -46,13 +46,27 @@
   [store entity]
   (assoc-in store [(coll-key (:type entity)) (:id entity)] entity))
 
+(defn id-taken?
+  "True if `id` is already used by any entity, of any type. Ids are a single
+  sequence shared across all entity types (`next-id`/:seq), so uniqueness must
+  be checked globally rather than per-collection."
+  [store id]
+  (boolean (some #(contains? (get store %) id) (vals collections))))
+
 (defn create
-  "Allocate an id and insert a new entity of `type` with `attrs`.
+  "Allocate an id and insert a new entity of `type` with `attrs`. If `attrs`
+  carries an :id, that id is used verbatim instead of auto-allocating (the
+  caller must check id-taken? first) and :seq is advanced past it so future
+  auto-allocated ids never collide with it.
   Returns [store' entity]."
   [store type attrs]
-  (let [[store id] (next-id store)
-        entity     (merge attrs {:id id :type type})]
-    [(insert store entity) entity]))
+  (if-let [id (:id attrs)]
+    (let [entity (assoc (dissoc attrs :id) :id id :type type)
+          store  (update store :seq max id)]
+      [(insert store entity) entity])
+    (let [[store id] (next-id store)
+          entity     (merge attrs {:id id :type type})]
+      [(insert store entity) entity])))
 
 (defn fetch
   "Look up an entity by type and id (nil if absent)."
