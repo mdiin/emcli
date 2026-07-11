@@ -106,25 +106,11 @@
         (commit store :ReorderSlice [(updated store :slice slice)]
                 (m/fetch store :slice slice)))))
 
-(def slice-transitions
-  "The declared Slice.status transition graph."
-  #{[:created :in_progress]
-    [:in_progress :done]
-    [:done :in_progress]
-    [:in_progress :created]
-    [:created :informational]
-    [:informational :created]})
-
 (defn set-slice-status [store {:keys [slice new-status]}]
   (or (require-entity store :slice slice)
-      (let [from (:status (m/fetch store :slice slice))]
-        (if-not (slice-transitions [from new-status])
-          {:error :illegal-transition :from from :to new-status
-           :message (str "Illegal slice status transition: " (name from)
-                         " -> " (name new-status))}
-          (let [store (m/set-field store :slice slice :status new-status)]
-            (commit store :SetSliceStatus [(updated store :slice slice)]
-                    (m/fetch store :slice slice)))))))
+      (let [store (m/set-field store :slice slice :status new-status)]
+        (commit store :SetSliceStatus [(updated store :slice slice)]
+                (m/fetch store :slice slice)))))
 
 (defn set-slice-kind [store {:keys [slice new-kind]}]
   (or (require-entity store :slice slice)

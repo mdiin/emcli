@@ -138,11 +138,8 @@
 (deftest rejected-mutation-emits-no-delta
   (testing "a rejected mutation changes nothing and broadcasts nothing"
     (let [a (app/new-app "Orders")
-          tl (:result (cmd/run a "create-timeline" {:title "T"}))
-          _  (cmd/run a "add-slice" {:timeline (:id tl) :title "S" :kind "state_change" :index 0})
-          slice-id (:id (first (m/slices (app/store a) (:id tl))))
           [_ msgs] (recording-sub a)
-          res (cmd/run a "set-slice-status" {:slice slice-id :new-status "done"})]
+          res (cmd/run a "set-slice-status" {:slice 999999 :new-status "done"})]
       (is (r/error? res))
       (is (= 1 (count @msgs))))))                     ; only the snapshot
 

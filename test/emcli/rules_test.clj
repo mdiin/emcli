@@ -91,17 +91,18 @@
         tlid        (:id (first (m/timelines store mid)))
         store       (:store (s/ok store r/add-slice {:timeline tlid :title "S" :kind :state_change :index 0}))
         slid        (:id (first (m/slices store tlid)))]
-    (testing "every declared edge is accepted"
-      (doseq [[from to] r/slice-transitions]
+    (testing "any status transition is accepted, regardless of the prior status"
+      (doseq [[from to] [[:created :in_progress]
+                         [:in_progress :done]
+                         [:done :in_progress]
+                         [:in_progress :created]
+                         [:created :informational]
+                         [:informational :created]
+                         [:created :done]]]
         (let [store (m/set-field store :slice slid :status from)
               res   (r/set-slice-status store {:slice slid :new-status to})]
           (is (not (r/error? res)) (str from " -> " to " should be allowed"))
-          (is (= to (:status (m/fetch (:store res) :slice slid)))))))
-    (testing "an undeclared edge is rejected"
-      (let [store (m/set-field store :slice slid :status :created)
-            res   (r/set-slice-status store {:slice slid :new-status :done})]
-        (is (r/error? res))
-        (is (= :illegal-transition (:error res)))))))
+          (is (= to (:status (m/fetch (:store res) :slice slid)))))))))
 
 ;; --- cascades --------------------------------------------------------------
 

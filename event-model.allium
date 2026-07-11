@@ -96,15 +96,6 @@ entity Slice {
         (kind = state_change and commands.count = 1) or
         (kind = state_view and read_models.count = 1) or
         (kind = automation and commands.count = 1 and automations.count = 1)
-
-    transitions status {
-        created -> in_progress
-        in_progress -> done
-        done -> in_progress
-        in_progress -> created
-        created -> informational
-        informational -> created
-    }
 }
 
 -- A reference to a single-source Element from within a Slice.
