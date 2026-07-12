@@ -42,14 +42,16 @@
 (defn- with-id [attrs id]
   (cond-> attrs id (assoc :id id)))
 
-(def ^:private element-kinds #{:command :event :read_model :screen :automation})
-(def ^:private slice-kinds   #{:state_change :state_view :automation})
+(def ^:private element-kinds    #{:command :event :read_model :screen :automation})
+(def ^:private slice-kinds      #{:state_change :state_view :automation})
+(def ^:private slice-statuses   #{:created :in_progress :done :informational})
+(def ^:private spec-step-clauses #{:given_step :when_step :then_step})
 
-(defn- require-valid-kind [kinds kind]
-  (when-not (contains? kinds kind)
-    {:error :invalid-kind :kind kind
-     :message (str "invalid kind " kind "; must be one of "
-                   (str/join ", " (map name kinds)))}))
+(defn- require-valid-value [allowed value]
+  (when-not (contains? allowed value)
+    {:error :invalid-value :value value
+     :message (str "invalid value " value "; must be one of "
+                   (str/join ", " (map name allowed)))}))
 
 (defn- commit
   "Validate invariants and package a successful mutation. If the candidate
@@ -121,7 +123,7 @@
 (defn add-slice [store {:keys [timeline title kind index id]}]
   (or (require-entity store :timeline timeline)
       (require-id-available store id)
-      (require-valid-kind slice-kinds kind)
+      (require-valid-value slice-kinds kind)
       (let [[store sl] (m/create store :slice (with-id {:timeline timeline :title title
                                                         :kind kind :index index
                                                         :status :created} id))]
@@ -135,13 +137,14 @@
 
 (defn set-slice-status [store {:keys [slice new-status]}]
   (or (require-entity store :slice slice)
+      (require-valid-value slice-statuses new-status)
       (let [store (m/set-field store :slice slice :status new-status)]
         (commit store :SetSliceStatus [(updated store :slice slice)]
                 (m/fetch store :slice slice)))))
 
 (defn set-slice-kind [store {:keys [slice new-kind]}]
   (or (require-entity store :slice slice)
-      (require-valid-kind slice-kinds new-kind)
+      (require-valid-value slice-kinds new-kind)
       (let [store (m/set-field store :slice slice :kind new-kind)]
         (commit store :SetSliceKind [(updated store :slice slice)]
                 (m/fetch store :slice slice)))))
@@ -153,7 +156,7 @@
 (defn create-element [store {:keys [model name kind id]}]
   (or (require-entity store :event-model model)
       (require-id-available store id)
-      (require-valid-kind element-kinds kind)
+      (require-valid-value element-kinds kind)
       (let [[store el] (m/create store :element (with-id {:model model :name name :kind kind
                                                            :context :internal :fields []
                                                            :field_origins []} id))]
@@ -282,6 +285,7 @@
   (or (require-entity store :specification spec)
       (require-entity store :element element)
       (require-id-available store id)
+      (require-valid-value spec-step-clauses clause)
       (let [[store st] (m/create store :spec-step
                                  (with-id {:spec spec :clause clause :element element :index index
                                           :is_error false :expect_empty false :examples []} id))]
