@@ -25,6 +25,21 @@
 (defn- coerce [type v]
   (case type :int (->int v) :kw (->kw v) :bool (->bool v) v))
 
+;; set-fields/set-field-origins carry their items as JSON, parsed with
+;; keywordize-keys true — that only keywordizes map *keys*, not values, so a
+;; field's "type": "uuid" arrives as the string "uuid", never :uuid. This is
+;; the one choke point every caller (HTTP server, direct cmd/run) passes
+;; through before the rule, so it's coerced here rather than at the transport
+;; edge, where it would just be re-flattened to a string on the wire.
+(defn- coerce-field [f]
+  (cond-> f
+    (:type f)        (update :type ->kw)
+    (:cardinality f) (update :cardinality ->kw)
+    (seq (:subfields f)) (update :subfields #(mapv coerce-field %))))
+
+(defn- coerce-origin [o]
+  (cond-> o (:origin o) (update :origin ->kw)))
+
 ;; Each command: rule fn, and params as [option-key rule-arg-key coerce-type required?].
 ;; :model? injects {:model <app model id>}.
 (def registry
@@ -111,7 +126,7 @@
     (= command "set-fields")
     (if (and (get opts :element) (contains? opts :fields))
       (app/apply-rule! app r/set-fields {:element (->int (get opts :element))
-                                         :fields (vec (get opts :fields))})
+                                         :fields (mapv coerce-field (get opts :fields))})
       {:error :missing-args :message "set-fields requires :element and :fields"})
 
     (= command "set-step-examples")
@@ -123,7 +138,7 @@
     (= command "set-field-origins")
     (if (and (get opts :element) (contains? opts :origins))
       (app/apply-rule! app r/set-field-origins {:element (->int (get opts :element))
-                                                :origins (vec (get opts :origins))})
+                                                :origins (mapv coerce-origin (get opts :origins))})
       {:error :missing-args :message "set-field-origins requires :element and :origins"})
 
     (= command "set-connection-derivations")
