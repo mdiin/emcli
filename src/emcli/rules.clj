@@ -43,12 +43,13 @@
   (cond-> attrs id (assoc :id id)))
 
 (def ^:private element-kinds #{:command :event :read_model :screen :automation})
+(def ^:private slice-kinds   #{:state_change :state_view :automation})
 
-(defn- require-valid-kind [kind]
-  (when-not (contains? element-kinds kind)
+(defn- require-valid-kind [kinds kind]
+  (when-not (contains? kinds kind)
     {:error :invalid-kind :kind kind
-     :message (str "invalid element kind " kind "; must be one of "
-                   (str/join ", " (map name element-kinds)))}))
+     :message (str "invalid kind " kind "; must be one of "
+                   (str/join ", " (map name kinds)))}))
 
 (defn- commit
   "Validate invariants and package a successful mutation. If the candidate
@@ -120,6 +121,7 @@
 (defn add-slice [store {:keys [timeline title kind index id]}]
   (or (require-entity store :timeline timeline)
       (require-id-available store id)
+      (require-valid-kind slice-kinds kind)
       (let [[store sl] (m/create store :slice (with-id {:timeline timeline :title title
                                                         :kind kind :index index
                                                         :status :created} id))]
@@ -139,6 +141,7 @@
 
 (defn set-slice-kind [store {:keys [slice new-kind]}]
   (or (require-entity store :slice slice)
+      (require-valid-kind slice-kinds new-kind)
       (let [store (m/set-field store :slice slice :kind new-kind)]
         (commit store :SetSliceKind [(updated store :slice slice)]
                 (m/fetch store :slice slice)))))
@@ -150,7 +153,7 @@
 (defn create-element [store {:keys [model name kind id]}]
   (or (require-entity store :event-model model)
       (require-id-available store id)
-      (require-valid-kind kind)
+      (require-valid-kind element-kinds kind)
       (let [[store el] (m/create store :element (with-id {:model model :name name :kind kind
                                                            :context :internal :fields []
                                                            :field_origins []} id))]
