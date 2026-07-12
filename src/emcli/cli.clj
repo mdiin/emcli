@@ -65,16 +65,29 @@
 
     :else nil))
 
+;; json/parse-string with keywordize-keys only keywordizes map *keys*, not
+;; values — a field's "type": "uuid" arrives as the string "uuid", never the
+;; keyword :uuid. Left uncoerced, schema.clj's keyword-keyed lookups (type,
+;; cardinality, origin) silently miss and fall back to their defaults.
+(defn- coerce-field [f]
+  (cond-> f
+    (:type f)        (update :type keyword)
+    (:cardinality f) (update :cardinality keyword)
+    (seq (:subfields f)) (update :subfields #(mapv coerce-field %))))
+
+(defn- coerce-origin [o]
+  (cond-> o (:origin o) (update :origin keyword)))
+
 (defn- prepare [command opts]
   (cond-> opts
     (and (= command "set-fields") (:fields-json opts))
-    (assoc :fields (json/parse-string (:fields-json opts) true))
+    (assoc :fields (mapv coerce-field (json/parse-string (:fields-json opts) true)))
 
     (and (= command "set-step-examples") (:examples-json opts))
     (assoc :examples (json/parse-string (:examples-json opts) true))
 
     (and (= command "set-field-origins") (:origins-json opts))
-    (assoc :origins (json/parse-string (:origins-json opts) true))
+    (assoc :origins (mapv coerce-origin (json/parse-string (:origins-json opts) true)))
 
     (and (= command "set-connection-derivations") (:derivations-json opts))
     (assoc :derivations (json/parse-string (:derivations-json opts) true))))

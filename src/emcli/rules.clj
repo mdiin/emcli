@@ -76,6 +76,25 @@
   (when-let [msg (some invalid-derivation derivations)]
     {:error :invalid-value :message msg}))
 
+(def ^:private field-types        #{:string :boolean :double :decimal :long :custom
+                                     :date :date_time :uuid :int})
+(def ^:private field-cardinalities #{:single :list})
+
+(defn- invalid-field [f]
+  (cond
+    (str/blank? (:name f)) (str "field missing name: " f)
+    (not (contains? field-types (:type f)))
+    (str "invalid field type " (:type f) " for field " (:name f) "; must be one of "
+         (str/join ", " (map name field-types)))
+    (and (:cardinality f) (not (contains? field-cardinalities (:cardinality f))))
+    (str "invalid cardinality " (:cardinality f) " for field " (:name f) "; must be one of "
+         (str/join ", " (map name field-cardinalities)))
+    (seq (:subfields f)) (some invalid-field (:subfields f))))
+
+(defn- require-valid-fields [fields]
+  (when-let [msg (some invalid-field fields)]
+    {:error :invalid-value :message msg}))
+
 (defn- commit
   "Validate invariants and package a successful mutation. If the candidate
   store breaks any invariant the mutation is rejected and nothing is applied."
@@ -187,6 +206,7 @@
 
 (defn set-fields [store {:keys [element fields]}]
   (or (require-entity store :element element)
+      (require-valid-fields fields)
       (let [store (m/set-field store :element element :fields (vec fields))]
         (commit store :SetFields [(updated store :element element)]
                 (m/fetch store :element element)))))
