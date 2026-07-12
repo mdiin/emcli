@@ -42,6 +42,14 @@
 (defn- with-id [attrs id]
   (cond-> attrs id (assoc :id id)))
 
+(def ^:private element-kinds #{:command :event :read_model :screen :automation})
+
+(defn- require-valid-kind [kind]
+  (when-not (contains? element-kinds kind)
+    {:error :invalid-kind :kind kind
+     :message (str "invalid element kind " kind "; must be one of "
+                   (str/join ", " (map name element-kinds)))}))
+
 (defn- commit
   "Validate invariants and package a successful mutation. If the candidate
   store breaks any invariant the mutation is rejected and nothing is applied."
@@ -142,6 +150,7 @@
 (defn create-element [store {:keys [model name kind id]}]
   (or (require-entity store :event-model model)
       (require-id-available store id)
+      (require-valid-kind kind)
       (let [[store el] (m/create store :element (with-id {:model model :name name :kind kind
                                                            :context :internal :fields []
                                                            :field_origins []} id))]
