@@ -46,6 +46,8 @@
 (def ^:private slice-kinds      #{:state_change :state_view :automation})
 (def ^:private slice-statuses   #{:created :in_progress :done :informational})
 (def ^:private spec-step-clauses #{:given_step :when_step :then_step})
+(def ^:private element-contexts #{:internal :external})
+(def ^:private field-origins    #{:user_input :generated :external})
 
 (defn- require-valid-value [allowed value]
   (when-not (contains? allowed value)
@@ -170,6 +172,7 @@
 
 (defn set-element-context [store {:keys [element new-context]}]
   (or (require-entity store :element element)
+      (require-valid-value element-contexts new-context)
       (let [store (m/set-field store :element element :context new-context)]
         (commit store :SetElementContext [(updated store :element element)]
                 (m/fetch store :element element)))))
@@ -199,6 +202,7 @@
 ;; it emits exactly one SetFieldOrigins delta.
 (defn add-field-origin [store {:keys [element field origin]}]
   (or (require-entity store :element element)
+      (require-valid-value field-origins origin)
       (let [current (:field_origins (m/fetch store :element element))
             origins (conj (vec (remove #(= field (:field %)) current))
                           {:field field :origin origin})]
