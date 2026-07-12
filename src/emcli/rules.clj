@@ -42,6 +42,10 @@
 (defn- with-id [attrs id]
   (cond-> attrs id (assoc :id id)))
 
+(defn- require-non-blank [field value]
+  (when (str/blank? value)
+    {:error :invalid-value :message (str (name field) " must not be blank")}))
+
 (def ^:private element-kinds    #{:command :event :read_model :screen :automation})
 (def ^:private slice-kinds      #{:state_change :state_view :automation})
 (def ^:private slice-statuses   #{:created :in_progress :done :informational})
@@ -341,6 +345,7 @@
 (defn add-error-step [store {:keys [spec error-name index id]}]
   (or (require-entity store :specification spec)
       (require-id-available store id)
+      (require-non-blank :error-name error-name)
       (let [[store st] (m/create store :spec-step
                                  (with-id {:spec spec :clause :then_step :error_name error-name
                                           :index index :is_error true :expect_empty false :examples []} id))]
