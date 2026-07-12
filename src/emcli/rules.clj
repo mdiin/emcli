@@ -119,10 +119,11 @@
 ;; authoring session. There is intentionally no RenameModel — the spec exposes
 ;; `model.name` for reading but provides no operation to change it.
 (defn create-model [store {:keys [name]}]
-  (let [[store model] (m/create store :event-model {:name name})]
-    {:store store
-     :delta {:op :CreateModel :changes [(created :event-model model)]}
-     :result model}))
+  (or (require-non-blank :name name)
+      (let [[store model] (m/create store :event-model {:name name})]
+        {:store store
+         :delta {:op :CreateModel :changes [(created :event-model model)]}
+         :result model})))
 
 ;; ---------------------------------------------------------------------------
 ;; Timelines
@@ -131,11 +132,13 @@
 (defn create-timeline [store {:keys [model title id]}]
   (or (require-entity store :event-model model)
       (require-id-available store id)
+      (require-non-blank :title title)
       (let [[store tl] (m/create store :timeline (with-id {:model model :title title} id))]
         (commit store :CreateTimeline [(created :timeline tl)] tl))))
 
 (defn rename-timeline [store {:keys [timeline new-title]}]
   (or (require-entity store :timeline timeline)
+      (require-non-blank :new-title new-title)
       (let [store (m/set-field store :timeline timeline :title new-title)]
         (commit store :RenameTimeline [(updated store :timeline timeline)]
                 (m/fetch store :timeline timeline)))))
@@ -147,11 +150,13 @@
 (defn create-swimlane [store {:keys [model name index id]}]
   (or (require-entity store :event-model model)
       (require-id-available store id)
+      (require-non-blank :name name)
       (let [[store lane] (m/create store :swimlane (with-id {:model model :name name :index index} id))]
         (commit store :CreateSwimlane [(created :swimlane lane)] lane))))
 
 (defn rename-swimlane [store {:keys [lane new-name]}]
   (or (require-entity store :swimlane lane)
+      (require-non-blank :new-name new-name)
       (let [store (m/set-field store :swimlane lane :name new-name)]
         (commit store :RenameSwimlane [(updated store :swimlane lane)]
                 (m/fetch store :swimlane lane)))))
@@ -169,6 +174,7 @@
 (defn add-slice [store {:keys [timeline title kind index id]}]
   (or (require-entity store :timeline timeline)
       (require-id-available store id)
+      (require-non-blank :title title)
       (require-valid-value slice-kinds kind)
       (let [[store sl] (m/create store :slice (with-id {:timeline timeline :title title
                                                         :kind kind :index index
@@ -202,6 +208,7 @@
 (defn create-element [store {:keys [model name kind id]}]
   (or (require-entity store :event-model model)
       (require-id-available store id)
+      (require-non-blank :name name)
       (require-valid-value element-kinds kind)
       (let [[store el] (m/create store :element (with-id {:model model :name name :kind kind
                                                            :context :internal :fields []
@@ -256,6 +263,7 @@
 
 (defn rename-element [store {:keys [element new-name]}]
   (or (require-entity store :element element)
+      (require-non-blank :new-name new-name)
       (let [store (m/set-field store :element element :name new-name)]
         (commit store :RenameElement [(updated store :element element)]
                 (m/fetch store :element element)))))
@@ -329,6 +337,7 @@
 (defn add-specification [store {:keys [slice title id]}]
   (or (require-entity store :slice slice)
       (require-id-available store id)
+      (require-non-blank :title title)
       (let [[store spec] (m/create store :specification (with-id {:slice slice :title title} id))]
         (commit store :AddSpecification [(created :specification spec)] spec))))
 
