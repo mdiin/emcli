@@ -55,6 +55,27 @@
      :message (str "invalid value " value "; must be one of "
                    (str/join ", " (map name allowed)))}))
 
+(defn- invalid-origin [{:keys [field origin]}]
+  (cond
+    (str/blank? field) (str "field-origin missing field: " {:field field :origin origin})
+    (not (contains? field-origins origin))
+    (str "invalid origin " origin " for field " field "; must be one of "
+         (str/join ", " (map name field-origins)))))
+
+(defn- require-valid-origins [origins]
+  (when-let [msg (some invalid-origin origins)]
+    {:error :invalid-value :message msg}))
+
+(defn- invalid-derivation [{:keys [target_field source_fields]}]
+  (cond
+    (str/blank? target_field) (str "derivation missing target_field: " {:target_field target_field})
+    (or (empty? source_fields) (some str/blank? source_fields))
+    (str "derivation for " target_field " must have non-empty source_fields")))
+
+(defn- require-valid-derivations [derivations]
+  (when-let [msg (some invalid-derivation derivations)]
+    {:error :invalid-value :message msg}))
+
 (defn- commit
   "Validate invariants and package a successful mutation. If the candidate
   store breaks any invariant the mutation is rejected and nothing is applied."
@@ -192,6 +213,7 @@
 
 (defn set-field-origins [store {:keys [element origins]}]
   (or (require-entity store :element element)
+      (require-valid-origins origins)
       (let [store (m/set-field store :element element :field_origins (vec origins))]
         (commit store :SetFieldOrigins [(updated store :element element)]
                 (m/fetch store :element element)))))
@@ -260,6 +282,7 @@
 
 (defn set-connection-derivations [store {:keys [connection derivations]}]
   (or (require-entity store :connection connection)
+      (require-valid-derivations derivations)
       (let [store (m/set-field store :connection connection :derivations (vec derivations))]
         (commit store :SetConnectionDerivations [(updated store :connection connection)]
                 (m/fetch store :connection connection)))))
