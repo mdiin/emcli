@@ -65,12 +65,12 @@
           tl   (:result (cmd/run a "create-timeline" {:title "Ordering"}))
           sl   (:result (cmd/run a "add-slice" {:timeline (:id tl) :title "Place" :kind "state_change" :index 0}))
           cmd' (:result (cmd/run a "create-element" {:name "PlaceOrder" :kind "command"}))
-          _    (cmd/run a "set-fields" {:element (:id cmd')
-                                        :fields [{:name "id" :type :uuid :optional false
-                                                  :cardinality :single
-                                                  :subfields [{:name "nested" :type :string
-                                                               :optional false :cardinality :single
-                                                               :subfields []}]}]})
+          _    (cmd/run a "add-field" {:element (:id cmd')
+                                       :field {:name "id" :type :uuid :optional false
+                                               :cardinality :single
+                                               :subfields [{:name "nested" :type :string
+                                                            :optional false :cardinality :single
+                                                            :subfields []}]}})
           _    (cmd/run a "place-element" {:slice (:id sl) :element (:id cmd')})
           [_ msgs] (recording-sub a)
           model (:model (first @msgs))
@@ -86,8 +86,7 @@
           el   (:result (cmd/run a "create-element" {:name "PlaceOrder" :kind "command"}))
           sp   (:result (cmd/run a "add-specification" {:slice (:id sl) :title "Happy path"}))
           st   (:result (cmd/run a "add-spec-step" {:spec (:id sp) :clause :when_step :element (:id el) :index 0}))
-          _    (cmd/run a "set-step-examples" {:step (:id st)
-                                                :examples [{:field_name "id" :field_value "1"}]})
+          _    (cmd/run a "add-step-example" {:step (:id st) :field-name "id" :field-value "1"})
           [_ msgs] (recording-sub a)
           model (:model (first @msgs))
           slice (first (:slices (first (:timelines model))))

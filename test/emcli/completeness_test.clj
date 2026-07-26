@@ -190,6 +190,65 @@
     (is (= [{:target_field "total" :source_fields ["unitPrice" "quantity"]}]
            (:derivations (m/fetch (app/store a) :connection cid))))))
 
+(deftest add-field-and-remove-field-append-and-remove
+  (let [[store mid] (s/with-model)
+        store (:store (s/ok store r/create-element {:model mid :name "Cmd" :kind :command}))
+        eid   (:id (first (m/elements store mid)))
+        id-field {:name "id" :type :uuid :optional false :cardinality :single :subfields []}
+        at-field {:name "at" :type :date_time :optional false :cardinality :single :subfields []}]
+    (testing "appends preserving existing fields"
+      (let [store (:store (s/ok store r/add-field {:element eid :field id-field}))
+            store (:store (s/ok store r/add-field {:element eid :field at-field}))]
+        (is (= [id-field at-field] (:fields (m/fetch store :element eid))))
+        (testing "re-adding the same name replaces it, no duplicate"
+          (let [renamed (assoc id-field :type :string)
+                store   (:store (s/ok store r/add-field {:element eid :field renamed}))
+                fields  (:fields (m/fetch store :element eid))]
+            (is (= 2 (count fields)))
+            (is (= :string (:type (first (filter #(= "id" (:name %)) fields)))))))
+        (testing "remove-field drops just the named field"
+          (let [store (:store (s/ok store r/remove-field {:element eid :name "id"}))]
+            (is (= [at-field] (:fields (m/fetch store :element eid))))))))
+    (testing "emits a SetFields delta"
+      (is (= :SetFields (:op (:delta (r/add-field store {:element eid :field id-field})))))
+      (is (= :SetFields (:op (:delta (r/remove-field store {:element eid :name "id"}))))))))
+
+(deftest remove-field-origin-removes-the-named-override
+  (let [[store mid] (s/with-model)
+        store (:store (s/ok store r/create-element {:model mid :name "Cmd" :kind :command}))
+        eid   (:id (first (m/elements store mid)))
+        store (:store (s/ok store r/add-field-origin {:element eid :field "id" :origin :user_input}))
+        store (:store (s/ok store r/add-field-origin {:element eid :field "at" :origin :generated}))
+        store (:store (s/ok store r/remove-field-origin {:element eid :field "id"}))]
+    (is (= [{:field "at" :origin :generated}] (:field_origins (m/fetch store :element eid))))))
+
+(deftest remove-derivation-removes-the-named-target
+  (let [[store mid from to] (two-elements :event :read_model)
+        store (:store (s/ok store r/connect {:from from :to to}))
+        cid   (:id (first (m/connections store mid)))
+        store (:store (s/ok store r/add-derivation {:connection cid :target "customer" :from ["customerId"]}))
+        store (:store (s/ok store r/add-derivation {:connection cid :target "total" :from ["amount"]}))
+        store (:store (s/ok store r/remove-derivation {:connection cid :target "customer"}))]
+    (is (= [{:target_field "total" :source_fields ["amount"]}] (:derivations (m/fetch store :connection cid))))))
+
+(deftest add-step-example-and-remove-step-example-append-and-remove
+  (let [a    (app/new-app "M")
+        el   (:result (cmd/run a "create-element" {:name "PlaceOrder" :kind "command"}))
+        tl   (:result (cmd/run a "create-timeline" {:title "T"}))
+        sl   (:result (cmd/run a "add-slice" {:timeline (:id tl) :title "S" :kind "state_change" :index 0}))
+        sp   (:result (cmd/run a "add-specification" {:slice (:id sl) :title "spec"}))
+        st   (:result (cmd/run a "add-spec-step" {:spec (:id sp) :clause "when_step" :element (:id el) :index 0}))]
+    (cmd/run a "add-step-example" {:step (:id st) :field-name "id" :field-value "1"})
+    (cmd/run a "add-step-example" {:step (:id st) :field-name "at" :field-value "now"})
+    (is (= [{:field_name "id" :field_value "1"} {:field_name "at" :field_value "now"}]
+           (:examples (m/fetch (app/store a) :spec-step (:id st)))))
+    (cmd/run a "remove-step-example" {:step (:id st) :field-name "id"})
+    (is (= [{:field_name "at" :field_value "now"}]
+           (:examples (m/fetch (app/store a) :spec-step (:id st)))))
+    (testing "add-step-example rejects blank field-name/field-value"
+      (is (r/error? (cmd/run a "add-step-example" {:step (:id st) :field-name "" :field-value "1"})))
+      (is (r/error? (cmd/run a "add-step-example" {:step (:id st) :field-name "x" :field-value ""}))))))
+
 ;; --- ValidateModel reporting ----------------------------------------------
 
 (deftest validate-reports-incomplete-and-orphaned
@@ -197,10 +256,10 @@
         mid (app/model-id a)
         from (:result (cmd/run a "create-element" {:name "Evt" :kind "event"}))
         to   (:result (cmd/run a "create-element" {:name "RM" :kind "read_model"}))]
-    (cmd/run a "set-fields" {:element (:id to) :fields [{:name "total" :type :decimal :optional false :cardinality :single :subfields []}]})
+    (cmd/run a "add-field" {:element (:id to) :field {:name "total" :type :decimal :optional false :cardinality :single :subfields []}})
     (cmd/run a "connect" {:from (:id from) :to (:id to)})
     (let [cid (:id (first (m/connections (app/store a) mid)))]
-      (cmd/run a "set-connection-derivations" {:connection cid :derivations [{:target_field "total" :source_fields ["amount"]}]})
+      (cmd/run a "add-derivation" {:connection cid :target "total" :from ["amount"]})
       (let [report (cmd/validate a)]
         (is (some #(= (:id to) (:element %)) (:incomplete-elements report)))
         (is (= ["total"] (:unsourced (first (filter #(= (:id to) (:element %)) (:incomplete-elements report))))))

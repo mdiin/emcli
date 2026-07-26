@@ -25,20 +25,17 @@
 (defn- coerce [type v]
   (case type :int (->int v) :kw (->kw v) :bool (->bool v) v))
 
-;; set-fields/set-field-origins carry their items as JSON, parsed with
-;; keywordize-keys true — that only keywordizes map *keys*, not values, so a
-;; field's "type": "uuid" arrives as the string "uuid", never :uuid. This is
-;; the one choke point every caller (HTTP server, direct cmd/run) passes
-;; through before the rule, so it's coerced here rather than at the transport
-;; edge, where it would just be re-flattened to a string on the wire.
+;; add-field carries its field as JSON, parsed with keywordize-keys true —
+;; that only keywordizes map *keys*, not values, so a field's "type": "uuid"
+;; arrives as the string "uuid", never :uuid. This is the one choke point
+;; every caller (HTTP server, direct cmd/run) passes through before the rule,
+;; so it's coerced here rather than at the transport edge, where it would
+;; just be re-flattened to a string on the wire.
 (defn- coerce-field [f]
   (cond-> f
     (:type f)        (update :type ->kw)
     (:cardinality f) (update :cardinality ->kw)
     (seq (:subfields f)) (update :subfields #(mapv coerce-field %))))
-
-(defn- coerce-origin [o]
-  (cond-> o (:origin o) (update :origin ->kw)))
 
 ;; Each command: rule fn, and params as [option-key rule-arg-key coerce-type required?].
 ;; :model? injects {:model <app model id>}.
@@ -84,9 +81,10 @@
 ;; commands, and declared here for the structured/composite ones (whose int args
 ;; are coerced by hand in `run`). Used to reject non-integer values up front.
 (def ^:private structured-int-params
-  {"set-fields" [:element] "set-step-examples" [:step]
-   "set-field-origins" [:element] "set-connection-derivations" [:connection]
-   "add-field-origin" [:element] "add-derivation" [:connection]})
+  {"add-field" [:element] "remove-field" [:element]
+   "add-field-origin" [:element] "remove-field-origin" [:element]
+   "add-derivation" [:connection] "remove-derivation" [:connection]
+   "add-step-example" [:step] "remove-step-example" [:step]})
 
 (defn- int-opt-keys [command]
   (if-let [params (:params (registry command))]
@@ -112,8 +110,11 @@
 (defn run
   "Run a registered authoring command against `app`, applying the rule through
   app/apply-rule! so the mutation is committed and a delta broadcast. `opts` is
-  a map of option-key -> value. Structured rules (set-fields, set-step-examples)
-  accept their list argument directly under :fields / :examples.
+  a map of option-key -> value. The convenience composites (add-field,
+  add-field-origin, add-derivation, add-step-example and their remove-*
+  counterparts) decompose into the underlying SetFields / SetFieldOrigins /
+  SetConnectionDerivations / SetStepExamples rules, appending/removing one
+  entry while preserving the rest.
 
   Any spec-declared Integer argument that is present but not a valid integer is
   rejected up front with :bad-argument, so it can never reach a rule as nil."
@@ -123,39 +124,34 @@
      {:error :bad-argument :args bad
       :message (str "expected an integer for: " (str/join ", " bad))}
      (cond
-    (= command "set-fields")
-    (if (and (get opts :element) (contains? opts :fields))
-      (app/apply-rule! app r/set-fields {:element (->int (get opts :element))
-                                         :fields (mapv coerce-field (get opts :fields))})
-      {:error :missing-args :message "set-fields requires :element and :fields"})
+    ;; Convenience composites (append/remove one entry, preserving the rest).
+    ;; They emit the same SetFields / SetFieldOrigins / SetConnectionDerivations
+    ;; / SetStepExamples deltas as the replace-style operations they decompose
+    ;; into.
+    (= command "add-field")
+    (if (and (get opts :element) (get opts :field))
+      (app/apply-rule! app r/add-field {:element (->int (get opts :element))
+                                        :field (coerce-field (get opts :field))})
+      {:error :missing-args :message "add-field requires :element and :field"})
 
-    (= command "set-step-examples")
-    (if (and (get opts :step) (contains? opts :examples))
-      (app/apply-rule! app r/set-step-examples {:step (->int (get opts :step))
-                                                :examples (vec (get opts :examples))})
-      {:error :missing-args :message "set-step-examples requires :step and :examples"})
+    (= command "remove-field")
+    (if (and (get opts :element) (get opts :name))
+      (app/apply-rule! app r/remove-field {:element (->int (get opts :element))
+                                           :name (str (get opts :name))})
+      {:error :missing-args :message "remove-field requires :element and :name"})
 
-    (= command "set-field-origins")
-    (if (and (get opts :element) (contains? opts :origins))
-      (app/apply-rule! app r/set-field-origins {:element (->int (get opts :element))
-                                                :origins (mapv coerce-origin (get opts :origins))})
-      {:error :missing-args :message "set-field-origins requires :element and :origins"})
-
-    (= command "set-connection-derivations")
-    (if (and (get opts :connection) (contains? opts :derivations))
-      (app/apply-rule! app r/set-connection-derivations {:connection (->int (get opts :connection))
-                                                         :derivations (vec (get opts :derivations))})
-      {:error :missing-args :message "set-connection-derivations requires :connection and :derivations"})
-
-    ;; Convenience composites (append one entry, preserving the rest). They emit
-    ;; the same SetFieldOrigins / SetConnectionDerivations deltas as the
-    ;; replace-style operations they decompose into.
     (= command "add-field-origin")
     (if (and (get opts :element) (get opts :field) (get opts :origin))
       (app/apply-rule! app r/add-field-origin {:element (->int (get opts :element))
                                                :field (str (get opts :field))
                                                :origin (->kw (get opts :origin))})
       {:error :missing-args :message "add-field-origin requires :element, :field and :origin"})
+
+    (= command "remove-field-origin")
+    (if (and (get opts :element) (get opts :field))
+      (app/apply-rule! app r/remove-field-origin {:element (->int (get opts :element))
+                                                  :field (str (get opts :field))})
+      {:error :missing-args :message "remove-field-origin requires :element and :field"})
 
     (= command "add-derivation")
     (if (and (get opts :connection) (get opts :target) (contains? opts :from))
@@ -168,6 +164,25 @@
                                   (vec f)))})
       {:error :missing-args :message "add-derivation requires :connection, :target and :from"})
 
+    (= command "remove-derivation")
+    (if (and (get opts :connection) (get opts :target))
+      (app/apply-rule! app r/remove-derivation {:connection (->int (get opts :connection))
+                                                :target (str (get opts :target))})
+      {:error :missing-args :message "remove-derivation requires :connection and :target"})
+
+    (= command "add-step-example")
+    (if (and (get opts :step) (get opts :field-name) (contains? opts :field-value))
+      (app/apply-rule! app r/add-step-example {:step (->int (get opts :step))
+                                               :field-name (str (get opts :field-name))
+                                               :field-value (str (get opts :field-value))})
+      {:error :missing-args :message "add-step-example requires :step, :field-name and :field-value"})
+
+    (= command "remove-step-example")
+    (if (and (get opts :step) (get opts :field-name))
+      (app/apply-rule! app r/remove-step-example {:step (->int (get opts :step))
+                                                  :field-name (str (get opts :field-name))})
+      {:error :missing-args :message "remove-step-example requires :step and :field-name"})
+
     :else
     (if-let [{:keys [rule] :as entry} (registry command)]
       (let [args (build-args entry app opts)]
@@ -178,11 +193,10 @@
        :message (str "unknown command: " command)})))))
 
 (def commands
-  "All authoring command names: the registry, the structured (list-valued)
-  operations, and the convenience composites."
+  "All authoring command names: the registry, and the convenience composites."
   (sort (concat (keys registry)
-                ["set-fields" "set-step-examples" "set-field-origins" "set-connection-derivations"
-                 "add-field-origin" "add-derivation"])))
+                ["add-field" "remove-field" "add-field-origin" "remove-field-origin"
+                 "add-derivation" "remove-derivation" "add-step-example" "remove-step-example"])))
 
 (defn authoring-view
   "The ModelAuthoring `exposes:` read projection (event-model.allium:598-635):

@@ -44,8 +44,8 @@
           st   (:result (body-json (post "/authoring/add-spec-step"
                                          {:spec (:id spec) :clause "when_step"
                                           :element (:id cmd) :index 0})))
-          _    (post "/authoring/set-step-examples"
-                     {:step (:id st) :examples [{:field_name "id" :field_value "1"}]})
+          _    (post "/authoring/add-step-example"
+                     {:step (:id st) :field-name "id" :field-value "1"})
           view (body-json (get* "/model"))
           slice (-> view :timelines first :slices first)
           step1 (-> slice :specifications first :steps first)]

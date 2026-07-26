@@ -21,36 +21,17 @@
   (is (= "add-slice" (cli/resolve-command "slice" "add")))
   (is (= "delete-slice" (cli/resolve-command "slice" "delete")))
   (is (= "create-timeline" (cli/resolve-command "timeline" "add")))
-  (is (= "set-connection-derivations" (cli/resolve-command "connection" "derivations")))
-  (is (= "set-field-origins" (cli/resolve-command "element" "origins")))
+  (is (= "add-derivation" (cli/resolve-command "connection" "add-derivation")))
+  (is (= "remove-derivation" (cli/resolve-command "connection" "remove-derivation")))
+  (is (= "add-field" (cli/resolve-command "element" "add-field")))
+  (is (= "remove-field" (cli/resolve-command "element" "remove-field")))
+  (is (= "add-field-origin" (cli/resolve-command "element" "add-origin")))
+  (is (= "remove-field-origin" (cli/resolve-command "element" "remove-origin")))
+  (is (= "add-step-example" (cli/resolve-command "step" "add-example")))
+  (is (= "remove-step-example" (cli/resolve-command "step" "remove-example")))
   (testing "unknown entity or verb resolves to nil"
     (is (nil? (cli/resolve-command "slice" "frobnicate")))
     (is (nil? (cli/resolve-command "nonsense" "add")))))
-
-;; Adapter-side guard for `--examples-json`, per the @guidance on rule
-;; SetStepExamples: the CLI must map/validate incoming payloads against the
-;; Example shape (field_name/field_value) before invoking SetStepExamples,
-;; rather than relying solely on the ExamplesWellFormed invariant to catch
-;; degradation after the fact.
-(deftest example-shape-error-validates-against-the-example-value-type
-  (testing "well-formed examples pass"
-    (is (nil? (#'cli/example-shape-error [{:field_name "orderId" :field_value "123"}]))))
-  (testing "an empty examples array is valid"
-    (is (nil? (#'cli/example-shape-error []))))
-  (testing "the historical bug: wrong keys (field/value) are rejected"
-    (is (some? (#'cli/example-shape-error [{:field "orderId" :value "123"}]))))
-  (testing "blank field_value is rejected"
-    (is (some? (#'cli/example-shape-error [{:field_name "orderId" :field_value ""}]))))
-  (testing "blank field_name is rejected"
-    (is (some? (#'cli/example-shape-error [{:field_name "" :field_value "123"}]))))
-  (testing "missing field_value key entirely is rejected"
-    (is (some? (#'cli/example-shape-error [{:field_name "orderId"}]))))
-  (testing "a numeric field_value (unquoted JSON literal) is rejected, not thrown"
-    (is (some? (#'cli/example-shape-error [{:field_name "orderId" :field_value 123}]))))
-  (testing "non-array input is rejected"
-    (is (some? (#'cli/example-shape-error {:field_name "orderId" :field_value "123"}))))
-  (testing "a non-object element in the array is rejected"
-    (is (some? (#'cli/example-shape-error ["not-a-map"])))))
 
 ;; --queries "name[:kind_hint],..." parsing for `emcli resolve`.
 (deftest parse-resolve-queries-test

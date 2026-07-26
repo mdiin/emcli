@@ -222,6 +222,21 @@
         (commit store :SetFields [(updated store :element element)]
                 (m/fetch store :element element)))))
 
+;; Convenience composite (a CLI affordance, not a domain operation): append (or
+;; replace by name) a single field, preserving the element's others. Decomposes
+;; into SetFields, so it emits exactly one SetFields delta.
+(defn add-field [store {:keys [element field]}]
+  (or (require-entity store :element element)
+      (let [current (:fields (m/fetch store :element element))
+            fields  (conj (vec (remove #(= (:name field) (:name %)) current)) field)]
+        (set-fields store {:element element :fields fields}))))
+
+(defn remove-field [store {:keys [element name]}]
+  (or (require-entity store :element element)
+      (let [current (:fields (m/fetch store :element element))
+            fields  (vec (remove #(= name (:name %)) current))]
+        (set-fields store {:element element :fields fields}))))
+
 (defn set-element-context [store {:keys [element new-context]}]
   (or (require-entity store :element element)
       (require-valid-value element-contexts new-context)
@@ -259,6 +274,12 @@
       (let [current (:field_origins (m/fetch store :element element))
             origins (conj (vec (remove #(= field (:field %)) current))
                           {:field field :origin origin})]
+        (set-field-origins store {:element element :origins origins}))))
+
+(defn remove-field-origin [store {:keys [element field]}]
+  (or (require-entity store :element element)
+      (let [current (:field_origins (m/fetch store :element element))
+            origins (vec (remove #(= field (:field %)) current))]
         (set-field-origins store {:element element :origins origins}))))
 
 (defn rename-element [store {:keys [element new-name]}]
@@ -330,6 +351,12 @@
                               {:target_field target :source_fields (vec from)})]
         (set-connection-derivations store {:connection connection :derivations derivations}))))
 
+(defn remove-derivation [store {:keys [connection target]}]
+  (or (require-entity store :connection connection)
+      (let [current     (:derivations (m/fetch store :connection connection))
+            derivations (vec (remove #(= target (:target_field %)) current))]
+        (set-connection-derivations store {:connection connection :derivations derivations}))))
+
 ;; ---------------------------------------------------------------------------
 ;; Specifications (Given / When / Then)
 ;; ---------------------------------------------------------------------------
@@ -370,6 +397,27 @@
       (let [store (m/set-field store :spec-step step :examples (vec examples))]
         (commit store :SetStepExamples [(updated store :spec-step step)]
                 (m/fetch store :spec-step step)))))
+
+;; Convenience composite (a CLI affordance, not a domain operation): append (or
+;; replace by field_name) a single example, preserving the step's others.
+;; Decomposes into SetStepExamples, so it emits exactly one SetStepExamples
+;; delta. Validates field-name/field-value non-blank here (the CLI affordance
+;; this replaces used to check --examples-json against the Example shape
+;; before invoking SetStepExamples; see rule SetStepExamples @guidance).
+(defn add-step-example [store {:keys [step field-name field-value]}]
+  (or (require-entity store :spec-step step)
+      (require-non-blank :field-name field-name)
+      (require-non-blank :field-value field-value)
+      (let [current  (:examples (m/fetch store :spec-step step))
+            examples (conj (vec (remove #(= field-name (:field_name %)) current))
+                           {:field_name field-name :field_value field-value})]
+        (set-step-examples store {:step step :examples examples}))))
+
+(defn remove-step-example [store {:keys [step field-name]}]
+  (or (require-entity store :spec-step step)
+      (let [current  (:examples (m/fetch store :spec-step step))
+            examples (vec (remove #(= field-name (:field_name %)) current))]
+        (set-step-examples store {:step step :examples examples}))))
 
 (defn set-step-expect-empty [store {:keys [step value]}]
   (or (require-entity store :spec-step step)

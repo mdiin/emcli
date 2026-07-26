@@ -33,51 +33,12 @@
 
 (defn- parse-body [resp] (some-> (:body resp) (json/parse-string true)))
 
-;; --- structured argument prep (set-fields / set-step-examples) -------------
-
-;; Per the @guidance on rule SetStepExamples in the spec: the CLI must
-;; map/validate --examples-json against the Example shape (field_name/
-;; field_value, both non-empty) before invoking set-step-examples, rather
-;; than relying solely on the ExamplesWellFormed invariant to reject bad
-;; data after it's already been sent. A historical bug accepted objects
-;; keyed field/value and forwarded them verbatim, degrading to empty strings.
-(defn- example-shape-error
-  "nil if `examples` is a well-formed array of Example maps, otherwise a
-  human-readable description of the problem."
-  [examples]
-  (cond
-    (not (sequential? examples))
-    "--examples-json must be a JSON array"
-
-    (not (every? map? examples))
-    "--examples-json must be an array of objects"
-
-    (not (every? #(and (contains? % :field_name) (contains? % :field_value)) examples))
-    "each example must have \"field_name\" and \"field_value\" keys"
-
-    (not (every? #(and (string? (:field_name %)) (string? (:field_value %))) examples))
-    "each example's field_name and field_value must be strings"
-
-    (not (every? #(and (not (str/blank? (:field_name %)))
-                        (not (str/blank? (:field_value %))))
-                 examples))
-    "each example's field_name and field_value must be non-empty"
-
-    :else nil))
+;; --- structured argument prep (add-field) -----------------------------------
 
 (defn- prepare [command opts]
   (cond-> opts
-    (and (= command "set-fields") (:fields-json opts))
-    (assoc :fields (json/parse-string (:fields-json opts) true))
-
-    (and (= command "set-step-examples") (:examples-json opts))
-    (assoc :examples (json/parse-string (:examples-json opts) true))
-
-    (and (= command "set-field-origins") (:origins-json opts))
-    (assoc :origins (json/parse-string (:origins-json opts) true))
-
-    (and (= command "set-connection-derivations") (:derivations-json opts))
-    (assoc :derivations (json/parse-string (:derivations-json opts) true))))
+    (and (= command "add-field") (:field-json opts))
+    (assoc :field (json/parse-string (:field-json opts) true))))
 
 ;; --- subcommands -----------------------------------------------------------
 
@@ -92,16 +53,18 @@
                  "reorder" "reorder-swimlane" "delete" "delete-swimlane"}
    "slice"      {"add" "add-slice" "reorder" "reorder-slice" "status" "set-slice-status"
                  "kind" "set-slice-kind" "delete" "delete-slice"}
-   "element"    {"add" "create-element" "fields" "set-fields" "context" "set-element-context"
+   "element"    {"add" "create-element" "add-field" "add-field" "remove-field" "remove-field"
+                 "context" "set-element-context"
                  "swimlane" "assign-swimlane" "image" "set-image-url"
-                 "origins" "set-field-origins" "origin" "add-field-origin"
+                 "add-origin" "add-field-origin" "remove-origin" "remove-field-origin"
                  "rename" "rename-element" "delete" "delete-element"}
    "placement"  {"add" "place-element" "reorder" "reorder-placement" "remove" "remove-placement"}
    "connection" {"add" "connect" "remove" "disconnect"
-                 "derivations" "set-connection-derivations" "derive" "add-derivation"}
+                 "add-derivation" "add-derivation" "remove-derivation" "remove-derivation"}
    "spec"       {"add" "add-specification" "delete" "delete-specification"}
    "step"       {"add" "add-spec-step" "error" "add-error-step" "remove" "remove-spec-step"
-                 "examples" "set-step-examples" "expect-empty" "set-step-expect-empty"}})
+                 "add-example" "add-step-example" "remove-example" "remove-step-example"
+                 "expect-empty" "set-step-expect-empty"}})
 
 (defn resolve-command
   "The flat authoring command for an (entity, verb) pair, or nil."
@@ -111,17 +74,13 @@
 (defn- do-authoring [group verb opts]
   (let [command (resolve-command group verb)
         payload (-> (prepare command opts)
-                    (dissoc :server :fields-json :examples-json :origins-json :derivations-json))]
-    (when (= command "set-step-examples")
-      (when-let [err (example-shape-error (:examples payload))]
-        (die (str "✗ " group " " verb ": " err
-                  "\n\nExpected shape: [{\"field_name\": \"...\", \"field_value\": \"...\"}, ...]"))))
-    (let [resp (request :post (str (server-url opts) "/authoring/" command) payload)
-          body (parse-body resp)]
-      (if (and (= 200 (:status resp)) (:ok body))
-        (emit (:result body))
-        (die (str "✗ " group " " verb ": " (:message body)
-                  "\n\nUsage: " (format-usage-line group verb)))))))
+                    (dissoc :server :field-json))
+        resp    (request :post (str (server-url opts) "/authoring/" command) payload)
+        body    (parse-body resp)]
+    (if (and (= 200 (:status resp)) (:ok body))
+      (emit (:result body))
+      (die (str "✗ " group " " verb ": " (:message body)
+                "\n\nUsage: " (format-usage-line group verb))))))
 
 (defn- do-serve [opts]
   (let [port  (parse-long (str (or (:port opts) "8090")))
@@ -213,32 +172,37 @@
 ;; Full param specs for structured (JSON-valued) commands that are not in the
 ;; registry — their args are coerced by `prepare` in this ns.
 (def ^:private structured-manifest-params
-  {"set-fields"
+  {"add-field"
    [{:flag "element" :type "int" :required true :ref "elements[].id"}
-    {:flag "fields-json" :type "json" :required true
-     :note "JSON array of field objects, e.g. [{\"name\":\"orderId\",\"type\":\"string\"}]"}]
-   "set-step-examples"
-   [{:flag "step" :type "int" :required true :ref "timelines[].slices[].specifications[].steps[].id"}
-    {:flag "examples-json" :type "json" :required true
-     :note "JSON array of example objects"}]
-   "set-field-origins"
+    {:flag "field-json" :type "json" :required true
+     :note "JSON field object, e.g. {\"name\":\"orderId\",\"type\":\"string\"}; replaces any existing field of the same name"}]
+   "remove-field"
    [{:flag "element" :type "int" :required true :ref "elements[].id"}
-    {:flag "origins-json" :type "json" :required true
-     :note "JSON array of field-origin objects, e.g. [{\"field\":\"orderId\",\"origin\":\"user_input\"}]"}]
-   "set-connection-derivations"
-   [{:flag "connection" :type "int" :required true :ref "connections[].id"}
-    {:flag "derivations-json" :type "json" :required true
-     :note "JSON array of derivation objects, e.g. [{\"target_field\":\"orderId\",\"source_fields\":[\"id\"]}]"}]
+    {:flag "name" :type "string" :required true :note "field name to remove"}]
    "add-field-origin"
    [{:flag "element" :type "int" :required true :ref "elements[].id"}
     {:flag "field" :type "string" :required true :note "field name on the element"}
     {:flag "origin" :type "keyword" :required true
      :note "how the field is introduced: user_input, generated, external"}]
+   "remove-field-origin"
+   [{:flag "element" :type "int" :required true :ref "elements[].id"}
+    {:flag "field" :type "string" :required true :note "field name whose origin override should be removed"}]
    "add-derivation"
    [{:flag "connection" :type "int" :required true :ref "connections[].id"}
     {:flag "target" :type "string" :required true :note "target field name on the to-element"}
     {:flag "from" :type "string" :required true
      :note "comma-separated source field names from the from-element"}]
+   "remove-derivation"
+   [{:flag "connection" :type "int" :required true :ref "connections[].id"}
+    {:flag "target" :type "string" :required true :note "target field name to remove the derivation for"}]
+   "add-step-example"
+   [{:flag "step" :type "int" :required true :ref "timelines[].slices[].specifications[].steps[].id"}
+    {:flag "field-name" :type "string" :required true
+     :note "example field name; replaces any existing example for the same field"}
+    {:flag "field-value" :type "string" :required true}]
+   "remove-step-example"
+   [{:flag "step" :type "int" :required true :ref "timelines[].slices[].specifications[].steps[].id"}
+    {:flag "field-name" :type "string" :required true :note "example field name to remove"}]
    "resolve"
    [{:flag "queries" :type "string" :required true
      :note "comma-separated name[:kind_hint] entries, e.g. \"Baz:slice,Snaz\"; kind_hint is one of timeline|swimlane|slice|element|specification and only ranks candidates, never filters them"}]})

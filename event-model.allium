@@ -346,10 +346,27 @@ rule CreateElement {
     )
 }
 
--- Field editing replaces the element's whole field list (subfields included).
-rule SetFields {
-    when: SetFields(element, fields)
-    ensures: element.fields = fields
+-- Field editing touches a single field by name, preserving the rest of the
+-- element's field list (subfields included). Two black-box collection helpers
+-- express the shared key-based semantics used throughout the authoring
+-- operations below:
+--   upsert_by(list, item, key_of): returns the list with `item` replacing any
+--     existing entry sharing its key (key_of(entry) = key_of(item)), or with
+--     `item` added when no entry matches; every other entry is preserved.
+--   remove_by(list, key, key_of): returns the list with every entry whose key
+--     equals `key` removed; every other entry is preserved.
+
+-- Upsert `field` into the element's fields, replacing any existing field with
+-- the same name; the rest of the list is preserved.
+rule AddField {
+    when: AddField(element, field)
+    ensures: element.fields = upsert_by(element.fields, field, f => f.name)
+}
+
+-- Remove the field named `name` from the element's fields; the rest is preserved.
+rule RemoveField {
+    when: RemoveField(element, name)
+    ensures: element.fields = remove_by(element.fields, name, f => f.name)
 }
 
 rule SetElementContext {
@@ -367,11 +384,22 @@ rule SetImageUrl {
     ensures: element.image_url = url
 }
 
--- Replaces the element's whole set of field-origin overrides (the operator's
--- declaration of which fields are legitimately introduced here).
-rule SetFieldOrigins {
-    when: SetFieldOrigins(element, origins)
-    ensures: element.field_origins = origins
+-- Field-origin overrides (the operator's declaration of which fields are
+-- legitimately introduced here) are edited one entry at a time, keyed by the
+-- field name the override applies to.
+
+-- Upsert the override {field, origin} into the element's field-origins,
+-- replacing any existing entry for the same field name; the rest is preserved.
+rule AddFieldOrigin {
+    when: AddFieldOrigin(element, field, origin)
+    let entry = FieldOrigin{ field: field, origin: origin }
+    ensures: element.field_origins = upsert_by(element.field_origins, entry, o => o.field)
+}
+
+-- Remove the field-origin override for `field` name; the rest is preserved.
+rule RemoveFieldOrigin {
+    when: RemoveFieldOrigin(element, field)
+    ensures: element.field_origins = remove_by(element.field_origins, field, o => o.field)
 }
 
 -- Placements ----------------------------------------------------------------
@@ -398,11 +426,22 @@ rule Disconnect {
     ensures: not exists connection
 }
 
--- Replaces the connection's whole set of field derivations (its connection-local
--- provenance contribution).
-rule SetConnectionDerivations {
-    when: SetConnectionDerivations(connection, derivations)
-    ensures: connection.derivations = derivations
+-- Field derivations (the connection-local provenance contribution) are edited
+-- one entry at a time, keyed by the target field they produce.
+
+-- Upsert the derivation {target_field, source_fields} into the connection's
+-- derivations, replacing any existing entry for the same target_field; the rest
+-- is preserved.
+rule AddDerivation {
+    when: AddDerivation(connection, target_field, source_fields)
+    let entry = FieldDerivation{ target_field: target_field, source_fields: source_fields }
+    ensures: connection.derivations = upsert_by(connection.derivations, entry, d => d.target_field)
+}
+
+-- Remove the derivation for `target_field`; the rest is preserved.
+rule RemoveDerivation {
+    when: RemoveDerivation(connection, target_field)
+    ensures: connection.derivations = remove_by(connection.derivations, target_field, d => d.target_field)
 }
 
 -- Specifications (Given / When / Then) --------------------------------------
@@ -443,25 +482,37 @@ rule RemoveSpecStep {
     ensures: not exists step
 }
 
--- Set the concrete example field values for a step (replaces them).
-rule SetStepExamples {
-    when: SetStepExamples(step, examples)
-    ensures: step.examples = examples
+-- Concrete example field values for a step (test data) are edited one entry at
+-- a time, keyed by the field name they populate.
+
+-- Upsert the example {field_name, field_value} into the step's examples,
+-- replacing any existing entry for the same field_name; the rest is preserved.
+-- Both field_name and field_value must be non-blank.
+rule AddStepExample {
+    when: AddStepExample(step, field_name, field_value)
+    requires: field_name != ""
+    requires: field_value != ""
+    let entry = Example{ field_name: field_name, field_value: field_value }
+    ensures: step.examples = upsert_by(step.examples, entry, e => e.field_name)
 
     @guidance
-        -- Authoring adapters MUST hand this rule well-formed Example
-        -- values: each example populated with both field_name and
-        -- field_value (see the Example value type). An adapter that
-        -- accepts free-form JSON and forwards it verbatim without mapping
-        -- to the Example shape lets malformed examples slip in and read
-        -- back as empty/missing on every consumer of step.examples. A
-        -- historical bug did exactly this: the CLI accepted
-        -- --examples-json objects keyed `field`/`value` and persisted them
-        -- unchanged, so read paths (GET model, ModelChangeStream) saw
-        -- empty examples. Adapters must map/validate incoming payloads
-        -- against the Example shape before invoking SetStepExamples; the
-        -- ExamplesWellFormed invariant catches any residual empty-string
-        -- degradation.
+        -- This rule is the single authoring entry point for example values and
+        -- now owns their shape validation: it rejects any AddStepExample whose
+        -- field_name or field_value is blank, rather than trusting adapters to
+        -- pre-validate (that guard formerly lived in CLI-adapter code that
+        -- called the now-removed SetStepExamples). A historical bug persisted
+        -- CLI --examples-json objects keyed `field`/`value` verbatim without
+        -- mapping them to the Example shape, so read paths (GET model,
+        -- ModelChangeStream) saw empty examples. The requires guards here reject
+        -- that at the source; the ExamplesWellFormed invariant catches any
+        -- residual empty-string degradation reaching persisted state by any
+        -- other path.
+}
+
+-- Remove the example for `field_name`; the rest is preserved.
+rule RemoveStepExample {
+    when: RemoveStepExample(step, field_name)
+    ensures: step.examples = remove_by(step.examples, field_name, e => e.field_name)
 }
 
 rule SetStepExpectEmpty {
@@ -889,11 +940,13 @@ surface ModelAuthoring {
 
         -- Elements
         CreateElement(model, name, kind)
-        SetFields(element, fields)
+        AddField(element, field)
+        RemoveField(element, name)
         SetElementContext(element, new_context)
         AssignSwimlane(element, lane)
         SetImageUrl(element, url)
-        SetFieldOrigins(element, origins)
+        AddFieldOrigin(element, field, origin)
+        RemoveFieldOrigin(element, field)
         RenameElement(element, new_name)
         DeleteElement(element)
 
@@ -906,7 +959,8 @@ surface ModelAuthoring {
         -- automation -> command connection)
         Connect(from, to)
         Disconnect(connection)
-        SetConnectionDerivations(connection, derivations)
+        AddDerivation(connection, target_field, source_fields)
+        RemoveDerivation(connection, target_field)
 
         -- Specifications (Given / When / Then)
         AddSpecification(slice, title)
@@ -914,7 +968,8 @@ surface ModelAuthoring {
         AddSpecStep(spec, clause, element, index)
         AddErrorStep(spec, error_name, index)
         RemoveSpecStep(step)
-        SetStepExamples(step, examples)
+        AddStepExample(step, field_name, field_value)
+        RemoveStepExample(step, field_name)
         SetStepExpectEmpty(step, value)
 
     contracts:
@@ -965,8 +1020,10 @@ surface ModelChangeStream {
                     -- Field shape only (name/type/optional/cardinality), so the
                     -- frontend can render an element's fields directly on the
                     -- canvas. Nested subfields are not streamed here; the full
-                    -- Field shape (subfields included) is only ever set whole
-                    -- via SetFields and read back through SchemaCodec export.
+                    -- Field shape (subfields included) is only readable via
+                    -- SchemaCodec export or the ModelAuthoring exposes
+                    -- projection. This live stream carries only the flat
+                    -- per-field shape.
                     for f in p.element.fields:
                         f.name
                         f.type
