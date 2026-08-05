@@ -54,7 +54,7 @@ Use `grep`, `find_files`, `list_dir`, and `read` to:
 1. Find the entry points (routes, handlers, command dispatchers).
 2. Trace what each entry point does: what state it changes, what events it emits, what it queries.
 3. Identify the domain types involved (commands, events, DTOs, projections).
-4. Extract concrete examples from tests — field names, representative values, and scenario descriptions map directly to `step add-example` calls.
+4. Look for concrete examples in tests — field names, representative values, and scenario descriptions map directly to `step add-example` calls. Many test suites are not written with clear domain intent (they test implementation details, use arbitrary fixture data, or test many things in one case); only extract examples from tests that clearly describe a business scenario. When in doubt, ask the human rather than guessing.
 
 Do not read the entire codebase at once. One bounded context per round.
 
