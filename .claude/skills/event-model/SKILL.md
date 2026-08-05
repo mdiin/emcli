@@ -78,6 +78,8 @@ Use `connection add` to link elements, then `connection add-derivation` to model
 ### 6 — Specifications (optional)
 For key slices, add a Given/When/Then spec: `spec add`, then `step add` with clause `given_step`, `when_step`, or `then_step`.
 
+Examples on steps are vital — they make the spec concrete and testable. For every step, ask the human for representative field values and add them with `step add-example`. A step without examples is just a label.
+
 ## Working rhythm
 
 For each addition:
