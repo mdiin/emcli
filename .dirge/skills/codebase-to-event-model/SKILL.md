@@ -25,7 +25,7 @@ Scan code for these patterns regardless of language or framework:
 - **Events** — facts that record state changes: event classes/records, domain event publishers, audit log entries, Kafka/queue message types, `*Created`/`*Updated`/`*Deleted` types. Name them in past tense: `OrderPlaced`, `SubscriptionCancelled`.
 - **Read models** — things that assemble state for querying: query handlers, projections, view models, GET endpoint response shapes, DTO/response types. Name them as nouns: `OrderSummary`, `CustomerHistory`.
 - **Screens** — UI surfaces that initiate or display: page components, route handlers serving HTML, view templates. Name them as nouns: `CheckoutPage`, `ConfirmationScreen`.
-- **Automations** — background processes, scheduled jobs, event consumers, message handlers, saga/process managers. Name them as actors: `PaymentProcessor`, `EmailNotifier`.
+- **Automations** — background processes, scheduled jobs, event consumers, message handlers. Name them as actors: `PaymentProcessor`, `EmailNotifier`. If the code has sagas or process managers, model them as automations but do not try to preserve their compensating-transaction or cross-cutting consistency logic in the model — Event Modeling embraces eventual consistency and does not need sagas as a concept.
 - **Swimlanes** — actors and systems: infer from folder structure, service boundaries, or who/what initiates each command.
 - **Timelines** — a coherent user journey or business process: infer from feature folders, use case groupings, or the human's description of the system.
 
@@ -45,16 +45,21 @@ Pick one module, feature folder, or entry point at a time. Read the source and i
 - Source reveals structure: what state changes, what events are emitted, what is queried.
 - Tests reveal intent and concrete examples: scenario names, input data, expected outcomes.
 
-```
-# Read source and tests for the same module together
-read(path="src/orders/handler.clj") and read(path="test/orders/handler_test.clj")
-```
-
 Use `grep`, `find_files`, `list_dir`, and `read` to:
-1. Find the entry points (routes, handlers, command dispatchers).
+1. Find the entry points (routes, handlers, command dispatchers). Locate before reading — don't load whole trees:
+   ```
+   grep(pattern="defroutes|POST|command", path="src", context_lines=2)
+   ```
 2. Trace what each entry point does: what state it changes, what events it emits, what it queries.
-3. Identify the domain types involved (commands, events, DTOs, projections).
-4. Look for concrete examples in tests — field names, representative values, and scenario descriptions map directly to `step add-example` calls. Many test suites are not written with clear domain intent (they test implementation details, use arbitrary fixture data, or test many things in one case); only extract examples from tests that clearly describe a business scenario. When in doubt, ask the human rather than guessing.
+3. Identify the domain types involved (commands, events, DTOs, projections):
+   ```
+   grep(pattern="defrecord|Event|Command|Query", path="src", context_lines=1)
+   ```
+4. Find the corresponding tests by mirroring the source path, then read both together:
+   ```
+   grep(pattern="deftest|describe|it\(", path="test", context_lines=2)
+   ```
+5. Look for concrete examples in tests — field names, representative values, and scenario descriptions map directly to `step add-example` calls. Many test suites are not written with clear domain intent (they test implementation details, use arbitrary fixture data, or test many things in one case); only extract examples from tests that clearly describe a business scenario. When in doubt, ask the human rather than guessing.
 
 Do not read the entire codebase at once. One bounded context per round.
 
