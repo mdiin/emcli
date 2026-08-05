@@ -33,12 +33,7 @@
 
 (defn- parse-body [resp] (some-> (:body resp) (json/parse-string true)))
 
-;; --- structured argument prep (add-field) -----------------------------------
 
-(defn- prepare [command opts]
-  (cond-> opts
-    (and (= command "add-field") (:field-json opts))
-    (assoc :field (json/parse-string (:field-json opts) true))))
 
 ;; --- subcommands -----------------------------------------------------------
 
@@ -73,8 +68,7 @@
 
 (defn- do-authoring [group verb opts]
   (let [command (resolve-command group verb)
-        payload (-> (prepare command opts)
-                    (dissoc :server :field-json))
+        payload (dissoc opts :server)
         resp    (request :post (str (server-url opts) "/authoring/" command) payload)
         body    (parse-body resp)]
     (if (and (= 200 (:status resp)) (:ok body))
@@ -169,13 +163,14 @@
 (def ^:private param-notes
   {"id" "pre-assign this entity's id instead of auto-generating one; must not already be in use"})
 
-;; Full param specs for structured (JSON-valued) commands that are not in the
-;; registry — their args are coerced by `prepare` in this ns.
+;; Full param specs for composite commands that are not in the registry.
 (def ^:private structured-manifest-params
   {"add-field"
    [{:flag "element" :type "int" :required true :ref "elements[].id"}
-    {:flag "field-json" :type "json" :required true
-     :note "JSON field object, e.g. {\"name\":\"orderId\",\"type\":\"string\"}; replaces any existing field of the same name"}]
+    {:flag "name" :type "string" :required true :note "field name; replaces any existing field of the same name"}
+    {:flag "type" :type "keyword" :required true
+     :values ["string" "boolean" "double" "decimal" "long" "custom" "date" "date_time" "uuid" "int"]}
+    {:flag "cardinality" :type "keyword" :required false :values ["single" "list"]}]
    "remove-field"
    [{:flag "element" :type "int" :required true :ref "elements[].id"}
     {:flag "name" :type "string" :required true :note "field name to remove"}]

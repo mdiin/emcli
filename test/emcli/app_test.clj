@@ -65,17 +65,12 @@
           tl   (:result (cmd/run a "create-timeline" {:title "Ordering"}))
           sl   (:result (cmd/run a "add-slice" {:timeline (:id tl) :title "Place" :kind "state_change" :index 0}))
           cmd' (:result (cmd/run a "create-element" {:name "PlaceOrder" :kind "command"}))
-          _    (cmd/run a "add-field" {:element (:id cmd')
-                                       :field {:name "id" :type :uuid :optional false
-                                               :cardinality :single
-                                               :subfields [{:name "nested" :type :string
-                                                            :optional false :cardinality :single
-                                                            :subfields []}]}})
+          _    (cmd/run a "add-field" {:element (:id cmd') :name "id" :type "uuid" :cardinality "single"})
           _    (cmd/run a "place-element" {:slice (:id sl) :element (:id cmd')})
           [_ msgs] (recording-sub a)
           model (:model (first @msgs))
           p1    (first (:placements (first (:slices (first (:timelines model))))))]
-      (is (= [{:name "id" :type :uuid :optional false :cardinality :single}]
+      (is (= [{:name "id" :type :uuid :cardinality :single}]
              (:fields (:element p1)))))))
 
 (deftest snapshot-carries-specifications-with-examples

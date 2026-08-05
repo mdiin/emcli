@@ -256,7 +256,7 @@
         mid (app/model-id a)
         from (:result (cmd/run a "create-element" {:name "Evt" :kind "event"}))
         to   (:result (cmd/run a "create-element" {:name "RM" :kind "read_model"}))]
-    (cmd/run a "add-field" {:element (:id to) :field {:name "total" :type :decimal :optional false :cardinality :single :subfields []}})
+    (cmd/run a "add-field" {:element (:id to) :name "total" :type "decimal" :cardinality "single"})
     (cmd/run a "connect" {:from (:id from) :to (:id to)})
     (let [cid (:id (first (m/connections (app/store a) mid)))]
       (cmd/run a "add-derivation" {:connection cid :target "total" :from ["amount"]})

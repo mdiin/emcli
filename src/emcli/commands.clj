@@ -25,17 +25,7 @@
 (defn- coerce [type v]
   (case type :int (->int v) :kw (->kw v) :bool (->bool v) v))
 
-;; add-field carries its field as JSON, parsed with keywordize-keys true —
-;; that only keywordizes map *keys*, not values, so a field's "type": "uuid"
-;; arrives as the string "uuid", never :uuid. This is the one choke point
-;; every caller (HTTP server, direct cmd/run) passes through before the rule,
-;; so it's coerced here rather than at the transport edge, where it would
-;; just be re-flattened to a string on the wire.
-(defn- coerce-field [f]
-  (cond-> f
-    (:type f)        (update :type ->kw)
-    (:cardinality f) (update :cardinality ->kw)
-    (seq (:subfields f)) (update :subfields #(mapv coerce-field %))))
+
 
 ;; Each command: rule fn, and params as [option-key rule-arg-key coerce-type required?].
 ;; :model? injects {:model <app model id>}.
@@ -129,10 +119,14 @@
     ;; / SetStepExamples deltas as the replace-style operations they decompose
     ;; into.
     (= command "add-field")
-    (if (and (get opts :element) (get opts :field))
-      (app/apply-rule! app r/add-field {:element (->int (get opts :element))
-                                        :field (coerce-field (get opts :field))})
-      {:error :missing-args :message "add-field requires :element and :field"})
+    (if (and (get opts :element) (get opts :name) (get opts :type))
+      (app/apply-rule! app r/add-field
+                       {:element (->int (get opts :element))
+                        :field   (cond-> {:name (str (get opts :name))
+                                          :type (->kw (get opts :type))}
+                                   (get opts :cardinality)
+                                   (assoc :cardinality (->kw (get opts :cardinality))))})
+      {:error :missing-args :message "add-field requires :element, :name and :type"})
 
     (= command "remove-field")
     (if (and (get opts :element) (get opts :name))

@@ -56,6 +56,29 @@
     (testing "non-integer --id is a bad-argument, same as any other int param"
       (is (= :bad-argument (:error (cmd/run a "create-element" {:name "E" :kind "command" :id "nope"})))))))
 
+;; --- add-field flat-flag API ------------------------------------------------
+
+(deftest add-field-accepts-flat-flags
+  (let [a   (app/new-app "M")
+        eid (:id (:result (cmd/run a "create-element" {:name "Order" :kind "event"})))]
+    (testing "adds a field from flat --name --type flags"
+      (let [res (cmd/run a "add-field" {:element eid :name "orderId" :type "uuid"})]
+        (is (not (r/error? res)))
+        (is (= [{:name "orderId" :type :uuid}]
+               (map #(select-keys % [:name :type])
+                    (:fields (:result res)))))))
+    (testing "optional --cardinality is passed through"
+      (let [res (cmd/run a "add-field" {:element eid :name "items" :type "string" :cardinality "list"})]
+        (is (not (r/error? res)))
+        (is (= :list (:cardinality (first (filter #(= "items" (:name %))
+                                                  (:fields (:result res)))))))))
+    (testing "missing --name is a missing-args error"
+      (is (= :missing-args (:error (cmd/run a "add-field" {:element eid :type "uuid"})))))
+    (testing "missing --type is a missing-args error"
+      (is (= :missing-args (:error (cmd/run a "add-field" {:element eid :name "x"})))))
+    (testing "missing --element is a missing-args error"
+      (is (= :missing-args (:error (cmd/run a "add-field" {:name "x" :type "uuid"})))))))
+
 ;; NameResolution.resolve (event-model.allium): batched name -> candidate
 ;; lookup, so an LLM never has to pull the whole model to resolve a name.
 (deftest resolve-names-test
