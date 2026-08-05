@@ -19,7 +19,7 @@
   # os/execute with :p searches PATH; blocks until the subprocess finishes.
   (let [outbuf @""
         pipe   (file/temp)
-        code   (os/execute (array/concat ["emcli"] argv)
+        code   (os/execute (array/concat @["emcli"] argv)
                            :p {:out pipe :err pipe})]
     (file/seek pipe :set 0)
     (file/read pipe :all outbuf)
@@ -106,7 +106,7 @@
                       (loop [i :range [0 (length pairs) 2]]
                         (array/push flags (string "--" (get pairs i)))
                         (array/push flags (string (get pairs (+ i 1)))))
-                      (array/concat [group verb] flags))
+                      (array/concat @[group verb] flags))
                     [group verb]))
                 [group verb]))
             [group verb])]
