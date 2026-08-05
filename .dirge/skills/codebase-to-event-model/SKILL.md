@@ -40,10 +40,21 @@ Before reading any code:
 
 ### 2 — Read a bounded context
 
-Pick one module, feature folder, or entry point at a time. Use `grep`, `find_files`, `list_dir`, and `read` to:
+Pick one module, feature folder, or entry point at a time. Read the source and its tests in parallel — they carry complementary information:
+
+- Source reveals structure: what state changes, what events are emitted, what is queried.
+- Tests reveal intent and concrete examples: scenario names, input data, expected outcomes.
+
+```
+# Read source and tests for the same module together
+read(path="src/orders/handler.clj") and read(path="test/orders/handler_test.clj")
+```
+
+Use `grep`, `find_files`, `list_dir`, and `read` to:
 1. Find the entry points (routes, handlers, command dispatchers).
 2. Trace what each entry point does: what state it changes, what events it emits, what it queries.
 3. Identify the domain types involved (commands, events, DTOs, projections).
+4. Extract concrete examples from tests — field names, representative values, and scenario descriptions map directly to `step add-example` calls.
 
 Do not read the entire codebase at once. One bounded context per round.
 
@@ -65,7 +76,8 @@ Get explicit approval before calling `emcli_author`. Once confirmed:
 3. Create elements and place them in their slices — read each result's `id` directly for subsequent placements.
 4. Assign swimlanes if identified.
 5. Add connections where the code shows clear data flow between elements.
-6. Call `emcli_validate` to show what's incomplete.
+6. For slices with specs, add the spec, its steps, and — critically — examples drawn from the tests. Each test scenario is a candidate example: map assertion field names and values to `step add-example` calls.
+7. Call `emcli_validate` to show what's incomplete.
 
 ### 5 — Iterate
 
