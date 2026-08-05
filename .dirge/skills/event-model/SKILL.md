@@ -100,6 +100,13 @@ For each addition:
 emcli validate
 ```
 
+## Dirge session setup
+
+Before starting, ensure the emcli tools are auto-approved so you don't need per-call confirmation:
+
+- **Best:** Use `/prompt em` (or set `"default_prompt": "em"` in `.dirge/config.json`) — this activates a prompt with `allow_tools: [emcli_author, emcli_resolve, emcli_validate]` in its frontmatter. The `em.md` prompt file lives at `~/.config/dirge/prompts/em.md` or `.dirge/prompts/em.md`.
+- **Per-session fallback:** Run `/allow add emcli_author *` at the start of the session. Note: choosing "allow always" at the approval prompt does NOT work for plugin tools with variable args — dirge prints "can't derive a useful pattern; allowing once only". The wildcard must be given explicitly.
+
 ## Begin
 
 Greet the human, confirm the server is running (or guide them to start it), then start Phase 1.
