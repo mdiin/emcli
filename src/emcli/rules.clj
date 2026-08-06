@@ -25,7 +25,11 @@
     (missing type id)))
 
 (defn- created [type entity] {:action :created :type type :id (:id entity) :entity entity})
-(defn- updated [store type id] {:action :updated :type type :id id :entity (m/fetch store type id)})
+(defn- updated [store type id]
+  (let [entity (m/fetch store type id)]
+    (cond-> {:action :updated :type type :id id :entity entity}
+      (= :element type) (assoc-in [:entity :is_information_complete]
+                                   (m/information-complete? store entity)))))
 (defn- deleted [type id]      {:action :deleted :type type :id id})
 
 ;; --id (a CLI/scripting affordance): every create-* rule accepts an optional
@@ -326,18 +330,22 @@
       (let [model      (:model (m/fetch store :element from))
             [store c]  (m/create store :connection (with-id {:model model :from from :to to
                                                              :derivations []} id))]
-        (commit store :Connect [(created :connection c)] c))))
+        (commit store :Connect [(created :connection c) (updated store :element to)] c))))
 
 (defn disconnect [store {:keys [connection]}]
   (or (require-entity store :connection connection)
-      (let [store (m/delete store :connection connection)]
-        (commit store :Disconnect [(deleted :connection connection)] connection))))
+      (let [to    (:to (m/fetch store :connection connection))
+            store (m/delete store :connection connection)]
+        (commit store :Disconnect [(deleted :connection connection) (updated store :element to)]
+                connection))))
 
 (defn set-connection-derivations [store {:keys [connection derivations]}]
   (or (require-entity store :connection connection)
       (require-valid-derivations derivations)
-      (let [store (m/set-field store :connection connection :derivations (vec derivations))]
-        (commit store :SetConnectionDerivations [(updated store :connection connection)]
+      (let [to    (:to (m/fetch store :connection connection))
+            store (m/set-field store :connection connection :derivations (vec derivations))]
+        (commit store :SetConnectionDerivations
+                [(updated store :connection connection) (updated store :element to)]
                 (m/fetch store :connection connection)))))
 
 ;; Convenience composite (a CLI affordance, not a domain operation): append a

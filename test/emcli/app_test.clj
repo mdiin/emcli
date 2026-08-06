@@ -154,3 +154,79 @@
     (is (zero? (app/subscriber-count a)))
     (cmd/run a "create-timeline" {:title "A"})
     (is (= 1 (count @msgs)))))                         ; only the snapshot, no delta
+
+(deftest element-delta-includes-is-information-complete
+  (testing "SetFields delta carries is_information_complete on the element entity"
+    (let [a   (app/new-app "Orders")
+          el  (:result (cmd/run a "create-element" {:name "PlaceOrder" :kind "command"}))
+          [_ msgs] (recording-sub a)]
+      (cmd/run a "add-field" {:element (:id el) :name "id" :type "uuid"})
+      (let [delta  (last @msgs)
+            change (first (:changes delta))
+            entity (:entity change)]
+        (is (= :SetFields (:op delta)))
+        (is (= :element (:type change)))
+        (is (contains? entity :is_information_complete))
+        (is (false? (:is_information_complete entity))))))
+  (testing "SetFieldOrigins delta carries updated is_information_complete = true"
+    (let [a   (app/new-app "Orders")
+          el  (:result (cmd/run a "create-element" {:name "PlaceOrder" :kind "command"}))
+          _   (cmd/run a "add-field" {:element (:id el) :name "id" :type "uuid"})
+          [_ msgs] (recording-sub a)]
+      (cmd/run a "add-field-origin" {:element (:id el) :field "id" :origin "user_input"})
+      (let [delta  (last @msgs)
+            entity (:entity (first (:changes delta)))]
+        (is (= :SetFieldOrigins (:op delta)))
+        (is (contains? entity :is_information_complete))
+        (is (true? (:is_information_complete entity)))))))
+
+(deftest connection-delta-includes-target-element-change
+  (testing "SetConnectionDerivations delta includes an updated change for the target element"
+    (let [a    (app/new-app "Orders")
+          from (:result (cmd/run a "create-element" {:name "OrderPlaced" :kind "event"}))
+          to   (:result (cmd/run a "create-element" {:name "Summary"     :kind "read_model"}))
+          _    (cmd/run a "add-field" {:element (:id from) :name "amount" :type "decimal"})
+          _    (cmd/run a "add-field" {:element (:id to)   :name "total"  :type "decimal"})
+          _    (cmd/run a "connect"   {:from (:id from) :to (:id to)})
+          cid  (:id (first (m/connections (app/store a) (app/model-id a))))
+          [_ msgs] (recording-sub a)]
+      (cmd/run a "add-derivation" {:connection cid :target "total" :from "amount"})
+      (let [delta   (last @msgs)
+            changes (:changes delta)
+            el-chg  (first (filter #(= :element (:type %)) changes))]
+        (is (= :SetConnectionDerivations (:op delta)))
+        (is (some? el-chg) "delta must include an element change for the target element")
+        (is (= (:id to) (:id el-chg)))
+        (is (true? (:is_information_complete (:entity el-chg)))))))
+  (testing "connect delta includes updated change for the target element"
+    (let [a    (app/new-app "Orders")
+          from (:result (cmd/run a "create-element" {:name "PlaceOrder" :kind "command"}))
+          to   (:result (cmd/run a "create-element" {:name "OrderPlaced" :kind "event"}))
+          _    (cmd/run a "add-field" {:element (:id from) :name "id" :type "uuid"})
+          _    (cmd/run a "add-field" {:element (:id to)   :name "id" :type "uuid"})
+          [_ msgs] (recording-sub a)]
+      (cmd/run a "connect" {:from (:id from) :to (:id to)})
+      (let [delta   (last @msgs)
+            changes (:changes delta)
+            el-chg  (first (filter #(= :element (:type %)) changes))]
+        (is (= :Connect (:op delta)))
+        (is (some? el-chg) "delta must include an element change for the target element")
+        (is (= (:id to) (:id el-chg)))
+        (is (true? (:is_information_complete (:entity el-chg)))))))
+  (testing "disconnect delta includes updated change for the target element"
+    (let [a    (app/new-app "Orders")
+          from (:result (cmd/run a "create-element" {:name "PlaceOrder" :kind "command"}))
+          to   (:result (cmd/run a "create-element" {:name "OrderPlaced" :kind "event"}))
+          _    (cmd/run a "add-field" {:element (:id from) :name "id" :type "uuid"})
+          _    (cmd/run a "add-field" {:element (:id to)   :name "id" :type "uuid"})
+          _    (cmd/run a "connect" {:from (:id from) :to (:id to)})
+          cid  (:id (first (m/connections (app/store a) (app/model-id a))))
+          [_ msgs] (recording-sub a)]
+      (cmd/run a "disconnect" {:connection cid})
+      (let [delta   (last @msgs)
+            changes (:changes delta)
+            el-chg  (first (filter #(= :element (:type %)) changes))]
+        (is (= :Disconnect (:op delta)))
+        (is (some? el-chg) "delta must include element change for the target element")
+        (is (= (:id to) (:id el-chg)))
+        (is (false? (:is_information_complete (:entity el-chg))))))))
