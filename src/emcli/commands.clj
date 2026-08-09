@@ -7,7 +7,8 @@
   (:require [clojure.string :as str]
             [emcli.app :as app]
             [emcli.model :as m]
-            [emcli.rules :as r]))
+            [emcli.rules :as r]
+            [emcli.wireframe :as wf]))
 
 ;; Sentinel for an :int option that is present but not a valid integer. It must
 ;; never reach a rule (the spec types these args as Integer, non-optional): the
@@ -65,7 +66,9 @@
    "add-spec-step"       {:rule r/add-spec-step       :params [[:spec :spec :int true] [:clause :clause :kw true] [:element :element :int true] [:index :index :int true] [:id :id :int false]]}
    "add-error-step"      {:rule r/add-error-step      :params [[:spec :spec :int true] [:error-name :error-name :str true] [:index :index :int true] [:id :id :int false]]}
    "remove-spec-step"    {:rule r/remove-spec-step    :params [[:step :step :int true]]}
-   "set-step-expect-empty" {:rule r/set-step-expect-empty :params [[:step :step :int true] [:value :value :bool true]]}})
+   "set-step-expect-empty" {:rule r/set-step-expect-empty :params [[:step :step :int true] [:value :value :bool true]]}
+   ;; Wireframe — delete is scalar-only (node id is a string)
+   "delete-wireframe-node" {:rule r/delete-wireframe-node :params [[:element :element :int true] [:node :node :str true]]}})
 
 ;; The :int option keys per command — from the registry params for registered
 ;; commands, and declared here for the structured/composite ones (whose int args
@@ -74,7 +77,8 @@
   {"add-field" [:element] "remove-field" [:element]
    "add-field-origin" [:element] "remove-field-origin" [:element]
    "add-derivation" [:connection] "remove-derivation" [:connection]
-   "add-step-example" [:step] "remove-step-example" [:step]})
+   "add-step-example" [:step] "remove-step-example" [:step]
+   "add-wireframe-node" [:element] "set-wireframe-attr" [:element]})
 
 (defn- int-opt-keys [command]
   (if-let [params (:params (registry command))]
@@ -177,6 +181,31 @@
                                                   :field-name (str (get opts :field-name))})
       {:error :missing-args :message "remove-step-example requires :step and :field-name"})
 
+    (= command "add-wireframe-node")
+    (if (and (get opts :element) (get opts :tag))
+      (let [eid    (->int (get opts :element))
+            tag    (keyword (str (get opts :tag)))
+            parent (some-> (get opts :parent) str)
+            ;; All remaining opts (minus :element, :tag, :parent, :server) are attrs
+            attrs  (dissoc opts :element :tag :parent :server)
+            ;; Coerce attrs per tag schema
+            parsed (wf/parse-node-attrs tag (into {} (map (fn [[k v]] [k (str v)]) attrs)))]
+        (if (:error parsed)
+          {:error :invalid-value :message (:error parsed)}
+          (app/apply-rule! app r/add-wireframe-node
+                           {:element eid :tag tag :parent parent :attrs (:ok parsed)})))
+      {:error :missing-args :message "add-wireframe-node requires :element and :tag"})
+
+    (= command "set-wireframe-attr")
+    (if (and (get opts :element) (get opts :node) (get opts :attr) (contains? opts :value))
+      (let [eid  (->int (get opts :element))
+            node (str (get opts :node))
+            attr (keyword (str (get opts :attr)))
+            val  (str (get opts :value))]
+        (app/apply-rule! app r/set-wireframe-attr
+                         {:element eid :node node :attr attr :value val}))
+      {:error :missing-args :message "set-wireframe-attr requires :element, :node, :attr and :value"})
+
     :else
     (if-let [{:keys [rule] :as entry} (registry command)]
       (let [args (build-args entry app opts)]
@@ -190,7 +219,8 @@
   "All authoring command names: the registry, and the convenience composites."
   (sort (concat (keys registry)
                 ["add-field" "remove-field" "add-field-origin" "remove-field-origin"
-                 "add-derivation" "remove-derivation" "add-step-example" "remove-step-example"])))
+                 "add-derivation" "remove-derivation" "add-step-example" "remove-step-example"
+                 "add-wireframe-node" "set-wireframe-attr"])))
 
 (defn authoring-view
   "The ModelAuthoring `exposes:` read projection (event-model.allium:598-635):
@@ -228,9 +258,10 @@
                                                                        (select-keys e [:field_name :field_value]))})})})})
      :swimlanes   (for [sw (m/swimlanes s mid)] {:id (:id sw) :name (:name sw) :index (:index sw)})
      :elements    (for [e (m/elements s mid)]
-                    {:id (:id e) :name (:name e) :kind (:kind e)
-                     :swimlane (:swimlane e)
-                     :is_information_complete (m/information-complete? s e)})
+                    (cond-> {:id (:id e) :name (:name e) :kind (:kind e)
+                             :swimlane (:swimlane e)
+                             :is_information_complete (m/information-complete? s e)}
+                      (:wireframe e) (assoc :wireframe (:wireframe e))))
      :connections (for [c (m/connections s mid)]
                     {:id (:id c)
                      :from_id (:from c) :from_name (:name (m/fetch s :element (:from c)))

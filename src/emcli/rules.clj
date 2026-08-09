@@ -8,7 +8,8 @@
   rule commits a store that violates an invariant (the invariants always hold)."
   (:require [clojure.string :as str]
             [emcli.model :as m]
-            [emcli.invariants :as inv]))
+            [emcli.invariants :as inv]
+            [emcli.wireframe :as wf]))
 
 ;; ---------------------------------------------------------------------------
 ;; Result helpers
@@ -515,3 +516,70 @@
             changes  (mapv #(updated store :element (:id %)) elems)
             store    (m/delete store :swimlane lane)]
         (commit store :DeleteSwimlane (conj changes (deleted :swimlane lane)) lane))))
+
+;; ---------------------------------------------------------------------------
+;; Wireframe rules
+;; ---------------------------------------------------------------------------
+
+(defn- wireframe-invalid [validation]
+  {:error :invalid-wireframe :errors (:errors validation)
+   :message (str "wireframe validation failed: "
+                 (str/join "; " (map :message (:errors validation))))})
+
+(defn add-wireframe-node [store {:keys [element tag parent attrs]}]
+  (or (require-entity store :element element)
+      (let [el (m/fetch store :element element)]
+        (or (when (not= :screen (:kind el))
+              {:error :invalid-value
+               :message (str "element " element " is not a screen")})
+            (let [seed     [:screen {:-id "n1"}]
+                  wf       (or (:wireframe el) seed)
+                  schema   (wf/tag-schema tag)
+                  ;; For text-children tags, :text in attrs becomes a string child
+                  text-child (when (:text-children? schema) (:text attrs))
+                  clean-attrs (if text-child (dissoc attrs :text) attrs)
+                  child    (cond-> [tag]
+                             (seq clean-attrs) (conj clean-attrs)
+                             text-child        (conj text-child))
+                  wf'      (wf/append-child-at wf (or parent "n1") child)
+                  sv       (wf/validate wf')
+                  ss       (wf/validate-semantics wf' el)]
+              (or (when-not (:valid? sv) (wireframe-invalid sv))
+                  (when-not (:valid? ss) (wireframe-invalid ss))
+                  (let [store (m/set-field store :element element :wireframe wf')]
+                    (commit store :AddWireframeNode [(updated store :element element)]
+                            (m/fetch store :element element)))))))))
+
+(defn set-wireframe-attr [store {:keys [element node attr value]}]
+  (or (require-entity store :element element)
+      (let [el (m/fetch store :element element)]
+        (or (when-not (:wireframe el)
+              {:error :not-found :type :wireframe
+               :message (str "element " element " has no wireframe")})
+            (when-not (wf/find-node (:wireframe el) node)
+              {:error :not-found :type :wireframe-node :id node
+               :message (str "node " node " does not exist")})
+            (let [wf'  (wf/assoc-attr-at (:wireframe el) node attr value)
+                  sv   (wf/validate wf')
+                  ss   (wf/validate-semantics wf' el)]
+              (or (when-not (:valid? sv) (wireframe-invalid sv))
+                  (when-not (:valid? ss) (wireframe-invalid ss))
+                  (let [store (m/set-field store :element element :wireframe wf')]
+                    (commit store :SetWireframeAttr [(updated store :element element)]
+                            (m/fetch store :element element)))))))))
+
+(defn delete-wireframe-node [store {:keys [element node]}]
+  (or (require-entity store :element element)
+      (let [el (m/fetch store :element element)]
+        (or (when-not (:wireframe el)
+              {:error :not-found :type :wireframe
+               :message (str "element " element " has no wireframe")})
+            (when-not (wf/find-node (:wireframe el) node)
+              {:error :not-found :type :wireframe-node :id node
+               :message (str "node " node " does not exist")})
+            (let [wf'   (wf/delete-node-at (:wireframe el) node)
+                  store (if wf'
+                          (m/set-field store :element element :wireframe wf')
+                          (m/set-field store :element element :wireframe nil))]
+              (commit store :DeleteWireframeNode [(updated store :element element)]
+                      (m/fetch store :element element)))))))

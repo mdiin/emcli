@@ -41,6 +41,7 @@ triggers:
 1. **Resolve names to ids** with `emcli_resolve` before any `emcli_author` call that needs an integer id. Never guess ids.
 2. **Author** with `emcli_author` — one call per command.
 3. **Validate** with `emcli_validate` after a sequence of mutations to catch inconsistencies.
+4. **Show wireframe** with `emcli_show_wireframe` to get current node ids before patching or deleting wireframe nodes. Node ids are stable — one call per editing session suffices unless new nodes were added.
 
 ## emcli_resolve
 
@@ -177,6 +178,84 @@ emcli_validate
 - `index` in slice/placement/swimlane is zero-based and denotes position within the parent's ordered list.
 - `emcli_author` result on success is the created/modified entity as JSON. On error it returns an `Error:` prefixed string with the server's message.
 - Element and timeline names may contain spaces (e.g. `"User created"`, `"Order Flow"`).
+
+### element — wireframe authoring
+
+Wireframes are built incrementally on `:screen` elements. The `:wireframe` field holds an element tree where every node carries a stable `:-id` string (e.g. `"n1"`, `"n2"`, ...) assigned at append time. Node ids never change regardless of insertions or deletions — resolve once with `emcli_show_wireframe`, reuse ids for the whole editing session.
+
+**Tools:**
+- `emcli_show_wireframe` — call before `set-wireframe-attr` or `delete-wireframe-node` to get current node ids. Not available via `emcli_author` — use the dedicated plugin tool.
+- `emcli_author` — use for `add-wireframe-node`, `set-wireframe-attr`, `delete-wireframe-node`.
+
+**Verbs:**
+
+| verb | required args | optional args |
+|------|--------------|---------------|
+| `add-wireframe-node` | `element` (int), `tag` (string) | `parent` (node-id string, default `"n1"`), + tag attribute flags |
+| `set-wireframe-attr` | `element` (int), `node` (node-id string), `attr` (string), `value` (string) | |
+| `delete-wireframe-node` | `element` (int), `node` (node-id string) | |
+
+**Tags and their attribute flags** (authoritative — matches `tag-schema` in `wireframe.clj`):
+
+Layout (accept element children):
+- `:screen` — root node, always `n1`, no attrs
+- `:row` — `align` (start\|center\|end\|between), `gap` (sm\|md\|lg)
+- `:col` — `align` (start\|center\|end\|between), `gap` (sm\|md\|lg), `width` (narrow\|wide\|auto\|full)
+- `:divider` — no attrs, leaf (no children)
+
+Typography (string children via `text` key in `add-wireframe-node` args):
+- `:h1` `:h2` `:h3` — no attrs, string children only
+- `:text` — `align` (left\|center\|right), `tone` (default\|muted\|danger\|success), string children only
+- `:span` — `tone` (default\|muted\|danger\|success), string children only
+
+Inputs (leaf — no children):
+- `:input` — `type` (text\|email\|password\|number\|tel\|url), `label` (string), `placeholder` (string), `required` (bool), `field-name` (string), `command-input` (bool)
+- `:textarea` — `label` (string), `placeholder` (string), `required` (bool), `field-name` (string), `command-input` (bool)
+- `:dropdown` — **`options` (required**, comma-separated strings), `label` (string), `required` (bool), `field-name` (string), `command-input` (bool)
+- `:checkbox` — `label` (string), `default` (bool), `field-name` (string), `command-input` (bool)
+- `:toggle` — `label` (string), `default` (bool), `field-name` (string), `command-input` (bool)
+
+Actions (leaf):
+- `:button` — **`label` (string, required)**, `variant` (primary\|secondary\|ghost\|danger), `disabled` (bool), `command-input` (bool)
+- `:icon-button` — **`icon` (string, required)**, **`aria-label` (string, required)**, `command-input` (bool)
+
+Content/navigation (leaf):
+- `:link` — **`label` (string, required)**, `command-input` (bool)
+- `:image` — **`alt` (string, required)**, `aspect` (square\|wide\|tall), `command-input` (bool)
+- `:icon` — **`name` (string, required)**, `size` (sm\|md\|lg)
+- `:alert` — **`text` (string, required)**, `type` (info\|warning\|danger\|success)
+
+**Workflow example** — build the Order List screen wireframe (element id 42):
+
+```
+# 1. Add root container
+emcli_author {group: "element", verb: "add-wireframe-node", args: {element: 42, tag: "col"}}
+# → n2 created under n1 (:screen)
+
+# 2. Add children to n2
+emcli_author {group: "element", verb: "add-wireframe-node", args: {element: 42, tag: "h1", text: "Your orders", parent: "n2"}}
+emcli_author {group: "element", verb: "add-wireframe-node", args: {element: 42, tag: "input", placeholder: "Search...", field-name: "searchTerm", parent: "n2"}}
+emcli_author {group: "element", verb: "add-wireframe-node", args: {element: 42, tag: "button", label: "Create order", variant: "primary", command-input: true, parent: "n2"}}
+
+# 3. Inspect to get node ids for patching
+emcli_show_wireframe {element: 42}
+# → [n1] :screen
+#   [n2]   :col
+#   [n3]     :h1  "Your orders"
+#   [n4]     :input  {:placeholder "Search..." :field-name "searchTerm"}
+#   [n5]     :button  {:label "Create order" :variant :primary :command-input true}
+
+# 4. Patch one attribute
+emcli_author {group: "element", verb: "set-wireframe-attr", args: {element: 42, node: "n5", attr: "label", value: "New order"}}
+
+# 5. Delete a node (n3 removed, n4/n5 ids unaffected)
+emcli_author {group: "element", verb: "delete-wireframe-node", args: {element: 42, node: "n3"}}
+```
+
+**Notes:**
+- `field-name` values on inputs must reference a field that exists on the screen element's `:fields` list. Use `emcli_resolve` to confirm field names before adding inputs.
+- Deleting a node removes its entire subtree. Deleting `n1` removes the entire wireframe.
+- `:-id` keys are internal — they appear in the stored EDN but are stripped before validation and rendering.
 
 ## Verification
 

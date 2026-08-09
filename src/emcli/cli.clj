@@ -9,7 +9,8 @@
             [cheshire.core :as json]
             [clojure.string :as str]
             [emcli.commands :as cmd]
-            [emcli.server :as server]))
+            [emcli.server :as server]
+            [emcli.wireframe :as wf]))
 
 (def ^:private default-server "http://localhost:8090")
 
@@ -52,7 +53,10 @@
                  "context" "set-element-context"
                  "swimlane" "assign-swimlane" "image" "set-image-url"
                  "add-origin" "add-field-origin" "remove-origin" "remove-field-origin"
-                 "rename" "rename-element" "delete" "delete-element"}
+                 "rename" "rename-element" "delete" "delete-element"
+                 "add-wireframe-node" "add-wireframe-node"
+                 "set-wireframe-attr" "set-wireframe-attr"
+                 "delete-wireframe-node" "delete-wireframe-node"}
    "placement"  {"add" "place-element" "reorder" "reorder-placement" "remove" "remove-placement"}
    "connection" {"add" "connect" "remove" "disconnect"
                  "add-derivation" "add-derivation" "remove-derivation" "remove-derivation"}
@@ -94,6 +98,27 @@
 
 (defn- do-show [opts]
   (emit (parse-body (request :get (str (server-url opts) "/model")))))
+
+(defn- json->wireframe
+  "Reconstruct a wireframe vector from its JSON-deserialized form.
+  String tags become keywords; :-id keys are already restored by parse-string."
+  [v]
+  (when (vector? v)
+    (let [tag  (keyword (first v))
+          rest- (map #(cond (vector? %) (json->wireframe %)
+                            (map? %)    %
+                            :else       %)
+                     (rest v))]
+      (into [tag] rest-))))
+
+(defn- do-show-wireframe [opts]
+  (let [eid  (or (:element opts) (die "show-wireframe requires --element <id>"))
+        body (parse-body (request :get (str (server-url opts) "/model")))
+        el   (first (filter #(= (parse-long (str eid)) (:id %)) (:elements body)))]
+    (cond
+      (nil? el)   (die (str "✗ element " eid " does not exist"))
+      (nil? (:wireframe el)) (die (str "✗ element " eid " has no wireframe"))
+      :else       (println (wf/format-tree (json->wireframe (:wireframe el)))))))
 
 (defn- do-validate [opts]
   (emit (parse-body (request :get (str (server-url opts) "/validate")))))
@@ -327,6 +352,9 @@
             third    (nth argv 2 nil)]
         (cond
           (or (nil? verb) (= "help" verb)) (print-group-help head)
+          ;; show-wireframe is CLI-only (not a server command)
+          (and (= head "element") (= verb "show-wireframe"))
+          (do-show-wireframe (cli/parse-opts (drop 2 argv)))
           (resolve-command head verb)
           (if (= "help" third)
             (print-verb-help head verb)

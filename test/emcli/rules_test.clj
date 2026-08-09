@@ -4,7 +4,8 @@
   (:require [clojure.test :refer [deftest testing is]]
             [emcli.model :as m]
             [emcli.rules :as r]
-            [emcli.support :as s]))
+            [emcli.support :as s]
+            [emcli.wireframe :as wf]))
 
 ;; --- rule_entity_creation --------------------------------------------------
 
@@ -198,3 +199,89 @@
       (is (= :DeleteTimeline (:op delta)))
       (is (every? #(= :deleted (:action %)) (:changes delta)))
       (is (>= (count (:changes delta)) 4)))))
+
+;; ---------------------------------------------------------------------------
+;; Wireframe rules
+;; ---------------------------------------------------------------------------
+
+(defn- screen-with-field
+  "A store with one screen element that has a :searchTerm field."
+  []
+  (let [[store mid] (s/with-model)
+        res         (s/ok store r/create-element {:model mid :name "OrderList" :kind :screen})
+        store       (:store res)
+        eid         (:id (:result res))
+        store       (:store (s/ok store r/add-field {:element eid
+                                                      :field {:name "searchTerm" :type :string}}))]
+    [store eid]))
+
+(deftest add-wireframe-node-seeds-screen-on-first-call
+  (let [[store eid] (screen-with-field)
+        res         (s/ok store r/add-wireframe-node {:element eid :tag :col :parent "n1"})
+        el          (:result res)]
+    (is (= :screen (first (:wireframe el))))
+    (is (some? (wf/find-node (:wireframe el) "n1")))
+    (is (some? (wf/find-node (:wireframe el) "n2")))))
+
+(deftest add-wireframe-node-appends-nested-node
+  (let [[store eid] (screen-with-field)
+        store       (:store (s/ok store r/add-wireframe-node {:element eid :tag :col :parent "n1"}))
+        res         (s/ok store r/add-wireframe-node {:element eid :tag :h1 :attrs {:text "Hello"} :parent "n2"})
+        el          (:result res)]
+    (is (some? (wf/find-node (:wireframe el) "n3")))))
+
+(deftest add-wireframe-node-rejects-non-screen-element
+  (let [[store mid] (s/with-model)
+        res         (s/ok store r/create-element {:model mid :name "PlaceOrder" :kind :command})
+        store       (:store res)
+        eid         (:id (:result res))
+        err         (s/err store r/add-wireframe-node {:element eid :tag :col :parent "n1"})]
+    (is (= :invalid-value (:error err)))))
+
+(deftest add-wireframe-node-rejects-unknown-field-name
+  (let [[store eid] (screen-with-field)
+        err         (s/err store r/add-wireframe-node {:element eid :tag :input
+                                                        :attrs {:field-name "nonexistent"} :parent "n1"})]
+    (is (= :invalid-wireframe (:error err)))))
+
+(deftest set-wireframe-attr-updates-node
+  (let [[store eid] (screen-with-field)
+        store       (:store (s/ok store r/add-wireframe-node {:element eid :tag :button
+                                                               :attrs {:label "Old"} :parent "n1"}))
+        res         (s/ok store r/set-wireframe-attr {:element eid :node "n2" :attr :label :value "New"})
+        wf          (:wireframe (:result res))
+        node        (wf/find-node wf "n2")
+        attrs       (some #(when (and (map? %) (not (contains? % :-id))) %) (rest node))]
+    (is (= "New" (:label attrs)))))
+
+(deftest set-wireframe-attr-rejects-missing-wireframe
+  (let [[store eid] (screen-with-field)
+        err         (s/err store r/set-wireframe-attr {:element eid :node "n2" :attr :label :value "X"})]
+    (is (= :not-found (:error err)))))
+
+(deftest set-wireframe-attr-rejects-unknown-node
+  (let [[store eid] (screen-with-field)
+        store       (:store (s/ok store r/add-wireframe-node {:element eid :tag :col :parent "n1"}))
+        err         (s/err store r/set-wireframe-attr {:element eid :node "n99" :attr :label :value "X"})]
+    (is (= :not-found (:error err)))))
+
+(deftest delete-wireframe-node-removes-leaf
+  (let [[store eid] (screen-with-field)
+        store       (:store (s/ok store r/add-wireframe-node {:element eid :tag :col :parent "n1"}))
+        store       (:store (s/ok store r/add-wireframe-node {:element eid :tag :h1 :parent "n2"}))
+        res         (s/ok store r/delete-wireframe-node {:element eid :node "n3"})
+        wf          (:wireframe (:result res))]
+    (is (nil? (wf/find-node wf "n3")))
+    (is (some? (wf/find-node wf "n2")))))
+
+(deftest delete-wireframe-node-n1-clears-wireframe
+  (let [[store eid] (screen-with-field)
+        store       (:store (s/ok store r/add-wireframe-node {:element eid :tag :col :parent "n1"}))
+        res         (s/ok store r/delete-wireframe-node {:element eid :node "n1"})
+        el          (:result res)]
+    (is (nil? (:wireframe el)))))
+
+(deftest delete-wireframe-node-rejects-missing-wireframe
+  (let [[store eid] (screen-with-field)
+        err         (s/err store r/delete-wireframe-node {:element eid :node "n1"})]
+    (is (= :not-found (:error err)))))

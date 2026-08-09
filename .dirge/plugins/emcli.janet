@@ -190,3 +190,39 @@
   :sequential)
 
 (harness/register-command "em-validate" "em-validate-cmd")
+
+# emcli_show_wireframe — read-only, parallel
+(defn emcli-show-wireframe-handler [args-json]
+  # args-json: {"element": <int>}
+  (def pat
+    (peg/compile
+      ~(any
+         (+ (sequence "\"element\"" :s* ":" :s*
+                      (capture (some (+ :d (set "-.")))))
+            1))))
+  (def result (peg/match pat args-json))
+  (if (and result (> (length result) 0))
+    (run-emcli ["element" "show-wireframe" "--element" (get result 0)])
+    "Error: missing 'element' argument"))
+
+(harness/register-tool
+  "emcli_show_wireframe"
+  (string
+    "Show the wireframe of a screen element as an annotated tree with [nN] node ids and indentation. "
+    "Call this before set-wireframe-attr or delete-wireframe-node to get current node ids. "
+    "Node ids are stable across insertions and deletions, so one call per editing session suffices "
+    "unless new nodes were just added.")
+  "EM Show Wireframe"
+  (string
+    "{"
+    "\"type\":\"object\","
+    "\"properties\":{"
+    "\"element\":{"
+    "\"type\":\"integer\","
+    "\"description\":\"The integer id of the screen element whose wireframe to show\""
+    "}"
+    "},"
+    "\"required\":[\"element\"]"
+    "}")
+  "emcli-show-wireframe-handler"
+  :parallel)
