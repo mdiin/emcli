@@ -53,11 +53,27 @@
       (is (= (:id sw) (:id (first (:swimlanes model)))))
       (is (true? (:is_complete s1)) "state_change slice with one placed command is complete")
       (is (= (:id pl) (:id p1)))
-      (is (= {:id (:id cmd') :name "PlaceOrder" :kind :command :swimlane nil :is_information_complete true :fields []}
+      (is (= {:id (:id cmd') :name "PlaceOrder" :kind :command :swimlane nil :is_information_complete true
+              :image_url nil :wireframe nil :fields []}
              (:element p1)))
       (is (= (:id cn) (:id c1)))
       (is (= {:id (:id cmd') :name "PlaceOrder"} (:from c1)))
       (is (= {:id (:id evt) :name "OrderPlaced"} (:to c1))))))
+
+(deftest snapshot-carries-image-url-and-wireframe
+  (testing "image_url and wireframe are present on element in snapshot"
+    (let [a    (app/new-app "Orders")
+          tl   (:result (cmd/run a "create-timeline" {:title "Ordering"}))
+          sl   (:result (cmd/run a "add-slice" {:timeline (:id tl) :title "Place" :kind "state_change" :index 0}))
+          scr  (:result (cmd/run a "create-element" {:name "OrderScreen" :kind "screen"}))
+          _    (cmd/run a "set-image-url" {:element (:id scr) :url "https://example.com/img.png"})
+          _    (cmd/run a "add-wireframe-node" {:element (:id scr) :tag "row"})
+          _    (cmd/run a "place-element" {:slice (:id sl) :element (:id scr)})
+          [_ msgs] (recording-sub a)
+          model (:model (first @msgs))
+          p1    (first (:placements (first (:slices (first (:timelines model))))))]
+      (is (= "https://example.com/img.png" (:image_url (:element p1))))
+      (is (some? (:wireframe (:element p1)))))))
 
 (deftest snapshot-carries-placed-element-fields
   (testing "an element's fields are streamed flat under its placement (subfields dropped)"

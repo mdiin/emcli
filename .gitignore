@@ -3,3 +3,13 @@
 *.class
 .DS_Store
 /.claude/settings.local.json
+/.claude/memory/
+/.dirge/sessions/
+/.dirge/skills/
+/.tokensave/
+*~
+/NOTES.md
+/eventmodelers_out.json
+/mise.toml
+/wireframe-dsl-spec.md
+/wireframe-plan.md

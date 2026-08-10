@@ -109,12 +109,14 @@
                                       :is_complete (m/slice-complete? s sl)
                                       :placements (for [p (m/placements s (:id sl))
                                                         :let [el (m/placement-element s p)]]
-                                                    {:id (:id p) :index (:index p)
-                                                     :element {:id (:id el) :name (:name el) :kind (:kind el)
-                                                               :swimlane (:swimlane el)
-                                                               :is_information_complete (m/information-complete? s el)
-                                                               :fields (for [f (:fields el)]
-                                                                         (select-keys f [:name :type :optional :cardinality]))}})
+                                                     {:id (:id p) :index (:index p)
+                                                      :element {:id (:id el) :name (:name el) :kind (:kind el)
+                                                                :swimlane (:swimlane el)
+                                                                :is_information_complete (m/information-complete? s el)
+                                                                :image_url (:image_url el)
+                                                                :wireframe (:wireframe el)
+                                                                :fields (for [f (:fields el)]
+                                                                          (select-keys f [:name :type :optional :cardinality]))}})
                                       :specifications (for [sp (m/specs s (:id sl))]
                                                         {:id (:id sp) :title (:title sp)
                                                          :is_complete (m/spec-complete? s sp)

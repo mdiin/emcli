@@ -63,7 +63,8 @@ Populated:
           { "id": 6, "title": "Place order", "kind": "state_change", "status": "created", "index": 0,
             "placements": [
               { "id": 7, "element": { "id": 2, "name": "PlaceOrder", "kind": "command",
-                                      "is_information_complete": true,
+                                      "swimlane": null, "is_information_complete": true,
+                                      "image_url": null, "wireframe": null,
                                       "fields": [ { "name": "id", "type": "uuid",
                                                     "optional": false, "cardinality": "single" } ] } }
             ],
@@ -87,10 +88,12 @@ Populated:
 }
 ```
 
-Each placed element carries `is_information_complete` (true iff every field on
-it is sourced — carried, derived, or introduced), and each connection carries
-its `derivations` (per-field provenance: `target_field` ← `source_fields`), so a
-visualiser can render completeness and field flow directly from the snapshot.
+Each placed element carries `swimlane` (integer id or null), `is_information_complete`
+(true iff every field on it is sourced — carried, derived, or introduced), `image_url`
+(string or null — set via `SetImageUrl` on screen elements), and `wireframe` (null until
+at least one `AddWireframeNode` has been applied). Each connection carries its
+`derivations` (per-field provenance: `target_field` ← `source_fields`), so a visualiser
+can render completeness and field flow directly from the snapshot.
 
 Each slice also carries its `specifications[]`: each one's `is_complete` (see
 `SpecificationCompleteness` — one `when_step` naming a command for a

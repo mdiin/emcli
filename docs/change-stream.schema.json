@@ -59,9 +59,21 @@
                                   "id": { "type": "integer", "description": "Element id (correlates with element deltas)" },
                                   "name": { "type": "string" },
                                   "kind": { "$ref": "#/$defs/elementKind" },
+                                  "swimlane": { "type": ["integer", "null"], "description": "Swimlane id, or null if unassigned." },
                                   "is_information_complete": {
                                     "type": "boolean",
                                     "description": "True iff every field on the element is sourced (carried, derived or introduced)."
+                                  },
+                                  "image_url": {
+                                    "type": ["string", "null"],
+                                    "description": "Reference image URL for screen elements; null until SetImageUrl is invoked."
+                                  },
+                                  "wireframe": {
+                                    "oneOf": [
+                                      { "$ref": "#/$defs/WireframeNode" },
+                                      { "type": "null" }
+                                    ],
+                                    "description": "Hiccup-like wireframe tree; null until AddWireframeNode is invoked on a screen element."
                                   },
                                   "fields": {
                                     "type": "array",
