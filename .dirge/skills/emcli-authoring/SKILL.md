@@ -196,6 +196,8 @@ Wireframes are built incrementally on `:screen` elements. The `:wireframe` field
 
 **Tags and their attribute flags** (authoritative — matches `tag-schema` in `wireframe.clj`):
 
+All nodes except `:screen` and `:divider` accept `field-name` (string) and `command-input` (bool) in addition to their own attrs listed below.
+
 Layout (accept element children):
 - `:screen` — root node, always `n1`, no attrs
 - `:row` — `align` (start|center|end|between), `gap` (sm|md|lg)
@@ -203,7 +205,7 @@ Layout (accept element children):
 - `:divider` — no attrs, **leaf**
 
 Typography (string children via `text` key in `add-wireframe-node` args):
-- `:h1` `:h2` `:h3` — no attrs, string children only
+- `:h1` `:h2` `:h3` — string children only
 - `:text` — `align` (left|center|right), `tone` (default|muted|danger|success), string children only
 - `:span` — `tone` (default|muted|danger|success), string children only
 
@@ -220,9 +222,9 @@ Actions (leaf):
 
 Content/navigation (leaf):
 - `:link` — **`label` (string, required)**, `command-input` (bool)
-- `:image` — **`alt` (string, required)**, `aspect` (square|wide|tall), `command-input` (bool)
-- `:icon` — **`name` (string, required)**, `size` (sm|md|lg)
-- `:alert` — **`text` (string, required)**, `type` (info|warning|danger|success)
+- `:image` — **`alt` (string, required)**, `aspect` (square|wide|tall), `field-name` (string), `command-input` (bool)
+- `:icon` — **`name` (string, required)**, `size` (sm|md|lg), `field-name` (string), `command-input` (bool)
+- `:alert` — **`text` (string, required)**, `type` (info|warning|danger|success), `field-name` (string), `command-input` (bool)
 
 **Workflow example** — build the Order List screen wireframe (element id 42):
 
@@ -252,7 +254,7 @@ emcli_author {group: "element", verb: "delete-wireframe-node", args: {element: 4
 ```
 
 **Notes:**
-- `field-name` values on inputs must reference a field that exists on the screen element's `:fields` list. Use `emcli_resolve` to confirm field names before adding inputs.
+- `field-name` values must reference a field that exists on the screen element's `:fields` list. Use `emcli_resolve` to confirm field names before setting this attr on any node.
 - Deleting a node removes its entire subtree. Deleting `n1` removes the entire wireframe.
 - `:-id` keys are internal — they appear in the stored EDN but are stripped before validation and rendering.
 - Node storage format: **one** map per node — `[tag {:-id "nN" ...content-attrs} ...children]`. The `:-id` and content attrs are in the same map. Wire JSON: `["tag", {"-id": "n1", "label": "OK"}, ...]`. Do not expect two separate maps.

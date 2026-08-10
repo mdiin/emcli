@@ -13,21 +13,29 @@
 ;; :-id is never in attrs — it is reserved and handled separately everywhere.
 (def tag-schema
   {:screen      {:attrs {} :leaf? false :text-children? false}
-   :row         {:attrs {:align {:type :kw :values #{:start :center :end :between}}
-                         :gap   {:type :kw :values #{:sm :md :lg}}}
-                 :leaf? false :text-children? false}
-   :col         {:attrs {:align {:type :kw :values #{:start :center :end :between}}
-                         :gap   {:type :kw :values #{:sm :md :lg}}
-                         :width {:type :kw :values #{:narrow :wide :auto :full}}}
-                 :leaf? false :text-children? false}
-   :h1          {:attrs {} :leaf? false :text-children? true}
-   :h2          {:attrs {} :leaf? false :text-children? true}
-   :h3          {:attrs {} :leaf? false :text-children? true}
-   :text        {:attrs {:align {:type :kw :values #{:left :center :right}}
-                         :tone  {:type :kw :values #{:default :muted :danger :success}}}
-                 :leaf? false :text-children? true}
-   :span        {:attrs {:tone {:type :kw :values #{:default :muted :danger :success}}}
-                 :leaf? false :text-children? true}
+   :row         {:attrs {:align         {:type :kw :values #{:start :center :end :between}}
+                          :gap           {:type :kw :values #{:sm :md :lg}}
+                          :field-name    {:type :str}
+                          :command-input {:type :bool}}
+                  :leaf? false :text-children? false}
+   :col         {:attrs {:align         {:type :kw :values #{:start :center :end :between}}
+                          :gap           {:type :kw :values #{:sm :md :lg}}
+                          :width         {:type :kw :values #{:narrow :wide :auto :full}}
+                          :field-name    {:type :str}
+                          :command-input {:type :bool}}
+                  :leaf? false :text-children? false}
+   :h1          {:attrs {:field-name {:type :str} :command-input {:type :bool}} :leaf? false :text-children? true}
+   :h2          {:attrs {:field-name {:type :str} :command-input {:type :bool}} :leaf? false :text-children? true}
+   :h3          {:attrs {:field-name {:type :str} :command-input {:type :bool}} :leaf? false :text-children? true}
+   :text        {:attrs {:align         {:type :kw :values #{:left :center :right}}
+                          :tone          {:type :kw :values #{:default :muted :danger :success}}
+                          :field-name    {:type :str}
+                          :command-input {:type :bool}}
+                  :leaf? false :text-children? true}
+   :span        {:attrs {:tone          {:type :kw :values #{:default :muted :danger :success}}
+                          :field-name    {:type :str}
+                          :command-input {:type :bool}}
+                  :leaf? false :text-children? true}
    :divider     {:attrs {} :leaf? true :text-children? false}
    :input       {:attrs {:type          {:type :kw :values #{:text :email :password :number :tel :url}}
                          :label         {:type :str}
@@ -70,15 +78,21 @@
    :link        {:attrs {:label         {:type :str :required? true}
                          :command-input {:type :bool}}
                  :leaf? true :text-children? false}
-   :image       {:attrs {:alt    {:type :str :required? true}
-                         :aspect {:type :kw :values #{:square :wide :tall}}}
-                 :leaf? true :text-children? false}
-   :icon        {:attrs {:name {:type :str :required? true}
-                         :size {:type :kw :values #{:sm :md :lg}}}
-                 :leaf? true :text-children? false}
-   :alert       {:attrs {:text {:type :str :required? true}
-                         :type {:type :kw :values #{:info :warning :danger :success}}}
-                 :leaf? true :text-children? false}})
+   :image       {:attrs {:alt           {:type :str :required? true}
+                          :aspect        {:type :kw :values #{:square :wide :tall}}
+                          :field-name    {:type :str}
+                          :command-input {:type :bool}}
+                  :leaf? true :text-children? false}
+   :icon        {:attrs {:name          {:type :str :required? true}
+                          :size          {:type :kw :values #{:sm :md :lg}}
+                          :field-name    {:type :str}
+                          :command-input {:type :bool}}
+                  :leaf? true :text-children? false}
+   :alert       {:attrs {:text          {:type :str :required? true}
+                          :type          {:type :kw :values #{:info :warning :danger :success}}
+                          :field-name    {:type :str}
+                          :command-input {:type :bool}}
+                  :leaf? true :text-children? false}})
 
 (def allowed-tags (set (keys tag-schema)))
 

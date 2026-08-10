@@ -129,6 +129,66 @@
     (is (false? (:valid? result)))
     (is (some #(re-find #"screen" (:message %)) (:errors result)))))
 
+(deftest validate-accepts-field-name-and-command-input-on-any-node
+  (testing ":col accepts :field-name and :command-input"
+    (let [wf [:screen {:-id "n1"} [:col {:-id "n2"} {:field-name "x" :command-input true}]]
+          result (wf/validate wf)]
+      (is (:valid? result))))
+  (testing ":row accepts :field-name and :command-input"
+    (let [wf [:screen {:-id "n1"} [:row {:-id "n2"} {:field-name "x" :command-input true}]]
+          result (wf/validate wf)]
+      (is (:valid? result))))
+  (testing ":h1 accepts :field-name and :command-input"
+    (let [wf [:screen {:-id "n1"} [:h1 {:-id "n2"} {:field-name "x" :command-input true} "Title"]]
+          result (wf/validate wf)]
+      (is (:valid? result))))
+  (testing ":h2 accepts :field-name and :command-input"
+    (let [wf [:screen {:-id "n1"} [:h2 {:-id "n2"} {:field-name "x" :command-input true} "Title"]]
+          result (wf/validate wf)]
+      (is (:valid? result))))
+  (testing ":h3 accepts :field-name and :command-input"
+    (let [wf [:screen {:-id "n1"} [:h3 {:-id "n2"} {:field-name "x" :command-input true} "Title"]]
+          result (wf/validate wf)]
+      (is (:valid? result))))
+  (testing ":text accepts :field-name and :command-input"
+    (let [wf [:screen {:-id "n1"} [:text {:-id "n2"} {:field-name "x" :command-input true} "Hello"]]
+          result (wf/validate wf)]
+      (is (:valid? result))))
+  (testing ":span accepts :field-name and :command-input"
+    (let [wf [:screen {:-id "n1"} [:span {:-id "n2"} {:field-name "x" :command-input true} "Hello"]]
+          result (wf/validate wf)]
+      (is (:valid? result))))
+  (testing ":image accepts :field-name and :command-input"
+    (let [wf [:screen {:-id "n1"} [:image {:-id "n2"} {:alt "photo" :field-name "x" :command-input true}]]
+          result (wf/validate wf)]
+      (is (:valid? result))))
+  (testing ":alert accepts :field-name and :command-input"
+    (let [wf [:screen {:-id "n1"} [:alert {:-id "n2"} {:text "hi" :type :info :field-name "x" :command-input true}]]
+          result (wf/validate wf)]
+      (is (:valid? result))))
+  (testing ":icon accepts :field-name and :command-input"
+    (let [wf [:screen {:-id "n1"} [:icon {:-id "n2"} {:name "star" :field-name "x" :command-input true}]]
+          result (wf/validate wf)]
+      (is (:valid? result)))))
+
+(deftest validate-rejects-field-name-and-command-input-on-screen-and-divider
+  (testing ":screen rejects :field-name"
+    (let [wf [:screen {:-id "n1"} {:field-name "x"}]
+          result (wf/validate wf)]
+      (is (false? (:valid? result)))))
+  (testing ":screen rejects :command-input"
+    (let [wf [:screen {:-id "n1"} {:command-input true}]
+          result (wf/validate wf)]
+      (is (false? (:valid? result)))))
+  (testing ":divider rejects :field-name"
+    (let [wf [:screen {:-id "n1"} [:divider {:-id "n2"} {:field-name "x"}]]
+          result (wf/validate wf)]
+      (is (false? (:valid? result)))))
+  (testing ":divider rejects :command-input"
+    (let [wf [:screen {:-id "n1"} [:divider {:-id "n2"} {:command-input true}]]
+          result (wf/validate wf)]
+      (is (false? (:valid? result))))))
+
 ;; ---------------------------------------------------------------------------
 ;; validate-semantics
 ;; ---------------------------------------------------------------------------
