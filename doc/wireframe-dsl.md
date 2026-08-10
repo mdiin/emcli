@@ -14,8 +14,8 @@ first item is a keyword tag:
 [:screen {:-id "n1"}
   [:col {:-id "n2"}
     [:h1 {:-id "n3"} "Your orders"]
-    [:input {:-id "n4"} {:placeholder "Search..." :field-name "searchTerm"}]
-    [:button {:-id "n5"} {:label "Create order" :variant :primary}]]]
+    [:input {:-id "n4" :placeholder "Search..." :field-name "searchTerm"}]
+    [:button {:-id "n5" :label "Create order" :variant :primary}]]]
 ```
 
 Every node carries a stable `:-id` string (`"n1"`, `"n2"`, …) assigned at

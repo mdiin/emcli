@@ -173,7 +173,7 @@
 
 (defn- validate-node-with-ids
   "Validate a node, keeping :-id values from the tree for error attribution.
-  Node format at authoring time: [tag {:-id 'nN'} {content-attrs} ...children]"
+  Node format: [tag {:-id 'nN' ...content-attrs} ...children]"
   [node]
   (when (vector? node)
     (let [tag      (first node)

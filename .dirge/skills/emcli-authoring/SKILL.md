@@ -255,6 +255,7 @@ emcli_author {group: "element", verb: "delete-wireframe-node", args: {element: 4
 - `field-name` values on inputs must reference a field that exists on the screen element's `:fields` list. Use `emcli_resolve` to confirm field names before adding inputs.
 - Deleting a node removes its entire subtree. Deleting `n1` removes the entire wireframe.
 - `:-id` keys are internal — they appear in the stored EDN but are stripped before validation and rendering.
+- Node storage format: **one** map per node — `[tag {:-id "nN" ...content-attrs} ...children]`. The `:-id` and content attrs are in the same map. Wire JSON: `["tag", {"-id": "n1", "label": "OK"}, ...]`. Do not expect two separate maps.
 - For text-children tags (`:h1`, `:h2`, `:h3`, `:text`, `:span`), pass `text` as a plain arg; the rule extracts it and injects it as a string child. Do NOT pass `:text` as an attribute name.
 
 ## Verification
