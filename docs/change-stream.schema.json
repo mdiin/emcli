@@ -249,6 +249,10 @@
           "type": "array",
           "description": "operator overrides marking fields that are legitimately introduced here",
           "items": { "$ref": "#/$defs/FieldOrigin" }
+        },
+        "wireframe": {
+          "$ref": "#/$defs/WireframeNode",
+          "description": "hiccup-like wireframe tree; present only on screen elements that have one"
         }
       }
     },
@@ -370,6 +374,30 @@
       }
     },
 
+    "WireframeNode": {
+      "type": "array",
+      "description": "A wireframe node in hiccup-like form: [tag, attrs, ...children]. Cheshire serialises Clojure keywords as strings, so the Clojure vector `[:button {:label \"OK\" :-id \"n2\"}]` arrives on the wire as `[\"button\", {\"-id\": \"n2\", \"label\": \"OK\"}]`. The root node is always `\"screen\"`. The attrs object always contains `\"-id\"` (a stable string address used for incremental edits); other attrs are tag-specific. Children are either nested WireframeNodes or plain strings (for text-children tags such as h1, h2, h3).",
+      "minItems": 1,
+      "prefixItems": [
+        { "type": "string", "description": "tag name (e.g. \"screen\", \"button\", \"input\")" },
+        {
+          "type": "object",
+          "description": "node attributes; always contains \"-id\"",
+          "required": ["-id"],
+          "properties": {
+            "-id": { "type": "string", "description": "stable node address for incremental edits" }
+          },
+          "additionalProperties": { "type": ["string", "boolean", "number"] }
+        }
+      ],
+      "items": {
+        "oneOf": [
+          { "$ref": "#/$defs/WireframeNode" },
+          { "type": "string", "description": "text child (only on text-children tags: h1, h2, h3, text, span)" }
+        ]
+      }
+    },
+
     "entityType": {
       "enum": ["timeline", "swimlane", "slice", "element", "placement",
                "connection", "specification", "spec-step"]
@@ -396,7 +424,8 @@
         "Connect", "Disconnect", "SetConnectionDerivations",
         "AddSpecification", "DeleteSpecification",
         "AddSpecStep", "AddErrorStep", "RemoveSpecStep",
-        "SetStepExamples", "SetStepExpectEmpty"
+        "SetStepExamples", "SetStepExpectEmpty",
+        "AddWireframeNode", "SetWireframeAttr", "DeleteWireframeNode"
       ]
     }
   }

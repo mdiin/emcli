@@ -160,7 +160,7 @@ data: {"op":"DeleteTimeline","changes":[{"action":"deleted","type":"placement","
 | `ReorderSlice` / `SetSliceStatus` / `SetSliceKind` | updated | slice |
 | `DeleteSlice` | deleted | slice (+ cascaded placements, specifications, spec-steps) |
 | `CreateElement` | created | element |
-| `SetFields` / `SetElementContext` / `AssignSwimlane` / `SetImageUrl` / `SetFieldOrigins` / `RenameElement` | updated | element |
+| `SetFields` / `SetElementContext` / `AssignSwimlane` / `SetImageUrl` / `SetFieldOrigins` / `RenameElement` / `AddWireframeNode` / `SetWireframeAttr` / `DeleteWireframeNode` | updated | element |
 | `DeleteElement` | deleted | element (+ cascaded placements, connections) |
 | `PlaceElement` | created | placement |
 | `RemovePlacement` | deleted | placement |
@@ -182,21 +182,23 @@ All entities carry integer `id` and `type`; relationships are integer ids.
 | `timeline` | `id, type, model, title` |
 | `swimlane` | `id, type, model, name` |
 | `slice` | `id, type, timeline, title, kind, index, status` |
-| `element` | `id, type, model, name, kind, context, fields[], field_origins[], swimlane?, image_url?` |
+| `element` | `id, type, model, name, kind, context, fields[], field_origins[], swimlane?, image_url?, wireframe?` |
 | `placement` | `id, type, slice, element` |
 | `connection` | `id, type, model, from, to, derivations[]` |
 | `specification` | `id, type, slice, title` |
 | `spec-step` | `id, type, spec, clause, index, element?, is_error, error_name?, expect_empty, examples[]` |
 
-`element?`/`swimlane?`/`image_url?`/`error_name?` are optional: `swimlane` and
-`image_url` are absent until set; `element` is absent on an error step and
-`error_name` is present only then.
+`element?`/`swimlane?`/`image_url?`/`wireframe?`/`error_name?` are optional:
+`swimlane` and `image_url` are absent until set; `wireframe` is absent until at
+least one `AddWireframeNode` has been applied to a screen element; `element` is
+absent on an error step and `error_name` is present only then.
 
 Embedded value objects:
 - **Field**: `{ name, type, optional, cardinality, subfields[] }`
 - **Example**: `{ field_name, field_value }`
 - **FieldDerivation** (on `connection.derivations`): `{ target_field, source_fields[] }` — a target field derived from one or more source fields (one with a different name = rename; many = aggregation)
 - **FieldOrigin** (on `element.field_origins`): `{ field, origin }` — a field legitimately introduced rather than sourced upstream
+- **WireframeNode** (on `element.wireframe`, recursive): a hiccup-like JSON array `[tag, attrs, ...children]`. Clojure keywords are serialised as strings, so `[:button {:-id "n2" :label "OK"}]` arrives as `["button", {"-id": "n2", "label": "OK"}]`. The root tag is always `"screen"`. Every attrs object carries `"-id"`, a stable string address used for incremental edits. Children are either nested WireframeNodes or plain strings (text-children tags: `h1`, `h2`, `h3`, `text`, `span`). `DeleteWireframeNode` that removes the last non-root node sets `wireframe` to `null` (absent) on the next delta.
 
 ### Enum values
 

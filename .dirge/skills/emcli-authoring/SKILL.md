@@ -41,7 +41,6 @@ triggers:
 1. **Resolve names to ids** with `emcli_resolve` before any `emcli_author` call that needs an integer id. Never guess ids.
 2. **Author** with `emcli_author` — one call per command.
 3. **Validate** with `emcli_validate` after a sequence of mutations to catch inconsistencies.
-4. **Show wireframe** with `emcli_show_wireframe` to get current node ids before patching or deleting wireframe nodes. Node ids are stable — one call per editing session suffices unless new nodes were added.
 
 ## emcli_resolve
 
@@ -199,31 +198,31 @@ Wireframes are built incrementally on `:screen` elements. The `:wireframe` field
 
 Layout (accept element children):
 - `:screen` — root node, always `n1`, no attrs
-- `:row` — `align` (start\|center\|end\|between), `gap` (sm\|md\|lg)
-- `:col` — `align` (start\|center\|end\|between), `gap` (sm\|md\|lg), `width` (narrow\|wide\|auto\|full)
-- `:divider` — no attrs, leaf (no children)
+- `:row` — `align` (start|center|end|between), `gap` (sm|md|lg)
+- `:col` — `align` (start|center|end|between), `gap` (sm|md|lg), `width` (narrow|wide|auto|full)
+- `:divider` — no attrs, **leaf**
 
 Typography (string children via `text` key in `add-wireframe-node` args):
 - `:h1` `:h2` `:h3` — no attrs, string children only
-- `:text` — `align` (left\|center\|right), `tone` (default\|muted\|danger\|success), string children only
-- `:span` — `tone` (default\|muted\|danger\|success), string children only
+- `:text` — `align` (left|center|right), `tone` (default|muted|danger|success), string children only
+- `:span` — `tone` (default|muted|danger|success), string children only
 
 Inputs (leaf — no children):
-- `:input` — `type` (text\|email\|password\|number\|tel\|url), `label` (string), `placeholder` (string), `required` (bool), `field-name` (string), `command-input` (bool)
+- `:input` — `type` (text|email|password|number|tel|url), `label` (string), `placeholder` (string), `required` (bool), `field-name` (string), `command-input` (bool)
 - `:textarea` — `label` (string), `placeholder` (string), `required` (bool), `field-name` (string), `command-input` (bool)
 - `:dropdown` — **`options` (required**, comma-separated strings), `label` (string), `required` (bool), `field-name` (string), `command-input` (bool)
 - `:checkbox` — `label` (string), `default` (bool), `field-name` (string), `command-input` (bool)
 - `:toggle` — `label` (string), `default` (bool), `field-name` (string), `command-input` (bool)
 
 Actions (leaf):
-- `:button` — **`label` (string, required)**, `variant` (primary\|secondary\|ghost\|danger), `disabled` (bool), `command-input` (bool)
+- `:button` — **`label` (string, required)**, `variant` (primary|secondary|ghost|danger), `disabled` (bool), `command-input` (bool)
 - `:icon-button` — **`icon` (string, required)**, **`aria-label` (string, required)**, `command-input` (bool)
 
 Content/navigation (leaf):
 - `:link` — **`label` (string, required)**, `command-input` (bool)
-- `:image` — **`alt` (string, required)**, `aspect` (square\|wide\|tall), `command-input` (bool)
-- `:icon` — **`name` (string, required)**, `size` (sm\|md\|lg)
-- `:alert` — **`text` (string, required)**, `type` (info\|warning\|danger\|success)
+- `:image` — **`alt` (string, required)**, `aspect` (square|wide|tall), `command-input` (bool)
+- `:icon` — **`name` (string, required)**, `size` (sm|md|lg)
+- `:alert` — **`text` (string, required)**, `type` (info|warning|danger|success)
 
 **Workflow example** — build the Order List screen wireframe (element id 42):
 
