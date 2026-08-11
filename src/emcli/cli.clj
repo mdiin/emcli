@@ -223,6 +223,24 @@
    "remove-step-example"
    [{:flag "step" :type "int" :required true :ref "timelines[].slices[].specifications[].steps[].id"}
     {:flag "field-name" :type "string" :required true :note "example field name to remove"}]
+   "add-wireframe-node"
+   [{:flag "element" :type "int" :required true :ref "elements[].id"
+     :note "must be a screen element"}
+    {:flag "tag" :type "string" :required true
+     :note "wireframe tag, e.g. button, input, row, col, text"}
+    {:flag "parent" :type "string" :required false
+     :note "node id (nN) to append under; omit to append at the root"}
+    {:flag "label" :type "string" :required false
+     :note "text content or label (tag-dependent)"}]
+   "set-wireframe-attr"
+   [{:flag "element" :type "int" :required true :ref "elements[].id"
+     :note "must be a screen element"}
+    {:flag "node" :type "string" :required true
+     :note "node id (nN) as shown by element show-wireframe"}
+    {:flag "attr" :type "string" :required true
+     :note "attribute name, e.g. label, placeholder, field-name"}
+    {:flag "value" :type "string" :required true
+     :note "new value for the attribute"}]
    "resolve"
    [{:flag "queries" :type "string" :required true
      :note "comma-separated name[:kind_hint] entries, e.g. \"Baz:slice,Snaz\"; kind_hint is one of timeline|swimlane|slice|element|specification and only ranks candidates, never filters them"}]})
@@ -294,9 +312,10 @@
 ;; --- help & dispatch -------------------------------------------------------
 
 (defn- print-group [group]
-  (let [verbs (command-groups group)]
+  (let [verbs (cond-> (sort (keys (command-groups group)))
+                (= group "element") (concat ["show-wireframe"]))]
     (println (str "  " group))
-    (doseq [v (sort (keys verbs))]
+    (doseq [v verbs]
       (println (str "    " group " " v)))))
 
 (defn- print-help []
@@ -324,13 +343,16 @@
 
 (defn- print-group-help [group]
   (println (str "emcli " group " <verb> [--server URL]\n"))
-  (let [verbs    (sort (keys (command-groups group)))
+  (let [verbs    (cond-> (sort (keys (command-groups group)))
+                   (= group "element") (concat ["show-wireframe"]))
         max-verb (apply max (map count verbs))]
     (doseq [v verbs]
       (let [pad    (str/join (repeat (- max-verb (count v)) " "))
-            suffix (format-usage-suffix group v)]
+            suffix (when-not (= v "show-wireframe")
+                     (format-usage-suffix group v))]
         (println (str "  " group " " v pad
-                      (when (seq suffix) (str "  " suffix))))))))
+                      (when (seq suffix) (str "  " suffix))
+                      (when (= v "show-wireframe") "  --element <int>")))))))
 
 (def ^:private meta-commands #{"serve" "show" "validate" "resolve" "export" "import" "help"})
 

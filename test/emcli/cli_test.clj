@@ -33,6 +33,21 @@
     (is (nil? (cli/resolve-command "slice" "frobnicate")))
     (is (nil? (cli/resolve-command "nonsense" "add")))))
 
+(deftest wireframe-composite-commands-have-manifest-params
+  (doseq [cmd ["add-wireframe-node" "set-wireframe-attr"]]
+    (let [params (#'cli/command->manifest-params cmd)]
+      (is (seq params) (str cmd " must have non-empty manifest params")))))
+
+(deftest top-level-help-includes-show-wireframe
+  (let [output (with-out-str (#'cli/print-help))]
+    (is (clojure.string/includes? output "show-wireframe")
+        "top-level help must list the CLI-only element show-wireframe verb")))
+
+(deftest element-group-help-includes-show-wireframe
+  (let [output (with-out-str (#'cli/print-group-help "element"))]
+    (is (clojure.string/includes? output "show-wireframe")
+        "element group help must list the CLI-only show-wireframe verb")))
+
 ;; --queries "name[:kind_hint],..." parsing for `emcli resolve`.
 (deftest parse-resolve-queries-test
   (testing "bare names carry no kind_hint"
