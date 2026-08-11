@@ -322,6 +322,24 @@
                        new-attrs (assoc attrs attr-kw value)]
                    (into [tag id-map new-attrs] children))))))
 
+(defn set-text-child-at
+  "Set the string child of the node identified by `node-id` to `text`.
+  Replaces any existing string child; leaves vector children untouched."
+  [wireframe node-id text]
+  (let [path (find-node-path wireframe node-id)]
+    (update-in wireframe path
+               (fn [node]
+                 (let [tag       (first node)
+                       id-map    (second node)
+                       rest-     (drop 2 node)
+                       has-attrs (and (seq rest-) (map? (first rest-)))
+                       attrs     (when has-attrs (first rest-))
+                       children  (if has-attrs (rest rest-) rest-)
+                       new-kids  (conj (vec (remove string? children)) text)]
+                   (cond-> [tag id-map]
+                     attrs   (conj attrs)
+                     :always (into new-kids)))))))
+
 (defn delete-node-at
   "Remove the node identified by `node-id` from the wireframe (along with its
   subtree). Returns nil if `node-id` is the root node."

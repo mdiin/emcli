@@ -183,8 +183,8 @@ emcli_validate
 Wireframes are built incrementally on `:screen` elements. The `:wireframe` field holds an element tree where every node carries a stable `:-id` string (e.g. `"n1"`, `"n2"`, ...) assigned at append time. Node ids never change regardless of insertions or deletions — resolve once with `emcli_show_wireframe`, reuse ids for the whole editing session.
 
 **Tools:**
-- `emcli_show_wireframe` — call before `set-wireframe-attr` or `delete-wireframe-node` to get current node ids. Not available via `emcli_author` — use the dedicated plugin tool.
-- `emcli_author` — use for `add-wireframe-node`, `set-wireframe-attr`, `delete-wireframe-node`.
+- `emcli_show_wireframe` — call before `set-wireframe-attr`, `set-wireframe-text`, or `delete-wireframe-node` to get current node ids. Not available via `emcli_author` — use the dedicated plugin tool.
+- `emcli_author` — use for `add-wireframe-node`, `set-wireframe-attr`, `set-wireframe-text`, `delete-wireframe-node`.
 
 **Verbs:**
 
@@ -192,6 +192,7 @@ Wireframes are built incrementally on `:screen` elements. The `:wireframe` field
 |------|--------------|---------------|
 | `add-wireframe-node` | `element` (int), `tag` (string) | `parent` (node-id string, default `"n1"`), + tag attribute flags |
 | `set-wireframe-attr` | `element` (int), `node` (node-id string), `attr` (string), `value` (string) | |
+| `set-wireframe-text` | `element` (int), `node` (node-id string), `text` (string) | |
 | `delete-wireframe-node` | `element` (int), `node` (node-id string) | |
 
 **Tags and their attribute flags** (authoritative — matches `tag-schema` in `wireframe.clj`):
@@ -204,10 +205,10 @@ Layout (accept element children):
 - `:col` — `align` (start|center|end|between), `gap` (sm|md|lg), `width` (narrow|wide|auto|full)
 - `:divider` — no attrs, **leaf**
 
-Typography (string children via `text` key in `add-wireframe-node` args):
-- `:h1` `:h2` `:h3` — string children only
-- `:text` — `align` (left|center|right), `tone` (default|muted|danger|success), string children only
-- `:span` — `tone` (default|muted|danger|success), string children only
+Typography (text content set via `set-wireframe-text` after creation):
+- `:h1` `:h2` `:h3` — string children only; set text with `set-wireframe-text`
+- `:text` — `align` (left|center|right), `tone` (default|muted|danger|success); set text with `set-wireframe-text`
+- `:span` — `tone` (default|muted|danger|success); set text with `set-wireframe-text`
 
 Inputs (leaf — no children):
 - `:input` — `type` (text|email|password|number|tel|url), `label` (string), `placeholder` (string), `required` (bool), `field-name` (string), `command-input` (bool)
@@ -234,7 +235,9 @@ emcli_author {group: "element", verb: "add-wireframe-node", args: {element: 42, 
 # → n2 created under n1 (:screen)
 
 # 2. Add children to n2
-emcli_author {group: "element", verb: "add-wireframe-node", args: {element: 42, tag: "h1", text: "Your orders", parent: "n2"}}
+emcli_author {group: "element", verb: "add-wireframe-node", args: {element: 42, tag: "h1", parent: "n2"}}
+# → n3 created; set its text in a second call
+emcli_author {group: "element", verb: "set-wireframe-text", args: {element: 42, node: "n3", text: "Your orders"}}
 emcli_author {group: "element", verb: "add-wireframe-node", args: {element: 42, tag: "input", placeholder: "Search...", field-name: "searchTerm", parent: "n2"}}
 emcli_author {group: "element", verb: "add-wireframe-node", args: {element: 42, tag: "button", label: "Create order", variant: "primary", command-input: true, parent: "n2"}}
 
@@ -258,7 +261,7 @@ emcli_author {group: "element", verb: "delete-wireframe-node", args: {element: 4
 - Deleting a node removes its entire subtree. Deleting `n1` removes the entire wireframe.
 - `:-id` keys are internal — they appear in the stored EDN but are stripped before validation and rendering.
 - Node storage format: **one** map per node — `[tag {:-id "nN" ...content-attrs} ...children]`. The `:-id` and content attrs are in the same map. Wire JSON: `["tag", {"-id": "n1", "label": "OK"}, ...]`. Do not expect two separate maps.
-- For text-children tags (`:h1`, `:h2`, `:h3`, `:text`, `:span`), pass `text` as a plain arg; the rule extracts it and injects it as a string child. Do NOT pass `:text` as an attribute name.
+- For text-children tags (`:h1`, `:h2`, `:h3`, `:text`, `:span`), text content is set with a separate `set-wireframe-text` call after the node is created. `add-wireframe-node` does not accept a `text` arg for these tags.
 
 ## Verification
 

@@ -54,9 +54,10 @@
                  "swimlane" "assign-swimlane" "image" "set-image-url"
                  "add-origin" "add-field-origin" "remove-origin" "remove-field-origin"
                  "rename" "rename-element" "delete" "delete-element"
-                 "add-wireframe-node" "add-wireframe-node"
-                 "set-wireframe-attr" "set-wireframe-attr"
-                 "delete-wireframe-node" "delete-wireframe-node"}
+                  "add-wireframe-node" "add-wireframe-node"
+                  "set-wireframe-attr" "set-wireframe-attr"
+                  "set-wireframe-text" "set-wireframe-text"
+                  "delete-wireframe-node" "delete-wireframe-node"}
    "placement"  {"add" "place-element" "reorder" "reorder-placement" "remove" "remove-placement"}
    "connection" {"add" "connect" "remove" "disconnect"
                  "add-derivation" "add-derivation" "remove-derivation" "remove-derivation"}
@@ -226,12 +227,17 @@
    "add-wireframe-node"
    [{:flag "element" :type "int" :required true :ref "elements[].id"
      :note "must be a screen element"}
-    {:flag "tag" :type "string" :required true
-     :note "wireframe tag, e.g. button, input, row, col, text"}
-    {:flag "parent" :type "string" :required false
-     :note "node id (nN) to append under; omit to append at the root"}
-    {:flag "label" :type "string" :required false
-     :note "text content or label (tag-dependent)"}]
+     {:flag "tag" :type "string" :required true
+      :note "wireframe tag, e.g. button, input, row, col, text"}
+     {:flag "parent" :type "string" :required false
+      :note "node id (nN) to append under; omit to append at the root"}]
+   "set-wireframe-text"
+   [{:flag "element" :type "int" :required true :ref "elements[].id"
+     :note "must be a screen element"}
+    {:flag "node" :type "string" :required true
+     :note "node id (nN) of a text-children node: h1, h2, h3, text, span"}
+    {:flag "text" :type "string" :required true
+     :note "text content to set on the node"}]
    "set-wireframe-attr"
    [{:flag "element" :type "int" :required true :ref "elements[].id"
      :note "must be a screen element"}

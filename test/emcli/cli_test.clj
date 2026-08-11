@@ -34,7 +34,7 @@
     (is (nil? (cli/resolve-command "nonsense" "add")))))
 
 (deftest wireframe-composite-commands-have-manifest-params
-  (doseq [cmd ["add-wireframe-node" "set-wireframe-attr"]]
+  (doseq [cmd ["add-wireframe-node" "set-wireframe-attr" "set-wireframe-text"]]
     (let [params (#'cli/command->manifest-params cmd)]
       (is (seq params) (str cmd " must have non-empty manifest params")))))
 

@@ -568,6 +568,31 @@
                     (commit store :SetWireframeAttr [(updated store :element element)]
                             (m/fetch store :element element)))))))))
 
+(defn set-wireframe-text [store {:keys [element node text]}]
+  (or (require-entity store :element element)
+      (let [el (m/fetch store :element element)]
+        (or (when-not (:wireframe el)
+              {:error :not-found :type :wireframe
+               :message (str "element " element " has no wireframe")})
+            (when-not (wf/find-node (:wireframe el) node)
+              {:error :not-found :type :wireframe-node :id node
+               :message (str "node " node " does not exist")})
+            (let [found-node (wf/find-node (:wireframe el) node)
+                  tag        (first found-node)
+                  schema     (wf/tag-schema tag)]
+              (or (when-not (:text-children? schema)
+                    {:error :invalid-value
+                     :message (str "node " node " (:" (name tag) ") does not accept text content")})
+                  (let [wf'  (wf/set-text-child-at (:wireframe el) node text)
+                        sv   (wf/validate wf')
+                        ss   (wf/validate-semantics wf' el)]
+                    (or (when-not (:valid? sv) (wireframe-invalid sv))
+                        (when-not (:valid? ss) (wireframe-invalid ss))
+                        (let [store (m/set-field store :element element :wireframe wf')]
+                          (commit store :SetWireframeText
+                                  [(updated store :element element)]
+                                  (m/fetch store :element element)))))))))))
+
 (defn delete-wireframe-node [store {:keys [element node]}]
   (or (require-entity store :element element)
       (let [el (m/fetch store :element element)]

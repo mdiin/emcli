@@ -265,6 +265,39 @@
         err         (s/err store r/set-wireframe-attr {:element eid :node "n99" :attr :label :value "X"})]
     (is (= :not-found (:error err)))))
 
+(deftest set-wireframe-text-sets-string-child
+  (let [[store eid] (screen-with-field)
+        store       (:store (s/ok store r/add-wireframe-node {:element eid :tag :h1 :parent "n1"}))
+        res         (s/ok store r/set-wireframe-text {:element eid :node "n2" :text "Hello"})
+        node        (wf/find-node (:wireframe (:result res)) "n2")]
+    (is (some #(= "Hello" %) node))))
+
+(deftest set-wireframe-text-replaces-existing-text
+  (let [[store eid] (screen-with-field)
+        store       (:store (s/ok store r/add-wireframe-node {:element eid :tag :text :parent "n1"}))
+        store       (:store (s/ok store r/set-wireframe-text {:element eid :node "n2" :text "First"}))
+        res         (s/ok store r/set-wireframe-text {:element eid :node "n2" :text "Second"})
+        node        (wf/find-node (:wireframe (:result res)) "n2")]
+    (is (some #(= "Second" %) node))
+    (is (not (some #(= "First" %) node)))))
+
+(deftest set-wireframe-text-rejects-non-text-tag
+  (let [[store eid] (screen-with-field)
+        store       (:store (s/ok store r/add-wireframe-node {:element eid :tag :col :parent "n1"}))
+        err         (s/err store r/set-wireframe-text {:element eid :node "n2" :text "Hi"})]
+    (is (= :invalid-value (:error err)))))
+
+(deftest set-wireframe-text-rejects-missing-wireframe
+  (let [[store eid] (screen-with-field)
+        err         (s/err store r/set-wireframe-text {:element eid :node "n2" :text "Hi"})]
+    (is (= :not-found (:error err)))))
+
+(deftest set-wireframe-text-rejects-unknown-node
+  (let [[store eid] (screen-with-field)
+        store       (:store (s/ok store r/add-wireframe-node {:element eid :tag :h1 :parent "n1"}))
+        err         (s/err store r/set-wireframe-text {:element eid :node "n99" :text "Hi"})]
+    (is (= :not-found (:error err)))))
+
 (deftest delete-wireframe-node-removes-leaf
   (let [[store eid] (screen-with-field)
         store       (:store (s/ok store r/add-wireframe-node {:element eid :tag :col :parent "n1"}))

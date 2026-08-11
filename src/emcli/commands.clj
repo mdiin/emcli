@@ -78,7 +78,8 @@
    "add-field-origin" [:element] "remove-field-origin" [:element]
    "add-derivation" [:connection] "remove-derivation" [:connection]
    "add-step-example" [:step] "remove-step-example" [:step]
-   "add-wireframe-node" [:element] "set-wireframe-attr" [:element]})
+    "add-wireframe-node" [:element] "set-wireframe-attr" [:element]
+    "set-wireframe-text" [:element]})
 
 (defn- int-opt-keys [command]
   (if-let [params (:params (registry command))]
@@ -206,6 +207,14 @@
                          {:element eid :node node :attr attr :value val}))
       {:error :missing-args :message "set-wireframe-attr requires :element, :node, :attr and :value"})
 
+    (= command "set-wireframe-text")
+    (if (and (get opts :element) (get opts :node) (contains? opts :text))
+      (app/apply-rule! app r/set-wireframe-text
+                       {:element (->int (get opts :element))
+                        :node    (str (get opts :node))
+                        :text    (str (get opts :text))})
+      {:error :missing-args :message "set-wireframe-text requires :element, :node and :text"})
+
     :else
     (if-let [{:keys [rule] :as entry} (registry command)]
       (let [args (build-args entry app opts)]
@@ -220,7 +229,7 @@
   (sort (concat (keys registry)
                 ["add-field" "remove-field" "add-field-origin" "remove-field-origin"
                  "add-derivation" "remove-derivation" "add-step-example" "remove-step-example"
-                 "add-wireframe-node" "set-wireframe-attr"])))
+                 "add-wireframe-node" "set-wireframe-attr" "set-wireframe-text"])))
 
 (defn authoring-view
   "The ModelAuthoring `exposes:` read projection (event-model.allium:598-635):
