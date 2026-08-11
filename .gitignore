@@ -5,7 +5,7 @@
 /.claude/settings.local.json
 /.claude/memory/
 /.dirge/sessions/
-/.dirge/skills/
+/.dirge/skills/dirge-plugin-authoring
 /.tokensave/
 *~
 /NOTES.md
