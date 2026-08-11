@@ -123,6 +123,8 @@ Field `origin` values: `user_input`, `generated`, `external`
 | add               | `from` (int), `to` (int)                                                 | `id` (int)    |
 | remove            | `connection` (int)                                                       |               |
 | add-derivation    | `connection` (int), `target` (string), `from` (string, comma-separated) |               |
+
+**Derivation rule:** Only add a derivation when it carries information — a field **renamed** across the boundary (e.g. `recipientEmail` → `email`), or multiple source fields collapsed into one target (`firstName,lastName` → `displayName`). Never add a derivation where `from` and `target` share the same name — same-name derivations corrupt the information completeness check.
 | remove-derivation | `connection` (int), `target` (string)                                    |               |
 
 ### spec
@@ -169,6 +171,8 @@ emcli_author  group="placement"  verb="add"
 # 6. Validate
 emcli_validate
 ```
+
+For complete multi-step recipes (building a full state-change step, modelling data flow, constructing a wireframe, writing a spec, refactoring): load the `emcli-cookbook` skill.
 
 ## Notes
 
