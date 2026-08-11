@@ -209,7 +209,7 @@
   "emcli_show_wireframe"
   (string
     "Show the wireframe of a screen element as an annotated tree with [nN] node ids and indentation. "
-    "Call this before set-wireframe-attr, set-wireframe-text or delete-wireframe-node to get current node ids. "
+    "Call this before set-wireframe-attr, set-wireframe-text, add-wireframe-node-before or delete-wireframe-node to get current node ids. "
     "Node ids are stable across insertions and deletions, so one call per editing session suffices "
     "unless new nodes were just added.")
   "EM Show Wireframe"

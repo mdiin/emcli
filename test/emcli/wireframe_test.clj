@@ -295,6 +295,46 @@
     (is (some? (wf/find-node result "n5")))))
 
 ;; ---------------------------------------------------------------------------
+;; insert-before-at
+;; ---------------------------------------------------------------------------
+
+(deftest insert-before-at-root-returns-nil
+  (is (nil? (wf/insert-before-at simple-wf "n1" [:divider {}]))))
+
+(deftest insert-before-at-inserts-before-first-child
+  ;; Insert before n3 (first child of n2)
+  (let [result (wf/insert-before-at simple-wf "n3" [:divider {}])
+        col    (wf/find-node result "n2")
+        kids   (filter vector? (drop 1 col))]
+    (is (= 4 (count kids)))
+    (is (= :divider (first (first kids))))
+    ;; original n3 is now second
+    (is (= "n3" (get (second (second kids)) :-id)))))
+
+(deftest insert-before-at-inserts-before-middle-child
+  ;; Insert before n4 (second child of n2)
+  (let [result (wf/insert-before-at simple-wf "n4" [:divider {}])
+        col    (wf/find-node result "n2")
+        kids   (filter vector? (drop 1 col))]
+    (is (= 4 (count kids)))
+    ;; n3 still first, new divider second, n4 third
+    (is (= "n3" (get (second (first kids)) :-id)))
+    (is (= :divider (first (second kids))))
+    (is (= "n4" (get (second (nth kids 2)) :-id)))))
+
+(deftest insert-before-at-assigns-fresh-id
+  (let [result (wf/insert-before-at simple-wf "n3" [:divider {}])
+        added  (wf/find-node result "n6")]
+    (is (some? added))
+    (is (= :divider (first added)))))
+
+(deftest insert-before-at-siblings-unaffected
+  (let [result (wf/insert-before-at simple-wf "n3" [:divider {}])]
+    (is (some? (wf/find-node result "n3")))
+    (is (some? (wf/find-node result "n4")))
+    (is (some? (wf/find-node result "n5")))))
+
+;; ---------------------------------------------------------------------------
 ;; parse-node-attrs
 ;; ---------------------------------------------------------------------------
 

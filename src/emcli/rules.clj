@@ -546,9 +546,40 @@
                   ss       (wf/validate-semantics wf' el)]
               (or (when-not (:valid? sv) (wireframe-invalid sv))
                   (when-not (:valid? ss) (wireframe-invalid ss))
-                  (let [store (m/set-field store :element element :wireframe wf')]
-                    (commit store :AddWireframeNode [(updated store :element element)]
-                            (m/fetch store :element element)))))))))
+                   (let [store (m/set-field store :element element :wireframe wf')]
+                     (commit store :AddWireframeNode [(updated store :element element)]
+                             (m/fetch store :element element)))))))))
+
+(defn add-wireframe-node-before [store {:keys [element before tag attrs]}]
+  (or (require-entity store :element element)
+      (let [el (m/fetch store :element element)]
+        (or (when (not= :screen (:kind el))
+              {:error :invalid-value
+               :message (str "element " element " is not a screen")})
+            (when-not (:wireframe el)
+              {:error :not-found :type :wireframe
+               :message (str "element " element " has no wireframe")})
+            (when-not (wf/find-node (:wireframe el) before)
+              {:error :not-found :type :wireframe-node :id before
+               :message (str "node " before " does not exist")})
+            (let [schema      (wf/tag-schema tag)
+                  text-child  (when (:text-children? schema) (:text attrs))
+                  clean-attrs (if text-child (dissoc attrs :text) attrs)
+                  child       (cond-> [tag]
+                                (seq clean-attrs) (conj clean-attrs)
+                                text-child        (conj text-child))
+                  wf'         (wf/insert-before-at (:wireframe el) before child)]
+              (or (when-not wf'
+                    {:error :invalid-value
+                     :message (str "cannot insert before root node " before)})
+                  (let [sv (wf/validate wf')
+                        ss (wf/validate-semantics wf' el)]
+                    (or (when-not (:valid? sv) (wireframe-invalid sv))
+                        (when-not (:valid? ss) (wireframe-invalid ss))
+                        (let [store (m/set-field store :element element :wireframe wf')]
+                          (commit store :AddWireframeNodeBefore
+                                  [(updated store :element element)]
+                                  (m/fetch store :element element)))))))))))
 
 (defn set-wireframe-attr [store {:keys [element node attr value]}]
   (or (require-entity store :element element)

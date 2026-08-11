@@ -54,8 +54,9 @@
                  "swimlane" "assign-swimlane" "image" "set-image-url"
                  "add-origin" "add-field-origin" "remove-origin" "remove-field-origin"
                  "rename" "rename-element" "delete" "delete-element"
-                  "add-wireframe-node" "add-wireframe-node"
-                  "set-wireframe-attr" "set-wireframe-attr"
+                   "add-wireframe-node" "add-wireframe-node"
+                   "add-wireframe-node-before" "add-wireframe-node-before"
+                   "set-wireframe-attr" "set-wireframe-attr"
                   "set-wireframe-text" "set-wireframe-text"
                   "delete-wireframe-node" "delete-wireframe-node"}
    "placement"  {"add" "place-element" "reorder" "reorder-placement" "remove" "remove-placement"}
@@ -231,6 +232,13 @@
       :note "wireframe tag, e.g. button, input, row, col, text"}
      {:flag "parent" :type "string" :required false
       :note "node id (nN) to append under; omit to append at the root"}]
+   "add-wireframe-node-before"
+   [{:flag "element" :type "int" :required true :ref "elements[].id"
+     :note "must be a screen element"}
+    {:flag "before" :type "string" :required true
+     :note "node id (nN) of the existing sibling node to insert before"}
+    {:flag "tag" :type "string" :required true
+     :note "wireframe tag, e.g. button, input, row, col, text"}]
    "set-wireframe-text"
    [{:flag "element" :type "int" :required true :ref "elements[].id"
      :note "must be a screen element"}

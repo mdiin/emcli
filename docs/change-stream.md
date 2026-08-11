@@ -163,7 +163,7 @@ data: {"op":"DeleteTimeline","changes":[{"action":"deleted","type":"placement","
 | `ReorderSlice` / `SetSliceStatus` / `SetSliceKind` | updated | slice |
 | `DeleteSlice` | deleted | slice (+ cascaded placements, specifications, spec-steps) |
 | `CreateElement` | created | element |
-| `SetFields` / `SetElementContext` / `AssignSwimlane` / `SetImageUrl` / `SetFieldOrigins` / `RenameElement` / `AddWireframeNode` / `SetWireframeAttr` / `DeleteWireframeNode` | updated | element |
+| `SetFields` / `SetElementContext` / `AssignSwimlane` / `SetImageUrl` / `SetFieldOrigins` / `RenameElement` / `AddWireframeNode` / `AddWireframeNodeBefore` / `SetWireframeAttr` / `DeleteWireframeNode` | updated | element |
 | `DeleteElement` | deleted | element (+ cascaded placements, connections) |
 | `PlaceElement` | created | placement |
 | `RemovePlacement` | deleted | placement |

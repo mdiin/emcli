@@ -318,3 +318,37 @@
   (let [[store eid] (screen-with-field)
         err         (s/err store r/delete-wireframe-node {:element eid :node "n1"})]
     (is (= :not-found (:error err)))))
+
+(deftest add-wireframe-node-before-inserts-before-sibling
+  (let [[store eid] (screen-with-field)
+        store       (:store (s/ok store r/add-wireframe-node {:element eid :tag :col :parent "n1"}))
+        store       (:store (s/ok store r/add-wireframe-node {:element eid :tag :h1 :parent "n2"}))
+        store       (:store (s/ok store r/add-wireframe-node {:element eid :tag :button :attrs {:label "B"} :parent "n2"}))
+        ;; wireframe: n1[:screen] > n2[:col] > n3[:h1], n4[:button]
+        ;; insert divider before n4
+        res         (s/ok store r/add-wireframe-node-before {:element eid :before "n4" :tag :divider :attrs {}})
+        wf          (:wireframe (:result res))
+        col         (wf/find-node wf "n2")
+        kids        (filter vector? (drop 1 col))]
+    (is (= 3 (count kids)))
+    (is (= :h1 (first (first kids))))
+    (is (= :divider (first (second kids))))
+    (is (= "n4" (get (second (nth kids 2)) :-id)))))
+
+(deftest add-wireframe-node-before-rejects-root
+  (let [[store eid] (screen-with-field)
+        _           (s/ok store r/add-wireframe-node {:element eid :tag :col :parent "n1"})
+        store       (:store (s/ok store r/add-wireframe-node {:element eid :tag :col :parent "n1"}))
+        err         (s/err store r/add-wireframe-node-before {:element eid :before "n1" :tag :divider :attrs {}})]
+    (is (= :invalid-value (:error err)))))
+
+(deftest add-wireframe-node-before-rejects-missing-wireframe
+  (let [[store eid] (screen-with-field)
+        err         (s/err store r/add-wireframe-node-before {:element eid :before "n2" :tag :divider :attrs {}})]
+    (is (= :not-found (:error err)))))
+
+(deftest add-wireframe-node-before-rejects-unknown-node
+  (let [[store eid] (screen-with-field)
+        store       (:store (s/ok store r/add-wireframe-node {:element eid :tag :col :parent "n1"}))
+        err         (s/err store r/add-wireframe-node-before {:element eid :before "n99" :tag :divider :attrs {}})]
+    (is (= :not-found (:error err)))))

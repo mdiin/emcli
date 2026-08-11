@@ -183,14 +183,15 @@ emcli_validate
 Wireframes are built incrementally on `:screen` elements. The `:wireframe` field holds an element tree where every node carries a stable `:-id` string (e.g. `"n1"`, `"n2"`, ...) assigned at append time. Node ids never change regardless of insertions or deletions — resolve once with `emcli_show_wireframe`, reuse ids for the whole editing session.
 
 **Tools:**
-- `emcli_show_wireframe` — call before `set-wireframe-attr`, `set-wireframe-text`, or `delete-wireframe-node` to get current node ids. Not available via `emcli_author` — use the dedicated plugin tool.
-- `emcli_author` — use for `add-wireframe-node`, `set-wireframe-attr`, `set-wireframe-text`, `delete-wireframe-node`.
+- `emcli_show_wireframe` — call before `set-wireframe-attr`, `set-wireframe-text`, `add-wireframe-node-before`, or `delete-wireframe-node` to get current node ids. Not available via `emcli_author` — use the dedicated plugin tool.
+- `emcli_author` — use for `add-wireframe-node`, `add-wireframe-node-before`, `set-wireframe-attr`, `set-wireframe-text`, `delete-wireframe-node`.
 
 **Verbs:**
 
 | verb | required args | optional args |
 |------|--------------|---------------|
 | `add-wireframe-node` | `element` (int), `tag` (string) | `parent` (node-id string, default `"n1"`), + tag attribute flags |
+| `add-wireframe-node-before` | `element` (int), `before` (node-id string), `tag` (string) | + tag attribute flags |
 | `set-wireframe-attr` | `element` (int), `node` (node-id string), `attr` (string), `value` (string) | |
 | `set-wireframe-text` | `element` (int), `node` (node-id string), `text` (string) | |
 | `delete-wireframe-node` | `element` (int), `node` (node-id string) | |
@@ -249,10 +250,13 @@ emcli_show_wireframe {element: 42}
 #   [n4]     :input  {:placeholder "Search..." :field-name "searchTerm"}
 #   [n5]     :button  {:label "Create order" :variant :primary :command-input true}
 
-# 4. Patch one attribute
+# 4. Insert a divider before the button (n4)
+emcli_author {group: "element", verb: "add-wireframe-node-before", args: {element: 42, before: "n4", tag: "divider"}}
+
+# 5. Patch one attribute
 emcli_author {group: "element", verb: "set-wireframe-attr", args: {element: 42, node: "n5", attr: "label", value: "New order"}}
 
-# 5. Delete a node (n3 removed, n4/n5 ids unaffected)
+# 6. Delete a node (n3 removed, n4/n5 ids unaffected)
 emcli_author {group: "element", verb: "delete-wireframe-node", args: {element: 42, node: "n3"}}
 ```
 

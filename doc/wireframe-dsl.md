@@ -79,6 +79,9 @@ emcli element add-wireframe-node --element 42 --tag col
 emcli element add-wireframe-node --element 42 --tag h1 --text "Your orders" --parent n2
 emcli element add-wireframe-node --element 42 --tag button --label "Create order" --variant primary --command-input true --parent n2
 
+# Insert a node before an existing sibling (--before is the existing sibling node id)
+emcli element add-wireframe-node-before --element 42 --before n4 --tag divider
+
 # Show the current wireframe (returns annotated text tree)
 emcli element show-wireframe --element 42
 
@@ -108,7 +111,7 @@ Each line shows the stable node id, the tag, and either the string content
 
 - Call `show-wireframe` before any `set-wireframe-attr` or `delete-wireframe-node`
   to obtain the current node ids. Ids are stable for the session once read.
-- New nodes are appended as the last child of their parent by default.
+- New nodes are appended as the last child of their parent by default. Use `add-wireframe-node-before` to insert before an existing sibling instead.
 - Deleting `n1` removes the entire wireframe.
 - Attribute values are coerced from CLI strings: `true`/`false` become booleans,
   enum values (e.g. `primary`, `center`) become keywords, everything else stays

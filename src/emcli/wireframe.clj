@@ -306,6 +306,33 @@
       (update-in wireframe path update-node)
       (update-node wireframe))))
 
+(defn insert-before-at
+  "Insert `child-vec` as a new sibling immediately before the node identified
+  by `sibling-node-id`. Assigns a fresh :-id to the new node. Returns nil if
+  `sibling-node-id` is the root node (no parent to insert into)."
+  [wireframe sibling-node-id child-vec]
+  (if (= sibling-node-id (node-id-of wireframe))
+    nil
+    (let [new-id (next-node-id wireframe)
+          tag    (first child-vec)
+          rest-  (vec (rest child-vec))
+          child  (into [tag {:-id new-id}] rest-)]
+      (letfn [(splice [node]
+                (let [indices (child-indices node)
+                      sib-idx (first (filter #(= sibling-node-id (node-id-of (nth node %))) indices))]
+                  (if sib-idx
+                    (vec (concat
+                           (subvec (vec node) 0 sib-idx)
+                           [child]
+                           (subvec (vec node) sib-idx)))
+                    (vec (keep-indexed
+                           (fn [i x]
+                             (if (and (pos? i) (vector? x))
+                               (splice x)
+                               x))
+                           node)))))]
+        (splice wireframe)))))
+
 (defn assoc-attr-at
   "Set attribute `attr-kw` to `value` on the node identified by `node-id`.
   If the node has no content-attrs map (only the id-map), one is inserted."

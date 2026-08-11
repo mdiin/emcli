@@ -197,6 +197,19 @@
                            {:element eid :tag tag :parent parent :attrs (:ok parsed)})))
       {:error :missing-args :message "add-wireframe-node requires :element and :tag"})
 
+    (= command "add-wireframe-node-before")
+    (if (and (get opts :element) (get opts :before) (get opts :tag))
+      (let [eid    (->int (get opts :element))
+            before (str (get opts :before))
+            tag    (keyword (str (get opts :tag)))
+            attrs  (dissoc opts :element :before :tag :server)
+            parsed (wf/parse-node-attrs tag (into {} (map (fn [[k v]] [k (str v)]) attrs)))]
+        (if (:error parsed)
+          {:error :invalid-value :message (:error parsed)}
+          (app/apply-rule! app r/add-wireframe-node-before
+                           {:element eid :before before :tag tag :attrs (:ok parsed)})))
+      {:error :missing-args :message "add-wireframe-node-before requires :element, :before and :tag"})
+
     (= command "set-wireframe-attr")
     (if (and (get opts :element) (get opts :node) (get opts :attr) (contains? opts :value))
       (let [eid  (->int (get opts :element))
@@ -229,7 +242,7 @@
   (sort (concat (keys registry)
                 ["add-field" "remove-field" "add-field-origin" "remove-field-origin"
                  "add-derivation" "remove-derivation" "add-step-example" "remove-step-example"
-                 "add-wireframe-node" "set-wireframe-attr" "set-wireframe-text"])))
+                 "add-wireframe-node" "add-wireframe-node-before" "set-wireframe-attr" "set-wireframe-text"])))
 
 (defn authoring-view
   "The ModelAuthoring `exposes:` read projection (event-model.allium:598-635):
