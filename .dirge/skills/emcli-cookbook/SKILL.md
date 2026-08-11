@@ -267,6 +267,83 @@ emcli_author  group="element"  verb="delete-wireframe-node"  args={"element": 50
 # n7 and all its children (n8, n9) removed; all other node ids unchanged
 ```
 
+### 5.6 — Wrap consecutive siblings in a new parent
+
+There is no `wrap` primitive. Wrapping N consecutive siblings inside a new container is a four-phase operation.
+
+**Key constraint:** use `add-wireframe-node-before` (not `add-wireframe-node`) to insert the wrapper, so it lands at the correct position in the parent's child list rather than at the end.
+
+```
+# Scenario: n2 (col) has children n3 (h1 "Checkout"), n4 (input email), n5 (input address), n6 (button).
+# Goal: wrap n3, n4, n5 in a new nested col; n6 stays directly under n2.
+
+# Phase 1 — snapshot
+emcli_show_wireframe  element=50
+# note: n3=h1, n4=input(email, required), n5=input(address, required), n6=button(primary)
+
+# Phase 2 — insert wrapper before the first target sibling
+emcli_author  group="element"  verb="add-wireframe-node-before"  args={"element": 50, "before": "n3", "tag": "col", "gap": "sm"}
+# result node id → n7
+
+# Phase 3 — recreate children inside wrapper (sequential — same parent, order matters)
+emcli_author  group="element"  verb="add-wireframe-node"  args={"element": 50, "tag": "h1", "parent": "n7"}
+# result node id → n8
+emcli_author  group="element"  verb="set-wireframe-text"  args={"element": 50, "node": "n8", "text": "Checkout"}  # sequential
+
+emcli_author  group="element"  verb="add-wireframe-node"  args={"element": 50, "tag": "input", "parent": "n7", "label": "Email address", "type": "email", "required": true}
+# result node id → n9
+
+emcli_author  group="element"  verb="add-wireframe-node"  args={"element": 50, "tag": "input", "parent": "n7", "label": "Delivery address", "type": "text", "required": true}
+# result node id → n10
+
+# Phase 4 — delete originals (parallel — independent ids, subtrees already reconstructed)
+emcli_author  group="element"  verb="delete-wireframe-node"  args={"element": 50, "node": "n3"}  # parallel
+emcli_author  group="element"  verb="delete-wireframe-node"  args={"element": 50, "node": "n4"}  # parallel
+emcli_author  group="element"  verb="delete-wireframe-node"  args={"element": 50, "node": "n5"}  # parallel
+```
+
+**Notes:**
+- Phase 3 calls sharing the same parent are sequential (append order determines sibling order).
+- Phase 4 deletes are parallel because original node ids are stable and independent.
+- For nodes with their own children (deep subtrees), reconstruct each nesting level sequentially before moving to the next.
+- If the first target sibling is the first child in its parent, `add-wireframe-node-before` still works correctly.
+
+### 5.6 — Wrap consecutive siblings in a new parent
+
+There is no wrap primitive. Wrapping N siblings means inserting a new container before the first target sibling, rebuilding each sibling inside it, then deleting the originals.
+
+```
+# Current: n2 (col) > n3 (h1 "Checkout"), n4 (input email), n5 (input address), n6 (button)
+# Goal: n2 > n7 (col) > n8 (h1), n9 (input email), n10 (input address) ; n6 unchanged
+
+emcli_show_wireframe  element=50
+# note: n3=h1 "Checkout", n4=input(type=email, label="Email address", required=true),
+#       n5=input(type=text, label="Delivery address", required=true), parent of all = n2
+
+# 1. Insert the wrapper before the first target sibling
+emcli_author  group="element"  verb="add-wireframe-node-before"  args={"element": 50, "before": "n3", "tag": "col", "gap": "sm"}
+# result node id → n7
+
+# 2. Recreate children inside the wrapper (sequential — same parent, order determines sibling order)
+emcli_author  group="element"  verb="add-wireframe-node"  args={"element": 50, "tag": "h1", "parent": "n7"}
+# result node id → n8
+emcli_author  group="element"  verb="set-wireframe-text"  args={"element": 50, "node": "n8", "text": "Checkout"}
+
+emcli_author  group="element"  verb="add-wireframe-node"  args={"element": 50, "tag": "input", "parent": "n7", "label": "Email address", "type": "email", "required": true}
+# result node id → n9
+
+emcli_author  group="element"  verb="add-wireframe-node"  args={"element": 50, "tag": "input", "parent": "n7", "label": "Delivery address", "type": "text", "required": true}
+# result node id → n10
+
+# 3. Delete the originals (parallel — independent stable ids)
+emcli_author  group="element"  verb="delete-wireframe-node"  args={"element": 50, "node": "n3"}  # parallel
+emcli_author  group="element"  verb="delete-wireframe-node"  args={"element": 50, "node": "n4"}  # parallel
+emcli_author  group="element"  verb="delete-wireframe-node"  args={"element": 50, "node": "n5"}  # parallel
+# n6 (Place Order button) remains directly under n2, unaffected
+```
+
+Use `add-wireframe-node-before` (not `add-wireframe-node`) for step 1 — appending to the parent would place the wrapper after `n6` instead of at the correct position. For deep subtrees, repeat steps 1–3 recursively for each level of nesting.
+
 ## Category 6 — Write a Given/When/Then specification
 
 ### 6.1 — Minimal spec with examples
