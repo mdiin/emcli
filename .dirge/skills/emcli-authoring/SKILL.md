@@ -1,33 +1,7 @@
 ---
-description: Complete command reference for authoring an Event Model via the emcli dirge plugin tools (emcli_resolve, emcli_validate, emcli_author).
-triggers:
-  - emcli_author
-  - emcli_resolve
-  - emcli_validate
-  - event model authoring
-  - create timeline
-  - add timeline
-  - rename timeline
-  - delete timeline
-  - add swimlane
-  - reorder swimlane
-  - add slice
-  - reorder slice
-  - add element
-  - rename element
-  - delete element
-  - add field
-  - remove field
-  - place element
-  - reorder placement
-  - connect element
-  - add connection
-  - add specification
-  - add spec
-  - add step
-  - add example
-  - remove example
-  - add derivation
+description: >
+  Use this skill when you need to edit an Event Model. Covers the complete command reference for authoring
+  an Event Model via the plugin tools (emcli_resolve, emcli_validate, emcli_author) with gotchas.
 ---
 
 # emcli Authoring Reference
@@ -51,6 +25,8 @@ queries: "Name[:kind_hint],..."
 `kind_hint` filters candidates: `command`, `event`, `read_model`, `screen`, `automation`, `timeline`, `swimlane`.
 
 Returns an array of matches with `id`, `kind`, `swimlane`, and `name`.
+
+Empty name with kind hint finds all elements of kind. Example for finding all timelines: `queries: ":timeline"`
 
 ## emcli_author: group / verb / args reference
 
@@ -87,18 +63,23 @@ Slice `new-status` values: `created`, `in_progress`, `done`, `informational`
 
 ### element
 
-| verb          | required args                                      | optional args           |
-|---------------|----------------------------------------------------|-------------------------|
-| add           | `name` (string), `kind` (keyword)                  | `id` (int)              |
-| rename        | `element` (int), `new-name` (string)               |                         |
-| delete        | `element` (int)                                    |                         |
-| context       | `element` (int), `new-context` (keyword)           |                         |
-| swimlane      | `element` (int), `lane` (int)                      |                         |
-| image         | `element` (int), `url` (string)                    |                         |
-| add-field     | `element` (int), `name` (string), `type` (keyword) | `cardinality` (keyword) |
-| remove-field  | `element` (int), `name` (string)                   |                         |
-| add-origin    | `element` (int), `field` (string), `origin` (keyword) |                      |
-| remove-origin | `element` (int), `field` (string)                  |                         |
+| verb                      | required args                                                       | optional args                                            |
+|---------------------------|---------------------------------------------------------------------|----------------------------------------------------------|
+| add                       | `name` (string), `kind` (keyword)                                   | `id` (int)                                               |
+| rename                    | `element` (int), `new-name` (string)                                |                                                          |
+| delete                    | `element` (int)                                                     |                                                          |
+| context                   | `element` (int), `new-context` (keyword)                            |                                                          |
+| swimlane                  | `element` (int), `lane` (int)                                       |                                                          |
+| image                     | `element` (int), `url` (string)                                     |                                                          |
+| add-field                 | `element` (int), `name` (string), `type` (keyword)                  | `cardinality` (keyword)                                  |
+| remove-field              | `element` (int), `name` (string)                                    |                                                          |
+| add-origin                | `element` (int), `field` (string), `origin` (keyword)               |                                                          |
+| remove-origin             | `element` (int), `field` (string)                                   |                                                          |
+| add-wireframe-node        | `element` (int), `tag` (string)                                     | `parent` (string, default `"n1"`), + tag attribute flags |
+| delete-wireframe-node     | `element` (int), `node` (string)                                    |                                                          |
+| add-wireframe-node-before | `element` (int), `tag` (string), `before` (string)                  | + tag attribute flags                                    |
+| set-wireframe-attr        | `element` (int), `node` (string), `attr` (string), `value` (string) |                                                          |
+| set-wireframe-text        | `element` (int), `node` (string), `text` (string)                   |                                                          |
 
 Element `kind` values: `command`, `event`, `read_model`, `screen`, `automation`
 
@@ -107,6 +88,8 @@ Field `type` values: `string`, `boolean`, `double`, `decimal`, `long`, `custom`,
 Field `cardinality` values: `single`, `list`
 
 Field `origin` values: `user_input`, `generated`, `external`
+
+Wireframe operations are limited to `screen` elements. Read `references/wireframe-operations.md` for the tag attribute flags reference.
 
 ### placement
 
@@ -147,33 +130,6 @@ Field `origin` values: `user_input`, `generated`, `external`
 
 Step `clause` values: `given_step`, `when_step`, `then_step`
 
-## Example sequence
-
-```
-# 1. Resolve an existing timeline to get its id
-emcli_resolve  queries="Order Flow"
-
-# 2. Add a slice to it (assuming resolve returned id 1)
-emcli_author  group="slice"  verb="add"
-              args={"timeline": 1, "title": "Place Order", "kind": "state_change", "index": 0}
-
-# 3. Add an element
-emcli_author  group="element"  verb="add"
-              args={"name": "Place Order", "kind": "command"}
-
-# 4. The emcli_author result already contains the new element's id.
-#    No resolve needed -- use the id from step 3's result directly.
-
-# 5. Place it (assuming slice id=5, element id=10 from step 3 result)
-emcli_author  group="placement"  verb="add"
-              args={"slice": 5, "element": 10}
-
-# 6. Validate
-emcli_validate
-```
-
-For complete multi-step recipes (building a full state-change step, modelling data flow, constructing a wireframe, writing a spec, refactoring): load the `emcli-cookbook` skill.
-
 ## Notes
 
 - All integer id arguments come from `emcli_resolve` (for existing entities) or from the result of a prior `emcli_author` call. Every authoring command returns the created/modified entity as JSON, so you can read the `id` directly from that result — no need to call `emcli_resolve` immediately after creating something.
@@ -182,94 +138,10 @@ For complete multi-step recipes (building a full state-change step, modelling da
 - `emcli_author` result on success is the created/modified entity as JSON. On error it returns an `Error:` prefixed string with the server's message.
 - Element and timeline names may contain spaces (e.g. `"User created"`, `"Order Flow"`).
 
-### element — wireframe authoring
+## Gotchas
 
-Wireframes are built incrementally on `:screen` elements. The `:wireframe` field holds an element tree where every node carries a stable `:-id` string (e.g. `"n1"`, `"n2"`, ...) assigned at append time. Node ids never change regardless of insertions or deletions — resolve once with `emcli_show_wireframe`, reuse ids for the whole editing session.
-
-**Tools:**
-- `emcli_show_wireframe` — call before `set-wireframe-attr`, `set-wireframe-text`, `add-wireframe-node-before`, or `delete-wireframe-node` to get current node ids. Not available via `emcli_author` — use the dedicated plugin tool.
-- `emcli_author` — use for `add-wireframe-node`, `add-wireframe-node-before`, `set-wireframe-attr`, `set-wireframe-text`, `delete-wireframe-node`.
-
-**Verbs:**
-
-| verb | required args | optional args |
-|------|--------------|---------------|
-| `add-wireframe-node` | `element` (int), `tag` (string) | `parent` (node-id string, default `"n1"`), + tag attribute flags |
-| `add-wireframe-node-before` | `element` (int), `before` (node-id string), `tag` (string) | + tag attribute flags |
-| `set-wireframe-attr` | `element` (int), `node` (node-id string), `attr` (string), `value` (string) | |
-| `set-wireframe-text` | `element` (int), `node` (node-id string), `text` (string) | |
-| `delete-wireframe-node` | `element` (int), `node` (node-id string) | |
-
-**Tags and their attribute flags** (authoritative — matches `tag-schema` in `wireframe.clj`):
-
-All nodes except `:screen` and `:divider` accept `field-name` (string) and `command-input` (bool) in addition to their own attrs listed below.
-
-Layout (accept element children):
-- `:screen` — root node, always `n1`, no attrs
-- `:row` — `align` (start|center|end|between), `gap` (sm|md|lg)
-- `:col` — `align` (start|center|end|between), `gap` (sm|md|lg), `width` (narrow|wide|auto|full)
-- `:divider` — no attrs, **leaf**
-
-Typography (text content set via `set-wireframe-text` after creation):
-- `:h1` `:h2` `:h3` — string children only; set text with `set-wireframe-text`
-- `:text` — `align` (left|center|right), `tone` (default|muted|danger|success); set text with `set-wireframe-text`
-- `:span` — `tone` (default|muted|danger|success); set text with `set-wireframe-text`
-
-Inputs (leaf — no children):
-- `:input` — `type` (text|email|password|number|tel|url), `label` (string), `placeholder` (string), `required` (bool), `field-name` (string), `command-input` (bool)
-- `:textarea` — `label` (string), `placeholder` (string), `required` (bool), `field-name` (string), `command-input` (bool)
-- `:dropdown` — **`options` (required**, comma-separated strings), `label` (string), `required` (bool), `field-name` (string), `command-input` (bool)
-- `:checkbox` — `label` (string), `default` (bool), `field-name` (string), `command-input` (bool)
-- `:toggle` — `label` (string), `default` (bool), `field-name` (string), `command-input` (bool)
-
-Actions (leaf):
-- `:button` — **`label` (string, required)**, `variant` (primary|secondary|ghost|danger), `disabled` (bool), `command-input` (bool)
-- `:icon-button` — **`icon` (string, required)**, **`aria-label` (string, required)**, `command-input` (bool)
-
-Content/navigation (leaf):
-- `:link` — **`label` (string, required)**, `command-input` (bool)
-- `:image` — **`alt` (string, required)**, `aspect` (square|wide|tall), `field-name` (string), `command-input` (bool)
-- `:icon` — **`name` (string, required)**, `size` (sm|md|lg), `field-name` (string), `command-input` (bool)
-- `:alert` — **`text` (string, required)**, `type` (info|warning|danger|success), `field-name` (string), `command-input` (bool)
-
-**Workflow example** — build the Order List screen wireframe (element id 42):
-
-```
-# 1. Add root container
-emcli_author {group: "element", verb: "add-wireframe-node", args: {element: 42, tag: "col"}}
-# → n2 created under n1 (:screen)
-
-# 2. Add children to n2
-emcli_author {group: "element", verb: "add-wireframe-node", args: {element: 42, tag: "h1", parent: "n2"}}
-# → n3 created; set its text in a second call
-emcli_author {group: "element", verb: "set-wireframe-text", args: {element: 42, node: "n3", text: "Your orders"}}
-emcli_author {group: "element", verb: "add-wireframe-node", args: {element: 42, tag: "input", placeholder: "Search...", field-name: "searchTerm", parent: "n2"}}
-emcli_author {group: "element", verb: "add-wireframe-node", args: {element: 42, tag: "button", label: "Create order", variant: "primary", command-input: true, parent: "n2"}}
-
-# 3. Inspect to get node ids for patching
-emcli_show_wireframe {element: 42}
-# → [n1] :screen
-#   [n2]   :col
-#   [n3]     :h1  "Your orders"
-#   [n4]     :input  {:placeholder "Search..." :field-name "searchTerm"}
-#   [n5]     :button  {:label "Create order" :variant :primary :command-input true}
-
-# 4. Insert a divider before the button (n4)
-emcli_author {group: "element", verb: "add-wireframe-node-before", args: {element: 42, before: "n4", tag: "divider"}}
-
-# 5. Patch one attribute
-emcli_author {group: "element", verb: "set-wireframe-attr", args: {element: 42, node: "n5", attr: "label", value: "New order"}}
-
-# 6. Delete a node (n3 removed, n4/n5 ids unaffected)
-emcli_author {group: "element", verb: "delete-wireframe-node", args: {element: 42, node: "n3"}}
-```
-
-**Notes:**
-- `field-name` values must reference a field that exists on the screen element's `:fields` list. Use `emcli_resolve` to confirm field names before setting this attr on any node.
-- Deleting a node removes its entire subtree. Deleting `n1` removes the entire wireframe.
-- `:-id` keys are internal — they appear in the stored EDN but are stripped before validation and rendering.
-- Node storage format: **one** map per node — `[tag {:-id "nN" ...content-attrs} ...children]`. The `:-id` and content attrs are in the same map. Wire JSON: `["tag", {"-id": "n1", "label": "OK"}, ...]`. Do not expect two separate maps.
-- For text-children tags (`:h1`, `:h2`, `:h3`, `:text`, `:span`), text content is set with a separate `set-wireframe-text` call after the node is created. `add-wireframe-node` does not accept a `text` arg for these tags.
+- Args that refer to other parts of the model by an ID must not be renamed, so do not append `_id` to to the arg when making the tool call
+- The `emcli_author` tool's error message will always tell you exactly the argument names to use; do not modify them
 
 ## Verification
 
