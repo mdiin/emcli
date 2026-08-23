@@ -29,6 +29,11 @@
   (is (= "remove-field-origin" (cli/resolve-command "element" "remove-origin")))
   (is (= "add-step-example" (cli/resolve-command "step" "add-example")))
   (is (= "remove-step-example" (cli/resolve-command "step" "remove-example")))
+  (is (= "add-wireframe-node" (cli/resolve-command "wireframe" "add-node")))
+  (is (= "add-wireframe-node-before" (cli/resolve-command "wireframe" "add-node-before")))
+  (is (= "delete-wireframe-node" (cli/resolve-command "wireframe" "delete-node")))
+  (is (= "set-wireframe-attr" (cli/resolve-command "wireframe" "set-attr")))
+  (is (= "set-wireframe-text" (cli/resolve-command "wireframe" "set-text")))
   (testing "unknown entity or verb resolves to nil"
     (is (nil? (cli/resolve-command "slice" "frobnicate")))
     (is (nil? (cli/resolve-command "nonsense" "add")))))
@@ -38,15 +43,15 @@
     (let [params (#'cli/command->manifest-params cmd)]
       (is (seq params) (str cmd " must have non-empty manifest params")))))
 
-(deftest top-level-help-includes-show-wireframe
+(deftest top-level-help-includes-wireframe-show
   (let [output (with-out-str (#'cli/print-help))]
-    (is (clojure.string/includes? output "show-wireframe")
-        "top-level help must list the CLI-only element show-wireframe verb")))
+    (is (clojure.string/includes? output "wireframe")
+        "top-level help must list the wireframe group")))
 
-(deftest element-group-help-includes-show-wireframe
-  (let [output (with-out-str (#'cli/print-group-help "element"))]
-    (is (clojure.string/includes? output "show-wireframe")
-        "element group help must list the CLI-only show-wireframe verb")))
+(deftest wireframe-group-help-includes-show
+  (let [output (with-out-str (#'cli/print-group-help "wireframe"))]
+    (is (clojure.string/includes? output "show")
+        "wireframe group help must list the CLI-only show verb")))
 
 ;; --queries "name[:kind_hint],..." parsing for `emcli resolve`.
 (deftest parse-resolve-queries-test

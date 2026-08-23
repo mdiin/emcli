@@ -53,12 +53,12 @@
                  "context" "set-element-context"
                  "swimlane" "assign-swimlane" "image" "set-image-url"
                  "add-origin" "add-field-origin" "remove-origin" "remove-field-origin"
-                 "rename" "rename-element" "delete" "delete-element"
-                   "add-wireframe-node" "add-wireframe-node"
-                   "add-wireframe-node-before" "add-wireframe-node-before"
-                   "set-wireframe-attr" "set-wireframe-attr"
-                  "set-wireframe-text" "set-wireframe-text"
-                  "delete-wireframe-node" "delete-wireframe-node"}
+                 "rename" "rename-element" "delete" "delete-element"}
+   "wireframe"  {"add-node"        "add-wireframe-node"
+                 "add-node-before" "add-wireframe-node-before"
+                 "delete-node"     "delete-wireframe-node"
+                 "set-attr"        "set-wireframe-attr"
+                 "set-text"        "set-wireframe-text"}
    "placement"  {"add" "place-element" "reorder" "reorder-placement" "remove" "remove-placement"}
    "connection" {"add" "connect" "remove" "disconnect"
                  "add-derivation" "add-derivation" "remove-derivation" "remove-derivation"}
@@ -327,7 +327,7 @@
 
 (defn- print-group [group]
   (let [verbs (cond-> (sort (keys (command-groups group)))
-                (= group "element") (concat ["show-wireframe"]))]
+                (= group "wireframe") (concat ["show"]))]
     (println (str "  " group))
     (doseq [v verbs]
       (println (str "    " group " " v)))))
@@ -358,15 +358,15 @@
 (defn- print-group-help [group]
   (println (str "emcli " group " <verb> [--server URL]\n"))
   (let [verbs    (cond-> (sort (keys (command-groups group)))
-                   (= group "element") (concat ["show-wireframe"]))
+                   (= group "wireframe") (concat ["show"]))
         max-verb (apply max (map count verbs))]
     (doseq [v verbs]
       (let [pad    (str/join (repeat (- max-verb (count v)) " "))
-            suffix (when-not (= v "show-wireframe")
+            suffix (when-not (= v "show")
                      (format-usage-suffix group v))]
         (println (str "  " group " " v pad
                       (when (seq suffix) (str "  " suffix))
-                      (when (= v "show-wireframe") "  --element <int>")))))))
+                      (when (= v "show") "  --element <int>")))))))
 
 (def ^:private meta-commands #{"serve" "show" "validate" "resolve" "export" "import" "help"})
 
@@ -388,8 +388,8 @@
             third    (nth argv 2 nil)]
         (cond
           (or (nil? verb) (= "help" verb)) (print-group-help head)
-          ;; show-wireframe is CLI-only (not a server command)
-          (and (= head "element") (= verb "show-wireframe"))
+          ;; show is CLI-only (not a server command)
+          (and (= head "wireframe") (= verb "show"))
           (do-show-wireframe (cli/parse-opts (drop 2 argv)))
           (resolve-command head verb)
           (if (= "help" third)
