@@ -20,6 +20,22 @@ emcli --export-tools > tools.json
 emcli --export-tools | diff - tools.json
 ```
 
+## Claude Code Integration
+
+`.mcp.json` at the project root and `emcli-mcp.bb` together form an MCP stdio shim that lets Claude Code call `emcli` as a set of tools.
+
+**How it works:**
+
+- Claude Code discovers `.mcp.json` automatically when it opens this project directory.
+- On each session Claude Code spawns `bb emcli-mcp.bb` as a subprocess and speaks [JSON-RPC 2.0 / MCP](https://spec.modelcontextprotocol.io) over stdin/stdout.
+- `emcli-mcp.bb` reads `tools.json` at startup and translates the ECA.dev tool definitions into MCP tool descriptors, so the shim always stays in sync — just re-run `emcli --export-tools > tools.json` to regenerate and the shim picks up the change on its next launch.
+
+**Manual registration** (if Claude Code does not pick up `.mcp.json` automatically):
+
+```
+claude mcp add --scope project emcli -- bb emcli-mcp.bb
+```
+
 ## Install
 
 ```

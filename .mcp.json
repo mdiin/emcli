@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "emcli": {
+      "command": "bb",
+      "args": ["emcli-mcp.bb"]
+    }
+  }
+}
