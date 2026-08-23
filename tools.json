@@ -1,0 +1,440 @@
+[ {
+  "name" : "emcli_connection",
+  "description" : "Manage connections and field derivations between elements.",
+  "input_schema" : {
+    "type" : "object",
+    "properties" : {
+      "verb" : {
+        "type" : "string",
+        "enum" : [ "add", "add-derivation", "remove", "remove-derivation" ]
+      },
+      "args" : {
+        "type" : "object",
+        "description" : "Flags for the chosen verb. See each property for details.",
+        "properties" : {
+          "from" : {
+            "type" : "string",
+            "description" : "comma-separated source field names from the from-element"
+          },
+          "to" : {
+            "type" : "integer",
+            "description" : "Ref: elements[].id"
+          },
+          "id" : {
+            "type" : "integer",
+            "description" : "pre-assign this entity's id instead of auto-generating one; must not already be in use"
+          },
+          "connection" : {
+            "type" : "integer",
+            "description" : "Ref: connections[].id"
+          },
+          "target" : {
+            "type" : "string",
+            "description" : "target field name to remove the derivation for"
+          }
+        },
+        "additionalProperties" : true
+      }
+    },
+    "required" : [ "verb" ]
+  }
+}, {
+  "name" : "emcli_element",
+  "description" : "Manage elements (commands, events, read models, screens, automations) and their fields.",
+  "input_schema" : {
+    "type" : "object",
+    "properties" : {
+      "verb" : {
+        "type" : "string",
+        "enum" : [ "add", "add-field", "add-origin", "context", "delete", "image", "remove-field", "remove-origin", "rename", "swimlane" ]
+      },
+      "args" : {
+        "type" : "object",
+        "description" : "Flags for the chosen verb. See each property for details.",
+        "properties" : {
+          "origin" : {
+            "type" : "string",
+            "description" : "how the field is introduced: user_input, generated, external"
+          },
+          "url" : {
+            "type" : "string",
+            "description" : "url value"
+          },
+          "id" : {
+            "type" : "integer",
+            "description" : "pre-assign this entity's id instead of auto-generating one; must not already be in use"
+          },
+          "element" : {
+            "type" : "integer",
+            "description" : "Ref: elements[].id"
+          },
+          "name" : {
+            "type" : "string",
+            "description" : "field name to remove"
+          },
+          "field" : {
+            "type" : "string",
+            "description" : "field name whose origin override should be removed"
+          },
+          "lane" : {
+            "type" : "integer",
+            "description" : "Ref: swimlanes[].id"
+          },
+          "kind" : {
+            "type" : "string",
+            "description" : "kind value",
+            "enum" : [ "command", "event", "read_model", "screen", "automation" ]
+          },
+          "new-name" : {
+            "type" : "string",
+            "description" : "new-name value"
+          },
+          "type" : {
+            "type" : "string",
+            "description" : "type value",
+            "enum" : [ "string", "boolean", "double", "decimal", "long", "custom", "date", "date_time", "uuid", "int" ]
+          },
+          "new-context" : {
+            "type" : "string",
+            "description" : "new-context value"
+          },
+          "cardinality" : {
+            "type" : "string",
+            "description" : "cardinality value",
+            "enum" : [ "single", "list" ]
+          }
+        },
+        "additionalProperties" : true
+      }
+    },
+    "required" : [ "verb" ]
+  }
+}, {
+  "name" : "emcli_placement",
+  "description" : "Manage element placements within timeline slices.",
+  "input_schema" : {
+    "type" : "object",
+    "properties" : {
+      "verb" : {
+        "type" : "string",
+        "enum" : [ "add", "remove", "reorder" ]
+      },
+      "args" : {
+        "type" : "object",
+        "description" : "Flags for the chosen verb. See each property for details.",
+        "properties" : {
+          "slice" : {
+            "type" : "integer",
+            "description" : "Ref: timelines[].slices[].id"
+          },
+          "element" : {
+            "type" : "integer",
+            "description" : "Ref: elements[].id"
+          },
+          "id" : {
+            "type" : "integer",
+            "description" : "pre-assign this entity's id instead of auto-generating one; must not already be in use"
+          },
+          "placement" : {
+            "type" : "integer",
+            "description" : "Ref: timelines[].slices[].placements[].id"
+          },
+          "new-index" : {
+            "type" : "integer",
+            "description" : "new-index value"
+          }
+        },
+        "additionalProperties" : true
+      }
+    },
+    "required" : [ "verb" ]
+  }
+}, {
+  "name" : "emcli_slice",
+  "description" : "Manage slices (vertical time segments) within a timeline.",
+  "input_schema" : {
+    "type" : "object",
+    "properties" : {
+      "verb" : {
+        "type" : "string",
+        "enum" : [ "add", "delete", "kind", "reorder", "status" ]
+      },
+      "args" : {
+        "type" : "object",
+        "description" : "Flags for the chosen verb. See each property for details.",
+        "properties" : {
+          "index" : {
+            "type" : "integer",
+            "description" : "index value"
+          },
+          "timeline" : {
+            "type" : "integer",
+            "description" : "Ref: timelines[].id"
+          },
+          "id" : {
+            "type" : "integer",
+            "description" : "pre-assign this entity's id instead of auto-generating one; must not already be in use"
+          },
+          "new-index" : {
+            "type" : "integer",
+            "description" : "new-index value"
+          },
+          "new-status" : {
+            "type" : "string",
+            "description" : "new-status value",
+            "enum" : [ "created", "in_progress", "done", "informational" ]
+          },
+          "kind" : {
+            "type" : "string",
+            "description" : "kind value",
+            "enum" : [ "state_change", "state_view", "automation" ]
+          },
+          "title" : {
+            "type" : "string",
+            "description" : "title value"
+          },
+          "slice" : {
+            "type" : "integer",
+            "description" : "Ref: timelines[].slices[].id"
+          },
+          "new-kind" : {
+            "type" : "string",
+            "description" : "new-kind value",
+            "enum" : [ "state_change", "state_view", "automation" ]
+          }
+        },
+        "additionalProperties" : true
+      }
+    },
+    "required" : [ "verb" ]
+  }
+}, {
+  "name" : "emcli_spec",
+  "description" : "Manage specifications attached to slices.",
+  "input_schema" : {
+    "type" : "object",
+    "properties" : {
+      "verb" : {
+        "type" : "string",
+        "enum" : [ "add", "delete" ]
+      },
+      "args" : {
+        "type" : "object",
+        "description" : "Flags for the chosen verb. See each property for details.",
+        "properties" : {
+          "slice" : {
+            "type" : "integer",
+            "description" : "Ref: timelines[].slices[].id"
+          },
+          "title" : {
+            "type" : "string",
+            "description" : "title value"
+          },
+          "id" : {
+            "type" : "integer",
+            "description" : "pre-assign this entity's id instead of auto-generating one; must not already be in use"
+          },
+          "spec" : {
+            "type" : "integer",
+            "description" : "Ref: timelines[].slices[].specifications[].id"
+          }
+        },
+        "additionalProperties" : true
+      }
+    },
+    "required" : [ "verb" ]
+  }
+}, {
+  "name" : "emcli_step",
+  "description" : "Manage steps and examples within a specification.",
+  "input_schema" : {
+    "type" : "object",
+    "properties" : {
+      "verb" : {
+        "type" : "string",
+        "enum" : [ "add", "add-example", "error", "expect-empty", "remove", "remove-example" ]
+      },
+      "args" : {
+        "type" : "object",
+        "description" : "Flags for the chosen verb. See each property for details.",
+        "properties" : {
+          "clause" : {
+            "type" : "string",
+            "description" : "clause value",
+            "enum" : [ "given_step", "when_step", "then_step" ]
+          },
+          "field-name" : {
+            "type" : "string",
+            "description" : "example field name to remove"
+          },
+          "index" : {
+            "type" : "integer",
+            "description" : "index value"
+          },
+          "spec" : {
+            "type" : "integer",
+            "description" : "Ref: timelines[].slices[].specifications[].id"
+          },
+          "error-name" : {
+            "type" : "string",
+            "description" : "error-name value"
+          },
+          "id" : {
+            "type" : "integer",
+            "description" : "pre-assign this entity's id instead of auto-generating one; must not already be in use"
+          },
+          "element" : {
+            "type" : "integer",
+            "description" : "Ref: elements[].id"
+          },
+          "value" : {
+            "type" : "boolean",
+            "description" : "value value"
+          },
+          "field-value" : {
+            "type" : "string",
+            "description" : "field-value value"
+          },
+          "step" : {
+            "type" : "integer",
+            "description" : "Ref: timelines[].slices[].specifications[].steps[].id"
+          }
+        },
+        "additionalProperties" : true
+      }
+    },
+    "required" : [ "verb" ]
+  }
+}, {
+  "name" : "emcli_swimlane",
+  "description" : "Manage swimlanes (horizontal rows) in the event model.",
+  "input_schema" : {
+    "type" : "object",
+    "properties" : {
+      "verb" : {
+        "type" : "string",
+        "enum" : [ "add", "delete", "rename", "reorder" ]
+      },
+      "args" : {
+        "type" : "object",
+        "description" : "Flags for the chosen verb. See each property for details.",
+        "properties" : {
+          "name" : {
+            "type" : "string",
+            "description" : "name value"
+          },
+          "index" : {
+            "type" : "integer",
+            "description" : "index value"
+          },
+          "id" : {
+            "type" : "integer",
+            "description" : "pre-assign this entity's id instead of auto-generating one; must not already be in use"
+          },
+          "lane" : {
+            "type" : "integer",
+            "description" : "Ref: swimlanes[].id"
+          },
+          "new-name" : {
+            "type" : "string",
+            "description" : "new-name value"
+          },
+          "new-index" : {
+            "type" : "integer",
+            "description" : "new-index value"
+          }
+        },
+        "additionalProperties" : true
+      }
+    },
+    "required" : [ "verb" ]
+  }
+}, {
+  "name" : "emcli_timeline",
+  "description" : "Manage timelines (vertical swim-lane columns) in the event model.",
+  "input_schema" : {
+    "type" : "object",
+    "properties" : {
+      "verb" : {
+        "type" : "string",
+        "enum" : [ "add", "delete", "rename" ]
+      },
+      "args" : {
+        "type" : "object",
+        "description" : "Flags for the chosen verb. See each property for details.",
+        "properties" : {
+          "title" : {
+            "type" : "string",
+            "description" : "title value"
+          },
+          "id" : {
+            "type" : "integer",
+            "description" : "pre-assign this entity's id instead of auto-generating one; must not already be in use"
+          },
+          "timeline" : {
+            "type" : "integer",
+            "description" : "Ref: timelines[].id"
+          },
+          "new-title" : {
+            "type" : "string",
+            "description" : "new-title value"
+          }
+        },
+        "additionalProperties" : true
+      }
+    },
+    "required" : [ "verb" ]
+  }
+}, {
+  "name" : "emcli_wireframe",
+  "description" : "Manage wireframe node trees on screen elements and display them.",
+  "input_schema" : {
+    "type" : "object",
+    "properties" : {
+      "verb" : {
+        "type" : "string",
+        "enum" : [ "add-node", "add-node-before", "delete-node", "set-attr", "set-text", "show" ]
+      },
+      "args" : {
+        "type" : "object",
+        "description" : "Flags for the chosen verb. See each property for details.",
+        "properties" : {
+          "element" : {
+            "type" : "integer",
+            "description" : "must be a screen element. Ref: elements[].id"
+          },
+          "tag" : {
+            "type" : "string",
+            "description" : "wireframe tag, e.g. button, input, row, col, text"
+          },
+          "parent" : {
+            "type" : "string",
+            "description" : "node id (nN) to append under; omit to append at the root"
+          },
+          "before" : {
+            "type" : "string",
+            "description" : "node id (nN) of the existing sibling node to insert before"
+          },
+          "node" : {
+            "type" : "string",
+            "description" : "node id (nN) of a text-children node: h1, h2, h3, text, span"
+          },
+          "attr" : {
+            "type" : "string",
+            "description" : "attribute name, e.g. label, placeholder, field-name"
+          },
+          "value" : {
+            "type" : "string",
+            "description" : "new value for the attribute"
+          },
+          "text" : {
+            "type" : "string",
+            "description" : "text content to set on the node"
+          }
+        },
+        "additionalProperties" : true
+      }
+    },
+    "required" : [ "verb" ]
+  }
+} ]

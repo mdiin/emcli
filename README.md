@@ -1,3 +1,19 @@
+## Tool Manifest
+
+`tools.json` at the project root is a machine-readable list of Anthropic-format tool definitions — one tool per command group — suitable for passing directly to the `tools` parameter of any Anthropic-compatible LLM API. It is the canonical harness-agnostic tool manifest for LLM integrations: integrators should pick the subset of tools relevant to their use case and pass them along with an appropriate system prompt.
+
+**Regenerate** after changing commands:
+
+```
+emcli --export-tools > tools.json
+```
+
+**Detect drift in CI** (exits non-zero when the manifest is stale):
+
+```
+emcli --export-tools | diff - tools.json
+```
+
 ## Install
 
 ```

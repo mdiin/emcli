@@ -161,6 +161,18 @@
 
 ;; --- manifest (--manifest) -------------------------------------------------
 
+;; One-sentence descriptions for each command group, used in tool manifests.
+(def ^:private group-descriptions
+  {"timeline"   "Manage timelines (vertical swim-lane columns) in the event model."
+   "swimlane"   "Manage swimlanes (horizontal rows) in the event model."
+   "slice"      "Manage slices (vertical time segments) within a timeline."
+   "element"    "Manage elements (commands, events, read models, screens, automations) and their fields."
+   "wireframe"  "Manage wireframe node trees on screen elements and display them."
+   "placement"  "Manage element placements within timeline slices."
+   "connection" "Manage connections and field derivations between elements."
+   "spec"       "Manage specifications attached to slices."
+   "step"       "Manage steps and examples within a specification."})
+
 ;; Semantic refs for integer flags: the JSON path in the `emcli show` output
 ;; where the id can be found.
 (def ^:private param-refs
@@ -290,6 +302,68 @@
                         (for [[verb command] (sort verbs)]
                           [verb {:params (command->manifest-params command)}]))]))})
 
+;; --- tools (--export-tools) ------------------------------------------------
+
+(def ^:private wireframe-show-params
+  [{:flag "element" :type "int" :required true :ref "elements[].id"
+    :note "must be a screen element"}])
+
+(defn- type->json-schema-type [t]
+  (case t
+    "int"     "integer"
+    "keyword" "string"
+    "boolean" "boolean"
+    "string"))
+
+(defn- param->json-schema-property [{:keys [flag type note ref values]}]
+  (let [desc (str/join ". "
+               (remove nil?
+                 [(when (seq (str note)) note)
+                  (when (seq (str ref)) (str "Ref: " ref))]))
+        desc (if (seq desc) desc (str flag " value"))
+        prop (cond-> {"type" (type->json-schema-type type)
+                      "description" desc}
+               (seq values) (assoc "enum" values))]
+    [flag prop]))
+
+(defn- build-tools []
+  (vec
+   (for [[group verbs] (sort command-groups)]
+     (let [tool-name   (str/replace (str "emcli_" group) "-" "_")
+           all-verbs   (sort (keys verbs))
+           ;; For wireframe, inject "show" into the verb enum
+           verb-enum   (if (= group "wireframe")
+                         (sort (conj (set all-verbs) "show"))
+                         all-verbs)
+           ;; Collect all params across all verbs (union by flag name)
+           all-params  (reduce
+                        (fn [acc verb]
+                          (let [cmd    (resolve-command group verb)
+                                params (command->manifest-params cmd)]
+                            (into acc (map (fn [p] [(:flag p) p]) params))))
+                        {}
+                        all-verbs)
+           ;; For wireframe, also union in the show params
+           all-params  (if (= group "wireframe")
+                         (into all-params (map (fn [p] [(:flag p) p]) wireframe-show-params))
+                         all-params)
+           properties  (into {} (map param->json-schema-property (vals all-params)))]
+       {:name        tool-name
+        :description (group-descriptions group)
+        :input_schema
+        {"type"       "object"
+         "properties"
+         {"verb" {"type"        "string"
+                  "enum"        (vec verb-enum)}
+          "args" {"type"        "object"
+                  "description" "Flags for the chosen verb. See each property for details."
+                  "properties"  properties
+                  "additionalProperties" true}}
+         "required" ["verb"]}}))))
+
+(defn- export-tools []
+  (emit (build-tools)))
+
 ;; --- human-readable usage formatting ---------------------------------------
 
 (defn- format-param-signature [{:keys [flag type required values]}]
@@ -375,7 +449,8 @@
         head (first argv)]
     (cond
       (or (nil? head) (= "help" head)) (print-help)
-      (= "--manifest" head) (emit (build-manifest))
+      (= "--manifest" head)      (emit (build-manifest))
+      (= "--export-tools" head) (export-tools)
       (= "serve" head)    (do-serve (cli/parse-opts (rest argv)))
       (= "show" head)     (do-show (cli/parse-opts (rest argv)))
       (= "validate" head) (do-validate (cli/parse-opts (rest argv)))
