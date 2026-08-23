@@ -412,6 +412,7 @@
   (println "       emcli <command> [...]            (process / inspect commands)\n")
   (println "Discovery:")
   (println "  --manifest                              machine-readable JSON schema of all commands")
+  (println "  --export-tools                          generate tools.json: one LLM tool definition per command group")
   (println "  <entity>                                list verbs + signatures for that entity")
   (println "  <entity> <verb> help                   show options for a specific verb\n")
   (println "Process:")
