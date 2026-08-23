@@ -50,6 +50,19 @@
       "required" : [ "verb" ]
     }
   },
+  "emcli_resolve" : {
+    "description" : "Resolve one or more element/timeline/slice names to their integer ids. Use before authoring commands when you have names but not ids.",
+    "command" : "emcli resolve --queries {{queries}}",
+    "schema" : {
+      "properties" : {
+        "queries" : {
+          "type" : "string",
+          "description" : "comma-separated name[:kind_hint] entries, e.g. \"Baz:slice,Snaz\"; kind_hint is one of timeline|swimlane|slice|element|specification and only ranks candidates, never filters them"
+        }
+      },
+      "required" : [ "queries" ]
+    }
+  },
   "emcli_slice" : {
     "description" : "Manage slices (vertical time segments) within a timeline.\nVerbs: add (--timeline --title --kind --index [--id]), delete (--slice), kind (--slice --new-kind), reorder (--slice --new-index), status (--slice --new-status)",
     "command" : "emcli slice {{verb}} {{args}}",
@@ -133,6 +146,14 @@
         }
       },
       "required" : [ "verb" ]
+    }
+  },
+  "emcli_validate" : {
+    "description" : "Run Event Model validation and return all warnings and errors.",
+    "command" : "emcli validate",
+    "schema" : {
+      "properties" : { },
+      "required" : [ ]
     }
   },
   "emcli_wireframe" : {

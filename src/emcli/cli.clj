@@ -323,25 +323,40 @@
 
 (defn- build-tools []
   (into (sorted-map)
-        (for [[group verbs] (sort command-groups)]
-          (let [tool-name  (str/replace (str "emcli_" group) "-" "_")
-                all-verbs  (sort (keys verbs))
-                verb-enum  (if (= group "wireframe")
-                             (sort (conj (set all-verbs) "show"))
-                             all-verbs)
-                desc       (str (group-descriptions group)
-                                "\n"
-                                (verb-flag-summary group verbs))]
-            [tool-name
-             {:description desc
-              :command     (str "emcli " group " {{verb}} {{args}}")
-              :schema
-              {"properties"
-               {"verb" {"type" "string"
-                        "enum" (vec verb-enum)}
-                "args" {"type"        "string"
-                        "description" "Space-separated --flag value pairs for the chosen verb. Optional flags may be omitted."}}
-               "required" ["verb"]}}]))))
+        (concat
+         (for [[group verbs] (sort command-groups)]
+           (let [tool-name  (str/replace (str "emcli_" group) "-" "_")
+                 all-verbs  (sort (keys verbs))
+                 verb-enum  (if (= group "wireframe")
+                              (sort (conj (set all-verbs) "show"))
+                              all-verbs)
+                 desc       (str (group-descriptions group)
+                                 "\n"
+                                 (verb-flag-summary group verbs))]
+             [tool-name
+              {:description desc
+               :command     (str "emcli " group " {{verb}} {{args}}")
+               :schema
+               {"properties"
+                {"verb" {"type" "string"
+                         "enum" (vec verb-enum)}
+                 "args" {"type"        "string"
+                         "description" "Space-separated --flag value pairs for the chosen verb. Optional flags may be omitted."}}
+                "required" ["verb"]}}]))
+         [["emcli_resolve"
+           {:description "Resolve one or more element/timeline/slice names to their integer ids. Use before authoring commands when you have names but not ids."
+            :command     "emcli resolve --queries {{queries}}"
+            :schema
+            {"properties"
+             {"queries" {"type"        "string"
+                         "description" (-> structured-manifest-params (get "resolve") first :note)}}
+             "required" ["queries"]}}]
+          ["emcli_validate"
+           {:description "Run Event Model validation and return all warnings and errors."
+            :command     "emcli validate"
+            :schema
+            {"properties" {}
+             "required"   []}}]])))
 
 (defn- export-tools []
   (emit (build-tools)))

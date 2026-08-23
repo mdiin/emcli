@@ -54,16 +54,25 @@
 (defn- handle-tools-list [id _params mcp-tools]
   (ok-response id {:tools mcp-tools}))
 
-(defn- handle-tools-call [id {:keys [name arguments]} ]
-  (let [tool-name  name
-        group      (-> tool-name
-                       (clojure.string/replace-first #"^emcli_" "")
-                       (clojure.string/replace #"_" "-"))
-        verb       (:verb arguments)
-        args       (or (:args arguments) "")
-        cmd        (str "emcli " group " " verb (when (seq args) (str " " args)))
+(defn- substitute-placeholders
+  "Replace all {{key}} tokens in `template` with the corresponding value from
+  `arguments` (string-keyed or keyword-keyed map). Missing keys become \"\".
+  Trailing whitespace on each token boundary is stripped afterwards."
+  [template arguments]
+  (-> (clojure.string/replace
+       template
+       #"\{\{(\w+)\}\}"
+       (fn [[_ k]]
+         (str (or (get arguments k)
+                  (get arguments (keyword k))
+                  ""))))
+      clojure.string/trimr))
+
+(defn- handle-tools-call [id {:keys [name arguments]} tools-json]
+  (let [tool       (get tools-json (keyword name))
+        cmd        (substitute-placeholders (:command tool) arguments)
         _          (binding [*out* *err*] (println "[emcli-mcp] exec:" cmd))
-        result     (p/sh cmd :out :string :err :string)]
+        result     (p/sh "sh" "-c" cmd :out :string :err :string)]
     (if (zero? (:exit result))
       (ok-response id {:content [{:type "text" :text (:out result)}]})
       (ok-response id {:content [{:type "text" :text (str (:err result) (:out result))}]
@@ -73,7 +82,7 @@
 ;; Main dispatch loop
 ;; ---------------------------------------------------------------------------
 
-(defn- dispatch [request mcp-tools]
+(defn- dispatch [request mcp-tools tools-json]
   (let [{:keys [id method params]} request]
     (binding [*out* *err*]
       (println "[emcli-mcp] <-" method (when id (str "id=" id))))
@@ -88,7 +97,7 @@
       (write-response! (handle-tools-list id params mcp-tools))
 
       (= method "tools/call")
-      (write-response! (handle-tools-call id params))
+      (write-response! (handle-tools-call id params tools-json))
 
       :else
       (when id
@@ -105,7 +114,7 @@
           (when (seq (clojure.string/trim line))
             (try
               (let [request (json/parse-string line true)]
-                (dispatch request mcp-tools))
+                (dispatch request mcp-tools tools-json))
               (catch Exception e
                 (binding [*out* *err*]
                   (println "[emcli-mcp] parse error:" (ex-message e))))))
