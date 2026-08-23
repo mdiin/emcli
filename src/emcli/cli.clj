@@ -304,62 +304,44 @@
 
 ;; --- tools (--export-tools) ------------------------------------------------
 
-(def ^:private wireframe-show-params
-  [{:flag "element" :type "int" :required true :ref "elements[].id"
-    :note "must be a screen element"}])
-
-(defn- type->json-schema-type [t]
-  (case t
-    "int"     "integer"
-    "keyword" "string"
-    "boolean" "boolean"
-    "string"))
-
-(defn- param->json-schema-property [{:keys [flag type note ref values]}]
-  (let [desc (str/join ". "
-               (remove nil?
-                 [(when (seq (str note)) note)
-                  (when (seq (str ref)) (str "Ref: " ref))]))
-        desc (if (seq desc) desc (str flag " value"))
-        prop (cond-> {"type" (type->json-schema-type type)
-                      "description" desc}
-               (seq values) (assoc "enum" values))]
-    [flag prop]))
+(defn- verb-flag-summary [group verbs]
+  (let [show-entry  (when (= group "wireframe")
+                      [["show" [{:flag "element" :required true}]]])
+        verb-params (for [[verb _] (sort verbs)
+                          :let [cmd    (resolve-command group verb)
+                                params (command->manifest-params cmd)]]
+                      [verb params])
+        all-entries (concat verb-params show-entry)
+        parts       (for [[verb params] all-entries
+                          :let [flags (map (fn [{:keys [flag required]}]
+                                            (if required
+                                              (str "--" flag)
+                                              (str "[--" flag "]")))
+                                          params)]]
+                      (str verb " (" (str/join " " flags) ")"))]
+    (str "Verbs: " (str/join ", " parts))))
 
 (defn- build-tools []
-  (vec
-   (for [[group verbs] (sort command-groups)]
-     (let [tool-name   (str/replace (str "emcli_" group) "-" "_")
-           all-verbs   (sort (keys verbs))
-           ;; For wireframe, inject "show" into the verb enum
-           verb-enum   (if (= group "wireframe")
-                         (sort (conj (set all-verbs) "show"))
-                         all-verbs)
-           ;; Collect all params across all verbs (union by flag name)
-           all-params  (reduce
-                        (fn [acc verb]
-                          (let [cmd    (resolve-command group verb)
-                                params (command->manifest-params cmd)]
-                            (into acc (map (fn [p] [(:flag p) p]) params))))
-                        {}
-                        all-verbs)
-           ;; For wireframe, also union in the show params
-           all-params  (if (= group "wireframe")
-                         (into all-params (map (fn [p] [(:flag p) p]) wireframe-show-params))
-                         all-params)
-           properties  (into {} (map param->json-schema-property (vals all-params)))]
-       {:name        tool-name
-        :description (group-descriptions group)
-        :input_schema
-        {"type"       "object"
-         "properties"
-         {"verb" {"type"        "string"
-                  "enum"        (vec verb-enum)}
-          "args" {"type"        "object"
-                  "description" "Flags for the chosen verb. See each property for details."
-                  "properties"  properties
-                  "additionalProperties" true}}
-         "required" ["verb"]}}))))
+  (into (sorted-map)
+        (for [[group verbs] (sort command-groups)]
+          (let [tool-name  (str/replace (str "emcli_" group) "-" "_")
+                all-verbs  (sort (keys verbs))
+                verb-enum  (if (= group "wireframe")
+                             (sort (conj (set all-verbs) "show"))
+                             all-verbs)
+                desc       (str (group-descriptions group)
+                                "\n"
+                                (verb-flag-summary group verbs))]
+            [tool-name
+             {:description desc
+              :command     (str "emcli " group " {{verb}} {{args}}")
+              :schema
+              {"properties"
+               {"verb" {"type" "string"
+                        "enum" (vec verb-enum)}
+                "args" {"type"        "string"
+                        "description" "Space-separated --flag value pairs for the chosen verb. Optional flags may be omitted."}}
+               "required" ["verb"]}}]))))
 
 (defn- export-tools []
   (emit (build-tools)))

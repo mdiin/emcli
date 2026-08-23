@@ -1,6 +1,12 @@
 ## Tool Manifest
 
-`tools.json` at the project root is a machine-readable list of Anthropic-format tool definitions — one tool per command group — suitable for passing directly to the `tools` parameter of any Anthropic-compatible LLM API. It is the canonical harness-agnostic tool manifest for LLM integrations: integrators should pick the subset of tools relevant to their use case and pass them along with an appropriate system prompt.
+`tools.json` at the project root is in [ECA.dev custom tool format](https://eca.dev/docs/custom-tools) — an object (not an array) with one key per command group. Each entry carries:
+
+- **`description`** — a human/LLM-readable summary of the group plus a per-verb flag synopsis (required flags plain, optional flags in `[brackets]`).
+- **`command`** — the full invocation pattern, e.g. `emcli wireframe {{verb}} {{args}}`, with `{{verb}}` and `{{args}}` as placeholders. ECA.dev expands these at call time; for other harnesses the `command` field documents the intended invocation.
+- **`schema`** — a JSON Schema fragment (just `properties` and `required`, no top-level `"type": "object"`) with a `verb` enum and a free-text `args` string.
+
+It is the canonical harness-agnostic tool manifest for LLM integrations: integrators should pick the subset of tools relevant to their use case and pass them along with an appropriate system prompt.
 
 **Regenerate** after changing commands:
 
