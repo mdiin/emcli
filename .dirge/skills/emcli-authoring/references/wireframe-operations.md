@@ -1,7 +1,7 @@
 # screen element — wireframe authoring
 
 - Wireframes are built incrementally on `screen` elements
-- Use `emcli_show_wireframe` to show the node's wireframe tree with stable IDs (e.g. `"n1"`, `"n2"`, ...)
+- Use `emcli_wireframe` (verb: `show`, e.g. `emcli wireframe show --element <id>`) to show the node's wireframe tree with stable IDs (e.g. `"n1"`, `"n2"`, ...)
 
 ## Nodes and their attributes
 
@@ -23,7 +23,7 @@ Attribute `gap` values: `sm`, `md`, `lg`
 Attribute `width` values: `narrow`, `wide`, `auto`, `full`
 
 ### Typography
-Set text content via `set-wireframe-text` after creation.
+Set text content via `set-text` after creation.
 
 | node      | required flags | optional flags                    | accepts children |
 |-----------|----------------|-----------------------------------|------------------|
