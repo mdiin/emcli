@@ -532,7 +532,7 @@
         (or (when (not= :screen (:kind el))
               {:error :invalid-value
                :message (str "element " element " is not a screen")})
-            (let [seed     [:screen {:-id "n1"}]
+            (let [seed     [:canvas {:-id "n1"}]
                   wf       (or (:wireframe el) seed)
                   schema   (wf/tag-schema tag)
                   ;; For text-children tags, :text in attrs becomes a string child

@@ -7,7 +7,7 @@
 ;; ---------------------------------------------------------------------------
 
 (def ^:private simple-wf
-  [:screen {:-id "n1"}
+  [:canvas {:-id "n1"}
    [:col {:-id "n2"}
     [:h1 {:-id "n3"} "Your orders"]
     [:input {:-id "n4"} {:placeholder "Search..." :field-name "searchTerm"}]
@@ -23,11 +23,11 @@
 
 (deftest next-node-id-advances-past-existing
   (testing "starts at n1 when tree is empty"
-    (is (= "n1" (wf/next-node-id [:screen {}]))))
+    (is (= "n1" (wf/next-node-id [:canvas {}]))))
   (testing "advances past highest existing id"
     (is (= "n6" (wf/next-node-id simple-wf))))
   (testing "handles gaps in numbering"
-    (is (= "n4" (wf/next-node-id [:screen {:-id "n1"} [:col {:-id "n3"}]])))))
+    (is (= "n4" (wf/next-node-id [:canvas {:-id "n1"} [:col {:-id "n3"}]])))))
 
 ;; ---------------------------------------------------------------------------
 ;; strip-ids
@@ -45,7 +45,7 @@
       (let [input (nth (nth stripped 2) 3)]
         (is (not (contains? (second input) :-id)))))
     (testing "tag preserved"
-      (is (= :screen (first stripped))))))
+      (is (= :canvas (first stripped))))))
 
 ;; ---------------------------------------------------------------------------
 ;; validate — structural
@@ -55,7 +55,7 @@
   (is (:valid? (wf/validate simple-wf))))
 
 (deftest validate-rejects-unknown-tag
-  (let [wf [:screen {:-id "n1"} [:foobar {:-id "n2"}]]
+  (let [wf [:canvas {:-id "n1"} [:foobar {:-id "n2"}]]
         result (wf/validate wf)]
     (is (false? (:valid? result)))
     (is (seq (:errors result)))
@@ -63,129 +63,129 @@
 
 (deftest validate-rejects-missing-required-attr
   (testing ":button requires :label"
-    (let [wf [:screen {:-id "n1"} [:button {:-id "n2"} {:variant :primary}]]
+    (let [wf [:canvas {:-id "n1"} [:button {:-id "n2"} {:variant :primary}]]
           result (wf/validate wf)]
       (is (false? (:valid? result)))
       (is (some #(re-find #"label" (:message %)) (:errors result)))))
   (testing ":dropdown requires :options"
-    (let [wf [:screen {:-id "n1"} [:dropdown {:-id "n2"} {:disabled false}]]
+    (let [wf [:canvas {:-id "n1"} [:dropdown {:-id "n2"} {:disabled false}]]
           result (wf/validate wf)]
       (is (false? (:valid? result)))
       (is (some #(re-find #"options" (:message %)) (:errors result)))))
   (testing ":icon-button requires :icon and :aria-label"
-    (let [wf [:screen {:-id "n1"} [:icon-button {:-id "n2"} {:icon :trash}]]
+    (let [wf [:canvas {:-id "n1"} [:icon-button {:-id "n2"} {:icon :trash}]]
           result (wf/validate wf)]
       (is (false? (:valid? result)))
       (is (some #(re-find #"aria-label" (:message %)) (:errors result)))))
   (testing ":image requires :alt"
-    (let [wf [:screen {:-id "n1"} [:image {:-id "n2"} {:aspect :square}]]
+    (let [wf [:canvas {:-id "n1"} [:image {:-id "n2"} {:aspect :square}]]
           result (wf/validate wf)]
       (is (false? (:valid? result)))
       (is (some #(re-find #"alt" (:message %)) (:errors result)))))
   (testing ":icon requires :name"
-    (let [wf [:screen {:-id "n1"} [:icon {:-id "n2"} {:size :lg}]]
+    (let [wf [:canvas {:-id "n1"} [:icon {:-id "n2"} {:size :lg}]]
           result (wf/validate wf)]
       (is (false? (:valid? result)))
       (is (some #(re-find #"name" (:message %)) (:errors result)))))
   (testing ":link requires :label"
-    (let [wf [:screen {:-id "n1"} [:link {:-id "n2"} {:command-input true}]]
+    (let [wf [:canvas {:-id "n1"} [:link {:-id "n2"} {:command-input true}]]
           result (wf/validate wf)]
       (is (false? (:valid? result)))
       (is (some #(re-find #"label" (:message %)) (:errors result)))))
   (testing ":alert requires :text"
-    (let [wf [:screen {:-id "n1"} [:alert {:-id "n2"} {:type :info}]]
+    (let [wf [:canvas {:-id "n1"} [:alert {:-id "n2"} {:type :info}]]
           result (wf/validate wf)]
       (is (false? (:valid? result)))
       (is (some #(re-find #"text" (:message %)) (:errors result))))))
 
 (deftest validate-rejects-wrong-value-type
   (testing "string where keyword expected"
-    (let [wf [:screen {:-id "n1"} [:button {:-id "n2"} {:label "OK" :variant "primary"}]]
+    (let [wf [:canvas {:-id "n1"} [:button {:-id "n2"} {:label "OK" :variant "primary"}]]
           result (wf/validate wf)]
       (is (false? (:valid? result)))
       (is (some #(re-find #"variant" (:message %)) (:errors result))))))
 
 (deftest validate-rejects-value-outside-allowed-set
-  (let [wf [:screen {:-id "n1"} [:button {:-id "n2"} {:label "OK" :variant :invisible}]]
+  (let [wf [:canvas {:-id "n1"} [:button {:-id "n2"} {:label "OK" :variant :invisible}]]
         result (wf/validate wf)]
     (is (false? (:valid? result)))
     (is (some #(re-find #"variant" (:message %)) (:errors result)))))
 
 (deftest validate-rejects-leaf-with-children
-  (let [wf [:screen {:-id "n1"} [:button {:-id "n2"} {:label "OK"} [:span {:-id "n3"}]]]
+  (let [wf [:canvas {:-id "n1"} [:button {:-id "n2"} {:label "OK"} [:span {:-id "n3"}]]]
         result (wf/validate wf)]
     (is (false? (:valid? result)))
     (is (some #(re-find #"leaf\|children" (:message %)) (:errors result)))))
 
 (deftest validate-rejects-text-node-with-vector-child
-  (let [wf [:screen {:-id "n1"} [:h1 {:-id "n2"} [:span {:-id "n3"}]]]
+  (let [wf [:canvas {:-id "n1"} [:h1 {:-id "n2"} [:span {:-id "n3"}]]]
         result (wf/validate wf)]
     (is (false? (:valid? result)))
     (is (some #(re-find #"string" (:message %)) (:errors result)))))
 
-(deftest validate-rejects-non-screen-root
+(deftest validate-rejects-non-canvas-root
   (let [wf [:col {:-id "n1"} [:h1 {:-id "n2"} "Hi"]]
         result (wf/validate wf)]
     (is (false? (:valid? result)))
-    (is (some #(re-find #"screen" (:message %)) (:errors result)))))
+    (is (some #(re-find #"canvas" (:message %)) (:errors result)))))
 
 (deftest validate-accepts-field-name-and-command-input-on-any-node
   (testing ":col accepts :field-name and :command-input"
-    (let [wf [:screen {:-id "n1"} [:col {:-id "n2"} {:field-name "x" :command-input true}]]
+    (let [wf [:canvas {:-id "n1"} [:col {:-id "n2"} {:field-name "x" :command-input true}]]
           result (wf/validate wf)]
       (is (:valid? result))))
   (testing ":row accepts :field-name and :command-input"
-    (let [wf [:screen {:-id "n1"} [:row {:-id "n2"} {:field-name "x" :command-input true}]]
+    (let [wf [:canvas {:-id "n1"} [:row {:-id "n2"} {:field-name "x" :command-input true}]]
           result (wf/validate wf)]
       (is (:valid? result))))
   (testing ":h1 accepts :field-name and :command-input"
-    (let [wf [:screen {:-id "n1"} [:h1 {:-id "n2"} {:field-name "x" :command-input true} "Title"]]
+    (let [wf [:canvas {:-id "n1"} [:h1 {:-id "n2"} {:field-name "x" :command-input true} "Title"]]
           result (wf/validate wf)]
       (is (:valid? result))))
   (testing ":h2 accepts :field-name and :command-input"
-    (let [wf [:screen {:-id "n1"} [:h2 {:-id "n2"} {:field-name "x" :command-input true} "Title"]]
+    (let [wf [:canvas {:-id "n1"} [:h2 {:-id "n2"} {:field-name "x" :command-input true} "Title"]]
           result (wf/validate wf)]
       (is (:valid? result))))
   (testing ":h3 accepts :field-name and :command-input"
-    (let [wf [:screen {:-id "n1"} [:h3 {:-id "n2"} {:field-name "x" :command-input true} "Title"]]
+    (let [wf [:canvas {:-id "n1"} [:h3 {:-id "n2"} {:field-name "x" :command-input true} "Title"]]
           result (wf/validate wf)]
       (is (:valid? result))))
   (testing ":text accepts :field-name and :command-input"
-    (let [wf [:screen {:-id "n1"} [:text {:-id "n2"} {:field-name "x" :command-input true} "Hello"]]
+    (let [wf [:canvas {:-id "n1"} [:text {:-id "n2"} {:field-name "x" :command-input true} "Hello"]]
           result (wf/validate wf)]
       (is (:valid? result))))
   (testing ":span accepts :field-name and :command-input"
-    (let [wf [:screen {:-id "n1"} [:span {:-id "n2"} {:field-name "x" :command-input true} "Hello"]]
+    (let [wf [:canvas {:-id "n1"} [:span {:-id "n2"} {:field-name "x" :command-input true} "Hello"]]
           result (wf/validate wf)]
       (is (:valid? result))))
   (testing ":image accepts :field-name and :command-input"
-    (let [wf [:screen {:-id "n1"} [:image {:-id "n2"} {:alt "photo" :field-name "x" :command-input true}]]
+    (let [wf [:canvas {:-id "n1"} [:image {:-id "n2"} {:alt "photo" :field-name "x" :command-input true}]]
           result (wf/validate wf)]
       (is (:valid? result))))
   (testing ":alert accepts :field-name and :command-input"
-    (let [wf [:screen {:-id "n1"} [:alert {:-id "n2"} {:text "hi" :type :info :field-name "x" :command-input true}]]
+    (let [wf [:canvas {:-id "n1"} [:alert {:-id "n2"} {:text "hi" :type :info :field-name "x" :command-input true}]]
           result (wf/validate wf)]
       (is (:valid? result))))
   (testing ":icon accepts :field-name and :command-input"
-    (let [wf [:screen {:-id "n1"} [:icon {:-id "n2"} {:name "star" :field-name "x" :command-input true}]]
+    (let [wf [:canvas {:-id "n1"} [:icon {:-id "n2"} {:name "star" :field-name "x" :command-input true}]]
           result (wf/validate wf)]
       (is (:valid? result)))))
 
 (deftest validate-rejects-field-name-and-command-input-on-screen-and-divider
-  (testing ":screen rejects :field-name"
-    (let [wf [:screen {:-id "n1"} {:field-name "x"}]
+  (testing ":canvas rejects :field-name"
+    (let [wf [:canvas {:-id "n1"} {:field-name "x"}]
           result (wf/validate wf)]
       (is (false? (:valid? result)))))
-  (testing ":screen rejects :command-input"
-    (let [wf [:screen {:-id "n1"} {:command-input true}]
+  (testing ":canvas rejects :command-input"
+    (let [wf [:canvas {:-id "n1"} {:command-input true}]
           result (wf/validate wf)]
       (is (false? (:valid? result)))))
   (testing ":divider rejects :field-name"
-    (let [wf [:screen {:-id "n1"} [:divider {:-id "n2"} {:field-name "x"}]]
+    (let [wf [:canvas {:-id "n1"} [:divider {:-id "n2"} {:field-name "x"}]]
           result (wf/validate wf)]
       (is (false? (:valid? result)))))
   (testing ":divider rejects :command-input"
-    (let [wf [:screen {:-id "n1"} [:divider {:-id "n2"} {:command-input true}]]
+    (let [wf [:canvas {:-id "n1"} [:divider {:-id "n2"} {:command-input true}]]
           result (wf/validate wf)]
       (is (false? (:valid? result))))))
 
@@ -197,7 +197,7 @@
   (is (:valid? (wf/validate-semantics simple-wf screen-element))))
 
 (deftest validate-semantics-rejects-unknown-field-name
-  (let [wf [:screen {:-id "n1"}
+  (let [wf [:canvas {:-id "n1"}
             [:input {:-id "n2"} {:field-name "nonexistent"}]]
         result (wf/validate-semantics wf screen-element)]
     (is (false? (:valid? result)))
@@ -205,7 +205,7 @@
     (is (some #(= "n2" (:node-id %)) (:errors result)))))
 
 (deftest validate-semantics-accepts-no-field-names
-  (let [wf [:screen {:-id "n1"} [:button {:-id "n2"} {:label "OK"}]]]
+  (let [wf [:canvas {:-id "n1"} [:button {:-id "n2"} {:label "OK"}]]]
     (is (:valid? (wf/validate-semantics wf {:fields []})))))
 
 ;; ---------------------------------------------------------------------------
@@ -220,7 +220,7 @@
   (is (nil? (wf/find-node simple-wf "n99"))))
 
 (deftest find-node-path-returns-path-for-nested-node
-  ;; n3 is [:h1 ...] inside [:col ...] inside [:screen ...]
+  ;; n3 is [:h1 ...] inside [:col ...] inside [:canvas ...]
   ;; path should navigate into children
   (let [path (wf/find-node-path simple-wf "n3")]
     (is (vector? path))
@@ -234,7 +234,7 @@
 ;; ---------------------------------------------------------------------------
 
 (deftest append-child-at-appends-to-root
-  (let [wf [:screen {:-id "n1"}]
+  (let [wf [:canvas {:-id "n1"}]
         result (wf/append-child-at wf "n1" [:button {:label "OK"}])
         added (last result)]
     (is (= :button (first added)))
@@ -375,13 +375,13 @@
     (is (re-find #"\[n1\]" output))
     (is (re-find #"\[n2\]" output))
     (is (re-find #"\[n5\]" output))
-    (is (re-find #":screen" output))
+    (is (re-find #":canvas" output))
     (is (re-find #":col" output))
     (is (re-find #":button" output))))
 
 (deftest format-tree-indents-by-depth
   (let [lines (clojure.string/split-lines (wf/format-tree simple-wf))]
-    ;; n1 (:screen) should have less leading whitespace than n2 (:col)
+    ;; n1 (:canvas) should have less leading whitespace than n2 (:col)
     (let [n1-line (first (filter #(re-find #"\[n1\]" %) lines))
           n2-line (first (filter #(re-find #"\[n2\]" %) lines))]
       (is (< (count (re-find #"^\s*" n1-line))

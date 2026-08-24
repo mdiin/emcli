@@ -33,7 +33,7 @@ Key principles:
 
 ### Root Element
 
-The `:wireframe` field on a screen element **is** the `:screen` element tree itself — there is
+The `:wireframe` field on a screen element **is** the `:canvas` element tree itself — there is
 no wrapping map with separate `:id`/`:title` keys. The screen element's existing `:name` field
 already serves as the human-readable title; the wireframe doesn't duplicate it.
 
@@ -46,7 +46,7 @@ nodes by id without re-navigating the tree after every edit.
 {:id 42 :kind :screen :name "OrderList"
  :fields [{:name "searchTerm" :type :string :origin :user_input}]
  :wireframe
- [:screen {:-id "n1"}
+ [:canvas {:-id "n1"}
   [:col {:-id "n2"}
    [:h1 {:-id "n3"} "Your orders"]
    [:input {:-id "n4"} {:placeholder "Search..." :field-name "searchTerm"}]
@@ -55,7 +55,7 @@ nodes by id without re-navigating the tree after every edit.
 
 `show-wireframe` renders this as:
 ```
-[n1] :screen
+[n1] :canvas
 [n2]   :col
 [n3]     :h1  "Your orders"
 [n4]     :input  {:placeholder "Search..." :field-name "searchTerm"}
@@ -91,7 +91,7 @@ A screen can have:
 
 | Tag | Kind | Required attrs | Optional attrs | Children |
 |---|---|---|---|---|
-| `:screen` | root container | — | — | any (exactly one, must be tree root) |
+| `:canvas` | root container | — | — | any (exactly one, must be tree root) |
 | `:row` | layout | — | `:align` (`:start`/`:center`/`:end`/`:between`), `:gap` (`:sm`/`:md`/`:lg`) | elements |
 | `:col` | layout | — | `:align`, `:gap`, `:width` (`:narrow`/`:wide`/`:auto`/`:full`) | elements |
 | `:h1`/`:h2`/`:h3` | heading | — | — | string only |
@@ -155,7 +155,7 @@ schema from §3:
   • Attribute values within their allowed set, where one is declared
   • Nesting rules satisfied (leaf elements have no children; text elements have string children
     only)
-  • Exactly one root `:screen` element
+  • Exactly one root `:canvas` element
 
 Returns: `{:valid? true}` or `{:valid? false :errors [{:node-id "nN" :message "..."}]}`
 
@@ -201,7 +201,7 @@ emcli element add-wireframe-node --element 42 --tag input --placeholder "Search.
 emcli element add-wireframe-node --element 42 --tag button --label "Create order" --variant primary --command-input true --parent n2
 ```
 Flags: `--element` (int), `--tag` (string), `--parent` (node id string, default `"n1"` = root
-`:screen`), plus any attribute flags valid for the chosen tag. Returns the updated element
+`:canvas`), plus any attribute flags valid for the chosen tag. Returns the updated element
 including the new node's `:-id`.
 
 ### `set-wireframe-attr`
@@ -237,7 +237,7 @@ tree with `[nN]` ids. Dies with a useful message if the element doesn't exist or
   • `allowed-tags` — derived set
   • `strip-ids [wireframe]` — see §6
   • `validate [wireframe]` — strips ids, then checks tags, required attrs, value types/allowed
-    sets, leaf/text-child nesting, `:screen` root. Returns `{:valid? true}` or `{:valid? false
+    sets, leaf/text-child nesting, `:canvas` root. Returns `{:valid? true}` or `{:valid? false
     :errors [{:node-id str :message str}]}`
   • `validate-semantics [wireframe screen-element]` — checks `:field-name` against the screen's
     `:fields`. Same error shape.
@@ -258,7 +258,7 @@ tree with `[nN]` ids. Dies with a useful message if the element doesn't exist or
 ### New: `test/emcli/wireframe_test.clj` (already written)
   • `validate`: valid tree, unknown tag, missing required attr (one case per tag with a required
     attr, using `:dropdown`), wrong value type, leaf with children, heading with
-    vector child, non-`:screen` root — all via `strip-ids`-clean input
+    vector child, non-`:canvas` root — all via `strip-ids`-clean input
   • `validate-semantics`: field-name present → ok, absent → error with node-id, no field-names →
     ok
   • `find-node`/`find-node-path`: known id, unknown id → nil, nested node
@@ -338,7 +338,7 @@ Add to `structured-manifest-params`:
 "show-wireframe"         [{:flag "element" :type "int" :required true :ref "elements[].id"}]
 "add-wireframe-node"     [{:flag "element" ...} {:flag "tag" ...}
                           {:flag "parent" :type "string" :required false
-                           :note "node id of parent (default: n1 = root :screen)"}
+                           :note "node id of parent (default: n1 = root :canvas)"}
                           {:flag "<tag-attrs>" :note "any attribute flag valid for the chosen tag"}]
 "set-wireframe-attr"     [{:flag "element" ...}
                           {:flag "node" :type "string" :required true :note "node id from show-wireframe"}
@@ -353,7 +353,7 @@ Three new POST routes: `/authoring/add-wireframe-node`, `/authoring/set-wirefram
 `/authoring/delete-wireframe-node`. Same boilerplate as existing authoring routes.
 
 ### Modified: `test/emcli/rules_test.clj`
-  • `add-wireframe-node`: seeds `:screen` with `n1`, appends col → gets `n2`, appends h1 under n2
+  • `add-wireframe-node`: seeds `:canvas` with `n1`, appends col → gets `n2`, appends h1 under n2
     → gets `n3`; verifies ids stable after further appends; rejects unknown tag; rejects unknown
     field-name
   • `set-wireframe-attr`: updates button label via node id, node id unaffected; rejects unknown
@@ -419,7 +419,7 @@ concern and deferred.
 
 ### Valid wireframe (with command input)
 ```clojure
-[:screen {:-id "n1"}
+[:canvas {:-id "n1"}
  [:col {:-id "n2"}
   [:h1 {:-id "n3"} "Your orders"]
   [:input {:-id "n4"} {:placeholder "Search..." :field-name "searchTerm"}]
@@ -430,7 +430,7 @@ Screen element must have field `searchTerm` for this to pass semantic validation
 
 ### Valid wireframe (confirmation, no field references)
 ```clojure
-[:screen {:-id "n1"}
+[:canvas {:-id "n1"}
  [:col {:-id "n2"} {:align :center :width :narrow}
   [:h2 {:-id "n3"} "Delete order?"]
   [:text {:-id "n4"} {:tone :danger} "This cannot be undone."]
@@ -442,7 +442,7 @@ No field references — screen can have any fields or none.
 
 ### Invalid wireframe (field doesn't exist)
 ```clojure
-[:screen {:-id "n1"}
+[:canvas {:-id "n1"}
  [:input {:-id "n2"} {:field-name "nonexistent"}]]
 ```
 Error: `{:valid? false :errors [{:node-id "n2" :message "Field 'nonexistent' does not exist on screen"}]}`

@@ -11,7 +11,7 @@ A wireframe is a hiccup-style EDN vector tree. Each node is a vector whose
 first item is a keyword tag:
 
 ```edn
-[:screen {:-id "n1"}
+[:canvas {:-id "n1"}
   [:col {:-id "n2"}
     [:h1 {:-id "n3"} "Your orders"]
     [:input {:-id "n4" :placeholder "Search..." :field-name "searchTerm"}]
@@ -33,7 +33,7 @@ content (passed via the `text` flag on `add-wireframe-node`).
 
 ### Layout — container
 
-- `:screen` — implicit root, always `n1`, no attributes
+- `:canvas` — implicit root, always `n1`, no attributes
 - `:row` — horizontal group; attrs: `align` (start|center|end|between), `gap` (sm|md|lg)
 - `:col` — vertical group; attrs: `align` (start|center|end|between), `gap` (sm|md|lg), `width` (narrow|wide|auto|full)
 - `:divider` — horizontal rule, no attrs, **leaf**
@@ -97,7 +97,7 @@ emcli wireframe delete-node --element 42 --node n3
 `show-wireframe` renders the tree as indented text:
 
 ```
-[n1] :screen
+[n1] :canvas
   [n2] :col
     [n3] :h1  "Your orders"
     [n4] :input  {:placeholder "Search..." :field-name "searchTerm"}

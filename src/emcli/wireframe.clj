@@ -12,7 +12,7 @@
 ;;              :leaf? bool :text-children? bool}
 ;; :-id is never in attrs — it is reserved and handled separately everywhere.
 (def tag-schema
-  {:screen      {:attrs {} :leaf? false :text-children? false}
+  {:canvas      {:attrs {} :leaf? false :text-children? false}
    :row         {:attrs {:align         {:type :kw :values #{:start :center :end :between}}
                           :gap           {:type :kw :values #{:sm :md :lg}}
                           :field-name    {:type :str}
@@ -249,8 +249,8 @@
   leaf/text-child nesting, and :screen root.
   Returns {:valid? true} or {:valid? false :errors [{:node-id str :message str}]}."
   [wireframe]
-  (let [root-err (when (not= :screen (first wireframe))
-                   [{:node-id nil :message "root element must be :screen"}])
+  (let [root-err (when (not= :canvas (first wireframe))
+                   [{:node-id nil :message "root element must be :canvas"}])
         errs     (concat root-err (validate-node-with-ids wireframe))]
     (if (seq errs)
       {:valid? false :errors (vec errs)}

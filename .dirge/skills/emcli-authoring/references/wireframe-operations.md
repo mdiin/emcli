@@ -5,13 +5,13 @@
 
 ## Nodes and their attributes
 
-All nodes except `:screen` and `:divider` accept `field-name` (string) and `command-input` (bool) in addition to their own attrs listed below.
+All nodes except `:canvas` and `:divider` accept `field-name` (string) and `command-input` (bool) in addition to their own attrs listed below.
 
 ### Layout
 
 | node      | required flags | optional flags                                     | accepts children |
 |-----------|----------------|----------------------------------------------------|------------------|
-| `screen`  |                |                                                    | true             |
+| `canvas`  |                |                                                    | true             |
 | `row`     |                | `align` (string), `gap` (string)                   | true             |
 | `col`     |                | `align` (string), `gap` (string), `width` (string) | true             |
 | `divider` |                |                                                    | false            |

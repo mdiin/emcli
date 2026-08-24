@@ -219,7 +219,7 @@
   (let [[store eid] (screen-with-field)
         res         (s/ok store r/add-wireframe-node {:element eid :tag :col :parent "n1"})
         el          (:result res)]
-    (is (= :screen (first (:wireframe el))))
+    (is (= :canvas (first (:wireframe el))))
     (is (some? (wf/find-node (:wireframe el) "n1")))
     (is (some? (wf/find-node (:wireframe el) "n2")))))
 
@@ -324,7 +324,7 @@
         store       (:store (s/ok store r/add-wireframe-node {:element eid :tag :col :parent "n1"}))
         store       (:store (s/ok store r/add-wireframe-node {:element eid :tag :h1 :parent "n2"}))
         store       (:store (s/ok store r/add-wireframe-node {:element eid :tag :button :attrs {:label "B"} :parent "n2"}))
-        ;; wireframe: n1[:screen] > n2[:col] > n3[:h1], n4[:button]
+        ;; wireframe: n1[:canvas] > n2[:col] > n3[:h1], n4[:button]
         ;; insert divider before n4
         res         (s/ok store r/add-wireframe-node-before {:element eid :before "n4" :tag :divider :attrs {}})
         wf          (:wireframe (:result res))
