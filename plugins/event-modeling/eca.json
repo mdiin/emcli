@@ -1,0 +1,193 @@
+{
+    "agent": {
+        "event-modeler": {
+            "disabledTools": [
+                "eca__read_file",
+                "eca__grep",
+                "eca__directory_tree",
+                "eca__editor_references",
+                "eca__editor_definition",
+                "eca__read_file",
+                "eca__preview_file_change",
+                "eca__fetch_rule"
+            ],
+            "prompts": {"chat": "${file:prompts/event-modeler.md}"}
+        }
+    },
+    "customTools": {
+        "emcli_connection" : {
+            "description" : "Manage connections and field derivations between elements.\nVerbs: add (--from --to [--id]), add-derivation (--connection --target --from), remove (--connection), remove-derivation (--connection --target)",
+            "command" : "emcli connection {{verb}} {{args}}",
+            "schema" : {
+                "properties" : {
+                    "verb" : {
+                        "type" : "string",
+                        "enum" : [ "add", "add-derivation", "remove", "remove-derivation" ]
+                    },
+                    "args" : {
+                        "type" : "string",
+                        "description" : "Space-separated --flag value pairs for the chosen verb. Optional flags may be omitted."
+                    }
+                },
+                "required" : [ "verb" ]
+            }
+        },
+        "emcli_element" : {
+            "description" : "Manage elements (commands, events, read models, screens, automations) and their fields.\nVerbs: add (--name --kind [--id]), add-field (--element --name --type [--cardinality]), add-origin (--element --field --origin), context (--element --new-context), delete (--element), image (--element --url), remove-field (--element --name), remove-origin (--element --field), rename (--element --new-name), swimlane (--element --lane)",
+            "command" : "emcli element {{verb}} {{args}}",
+            "schema" : {
+                "properties" : {
+                    "verb" : {
+                        "type" : "string",
+                        "enum" : [ "add", "add-field", "add-origin", "context", "delete", "image", "remove-field", "remove-origin", "rename", "swimlane" ]
+                    },
+                    "args" : {
+                        "type" : "string",
+                        "description" : "Space-separated --flag value pairs for the chosen verb. Optional flags may be omitted."
+                    }
+                },
+                "required" : [ "verb" ]
+            }
+        },
+        "emcli_placement" : {
+            "description" : "Manage element placements within timeline slices.\nVerbs: add (--slice --element [--id]), remove (--placement), reorder (--placement --new-index)",
+            "command" : "emcli placement {{verb}} {{args}}",
+            "schema" : {
+                "properties" : {
+                    "verb" : {
+                        "type" : "string",
+                        "enum" : [ "add", "remove", "reorder" ]
+                    },
+                    "args" : {
+                        "type" : "string",
+                        "description" : "Space-separated --flag value pairs for the chosen verb. Optional flags may be omitted."
+                    }
+                },
+                "required" : [ "verb" ]
+            }
+        },
+        "emcli_resolve" : {
+            "description" : "Resolve one or more element/timeline/slice names to their integer ids. Use before authoring commands when you have names but not ids.",
+            "command" : "emcli resolve --queries {{queries}}",
+            "schema" : {
+                "properties" : {
+                    "queries" : {
+                        "type" : "string",
+                        "description" : "comma-separated name[:kind_hint] entries, e.g. \"Baz:slice,Snaz\"; kind_hint is one of timeline|swimlane|slice|element|specification and only ranks candidates, never filters them"
+                    }
+                },
+                "required" : [ "queries" ]
+            }
+        },
+        "emcli_slice" : {
+            "description" : "Manage slices (vertical time segments) within a timeline.\nVerbs: add (--timeline --title --kind --index [--id]), delete (--slice), kind (--slice --new-kind), reorder (--slice --new-index), status (--slice --new-status)",
+            "command" : "emcli slice {{verb}} {{args}}",
+            "schema" : {
+                "properties" : {
+                    "verb" : {
+                        "type" : "string",
+                        "enum" : [ "add", "delete", "kind", "reorder", "status" ]
+                    },
+                    "args" : {
+                        "type" : "string",
+                        "description" : "Space-separated --flag value pairs for the chosen verb. Optional flags may be omitted."
+                    }
+                },
+                "required" : [ "verb" ]
+            }
+        },
+        "emcli_spec" : {
+            "description" : "Manage specifications attached to slices.\nVerbs: add (--slice --title [--id]), delete (--spec)",
+            "command" : "emcli spec {{verb}} {{args}}",
+            "schema" : {
+                "properties" : {
+                    "verb" : {
+                        "type" : "string",
+                        "enum" : [ "add", "delete" ]
+                    },
+                    "args" : {
+                        "type" : "string",
+                        "description" : "Space-separated --flag value pairs for the chosen verb. Optional flags may be omitted."
+                    }
+                },
+                "required" : [ "verb" ]
+            }
+        },
+        "emcli_step" : {
+            "description" : "Manage steps and examples within a specification.\nVerbs: add (--spec --clause --element --index [--id]), add-example (--step --field-name --field-value), error (--spec --error-name --index [--id]), expect-empty (--step --value), remove (--step), remove-example (--step --field-name)",
+            "command" : "emcli step {{verb}} {{args}}",
+            "schema" : {
+                "properties" : {
+                    "verb" : {
+                        "type" : "string",
+                        "enum" : [ "add", "add-example", "error", "expect-empty", "remove", "remove-example" ]
+                    },
+                    "args" : {
+                        "type" : "string",
+                        "description" : "Space-separated --flag value pairs for the chosen verb. Optional flags may be omitted."
+                    }
+                },
+                "required" : [ "verb" ]
+            }
+        },
+        "emcli_swimlane" : {
+            "description" : "Manage swimlanes (horizontal rows) in the event model.\nVerbs: add (--name --index [--id]), delete (--lane), rename (--lane --new-name), reorder (--lane --new-index)",
+            "command" : "emcli swimlane {{verb}} {{args}}",
+            "schema" : {
+                "properties" : {
+                    "verb" : {
+                        "type" : "string",
+                        "enum" : [ "add", "delete", "rename", "reorder" ]
+                    },
+                    "args" : {
+                        "type" : "string",
+                        "description" : "Space-separated --flag value pairs for the chosen verb. Optional flags may be omitted."
+                    }
+                },
+                "required" : [ "verb" ]
+            }
+        },
+        "emcli_timeline" : {
+            "description" : "Manage timelines (vertical swim-lane columns) in the event model.\nVerbs: add (--title [--id]), delete (--timeline), rename (--timeline --new-title)",
+            "command" : "emcli timeline {{verb}} {{args}}",
+            "schema" : {
+                "properties" : {
+                    "verb" : {
+                        "type" : "string",
+                        "enum" : [ "add", "delete", "rename" ]
+                    },
+                    "args" : {
+                        "type" : "string",
+                        "description" : "Space-separated --flag value pairs for the chosen verb. Optional flags may be omitted."
+                    }
+                },
+                "required" : [ "verb" ]
+            }
+        },
+        "emcli_validate" : {
+            "description" : "Run Event Model validation and return all warnings and errors.",
+            "command" : "emcli validate",
+            "schema" : {
+                "properties" : { },
+                "required" : [ ]
+            }
+        },
+        "emcli_wireframe" : {
+            "description" : "Manage wireframe node trees on screen elements and display them.\nVerbs: add-node (--element --tag [--parent]), add-node-before (--element --before --tag), delete-node (--element --node), set-attr (--element --node --attr --value), set-text (--element --node --text), show (--element)",
+            "command" : "emcli wireframe {{verb}} {{args}}",
+            "schema" : {
+                "properties" : {
+                    "verb" : {
+                        "type" : "string",
+                        "enum" : [ "add-node", "add-node-before", "delete-node", "set-attr", "set-text", "show" ]
+                    },
+                    "args" : {
+                        "type" : "string",
+                        "description" : "Space-separated --flag value pairs for the chosen verb. Optional flags may be omitted."
+                    }
+                },
+                "required" : [ "verb" ]
+            }
+        }
+    }
+}
