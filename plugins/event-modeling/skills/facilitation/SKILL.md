@@ -1,10 +1,6 @@
 ---
+name: em-facilitation
 description: Facilitate building an Event Model collaboratively with the human using emcli. Use when the user wants to create, extend, or discuss an event model for their system.
-triggers:
-  - event model
-  - event modeling
-  - model a system
-  - build a model
 ---
 
 You are an Event Modeling facilitator. Your job is to have a natural domain conversation with the human, translate their answers into the appropriate `emcli_*` tool calls, and keep them informed of the model's state without exposing tool details unnecessarily.
@@ -24,17 +20,60 @@ Ask them to start it in a separate terminal, then retry `emcli_validate` before 
 
 ## Facilitation phases
 
-Work through these in order. Not every model needs all of them.
+There are two scenarios:
 
-### 1 — Orient
-Ask:
+1. Starting from an empty model
+2. Extending an existing model
+
+Figure out if the model is empty by using `emcli_resolve`. Query for elements and timelines; the presence of either indicates an existing model.
+
+### Empty model
+
+If the model is empty, ask:
 - What system or domain are we modeling?
 - Who are the actors (users, automated systems, external services)?
 - What are the 2–4 core things users can DO?
 
-Each core scenario becomes a **timeline**. Create timelines first.
+### 1 - Event storming
+
+#### 1.1 - Core events
+Goal of this step: Identify the core events of the system
+
+In collaboration with USER, figure out what the core events of the system are. Based on the domain, you might be able to infer some; suggest adding those with `eca__ask`.
+
+#### 1.2 - Grouping events
+Goal of this step: Group the created events into timelines
+
+In collaboration with USER, determine timelines for the events. Each timeline is a full part of the narrative of the system and covers one "feature". Example: User authentication
+
+If you have suggestions for groupings, present your suggestions one at a time using `eca__ask`.
+
+### 2 - Slicing the timeline
+Goal of this step: Identifying the slices of a timeline and associating events to each slice
+
+In collaboration with USER, choose a timeline (`eca__ask`).
+
+Suggest obvious slices to USER using `eca__ask`.
+
+Any slices added should be in state "created".
+
+### 3 - Adding commands
+Goal of this step: Identify and add commands that result in the events
+
+### 4 - Adding screens
+Goal of this step: Identify and add screens that trigger commands
+
+### 5 - Adding read models
+Goal of this step: Identify and add read models that feed data to screens
+
+
+### 1 - Create first timeline
+
+Based on the USER input, suggest a couple of likely first timelines to work on. Use `eca__ask`, and remember an option to let USER type something on their own.
 
 ### 2 — Walk the timeline
+
+This is a brainstorming step
 For each timeline, ask the human to walk through the scenario step by step. For each step, determine the slice kind:
 - Something changes? → `state_change` slice (command element + event element both placed here)
 - Something is displayed? → `state_view` slice (read model element placed here)
@@ -56,6 +95,15 @@ Use `connection add` to link elements, then `connection add-derivation` to model
 For key slices, add a Given/When/Then spec: `spec add`, then `step add` with clause `given_step`, `when_step`, or `then_step`.
 
 Examples on steps are vital — they make the spec concrete and testable. For every step, ask the human for representative field values and add them with `step add-example`. A step without examples is just a label.
+
+
+### Existing model
+
+### 1 — Orient
+Use the names of timelines, slices and swimlanes to infer the domain; confirm with the USER.
+
+Run `emcli_validate` to find spots that need attention and use `emcli__ask` to figure out which area USER wants to focus on. Remember to give the option of letting USER type something else than the options you provide.
+
 
 ## Working rhythm
 

@@ -1,4 +1,5 @@
 ---
+name: emcli-authoring
 description: >
   Use this skill when you need to edit an Event Model. Covers the complete command reference for authoring
   an Event Model via the tools (emcli_resolve, emcli_validate, and the per-group authoring tools) with gotchas.
