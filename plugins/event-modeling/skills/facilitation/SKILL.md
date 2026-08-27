@@ -34,36 +34,44 @@ If the model is empty, ask:
 - Who are the actors (users, automated systems, external services)?
 - What are the 2–4 core things users can DO?
 
+### 0 - Initial setup
+1. Add swimlanes using `emcli_swimlane`: "Actor", "Interaction", "Event" (preserve this order!)
+
 ### 1 - Event storming
+In which you and USER explore the domain and create the initial narrative.
 
 #### 1.1 - Core events
 Goal of this step: Identify the core events of the system
 
 In collaboration with USER, figure out what the core events of the system are. Based on the domain, you might be able to infer some; suggest adding those with `eca__ask`.
 
-#### 1.2 - Grouping events
-Goal of this step: Group the created events into timelines
+Events are always in past tense, e.g. "User added", "Cart submitted", "Order processed".
+
+#### 1.2 - Identify events groupings
+Goal of this step: Identify logical groupings, timelines, of the created events
 
 In collaboration with USER, determine timelines for the events. Each timeline is a full part of the narrative of the system and covers one "feature". Example: User authentication
 
-If you have suggestions for groupings, present your suggestions one at a time using `eca__ask`.
+If you have suggestions for timelines, present your suggestions one at a time using `eca__ask`.
 
-### 2 - Slicing the timeline
-Goal of this step: Identifying the slices of a timeline and associating events to each slice
+Create the identified timelines using `emcli_timeline`.
 
-In collaboration with USER, choose a timeline (`eca__ask`).
+#### 1.3 - Add events to timelines
+Goal of this step: Add the events to the relevant timelines
 
-Suggest obvious slices to USER using `eca__ask`.
+To add an event to a timeline:
 
-Any slices added should be in state "created".
+1. Identify the timeline on which to add the event
+2. Add a new "state_change" slice to that timeline using `emcli_slice`, name it after the event by turning the event name to an imperative, e.g. "User added" -> "Add user"
+3. Place the event in the slice using `emcli_placement`
 
-### 3 - Adding commands
-Goal of this step: Identify and add commands that result in the events
+### 2 - Adding commands
+Goal of this step: Add commands that result in the events
 
-### 4 - Adding screens
+### 3 - Adding screens
 Goal of this step: Identify and add screens that trigger commands
 
-### 5 - Adding read models
+### 4 - Adding read models
 Goal of this step: Identify and add read models that feed data to screens
 
 
