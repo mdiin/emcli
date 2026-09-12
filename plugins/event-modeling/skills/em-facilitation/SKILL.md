@@ -40,17 +40,17 @@ If the model is empty, ask:
 #### 1 - Event storming
 In which you and USER explore the domain and create the initial narrative.
 
-Read `${plugin:root}/references/event-storming.md`.
+Read `${plugin:root}/skills/em-facilitation/references/event-storming.md`.
 
 #### 2 - Adding commands
 Goal of this step: Add commands that result in the events
 
-Read `${plugin:root}/references/adding-commands.md`.
+Read `${plugin:root}/skills/em-facilitation/references/adding-commands.md`.
 
 #### 3 - Adding screens
 Goal of this step: Identify and add screens that trigger commands
 
-Read `${plugin:root}/references/adding-screens.md`.
+Read `${plugin:root}/skills/em-facilitation/references/adding-screens.md`.
 
 #### 4 - Initial model done
 USER and you have now created an initial model, and the rest is going to be iteration on this model:
@@ -60,7 +60,7 @@ USER and you have now created an initial model, and the rest is going to be iter
 - Add new swimlanes
 - Add new timelines
 - And other event modeling operations
-- Add Given-When-Then specs to slices (read `${plugin:root}/references/gwt-specs.md`)
+- Add Given-When-Then specs to slices (read `${plugin:root}/skills/em-facilitation/references/gwt-specs.md`)
 
 All of this must be initiated by USER. USER may explicitly prompt you to work it out yourself, in which case you continue as far as you can using any tools available, and use `eca__ask_user` when you need USER input to continue.
 
@@ -75,9 +75,9 @@ Run `emcli_validate` to find spots that need attention and use `emcli__ask` to f
 #### 2 - Act
 USER may want to do any number of things with an existing model. Most are relatively straight-forward single operations supported by the various `emcli_*` tools, but the following are more involved:
 
-- Brainstorm a new feature (read `${plugin:root}/references/event-storming.md`)
-- Add a wireframe to a screen element (read `${plugin:root}/references/wireframing.md`)
-- Add Given-When-Then specs to a slice (read `${plugin:root}/references/gwt-specs.md`)
+- Brainstorm a new feature (read `${plugin:root}/skills/em-facilitation/references/event-storming.md`)
+- Add a wireframe to a screen element (read `${plugin:root}/skills/em-facilitation/references/wireframing.md`)
+- Add Given-When-Then specs to a slice (read `${plugin:root}/skills/em-facilitation/references/gwt-specs.md`)
 
 
 ## Working rhythm
