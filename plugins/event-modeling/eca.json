@@ -2,14 +2,11 @@
     "agent": {
         "event-modeler": {
             "disabledTools": [
-                "eca__read_file",
                 "eca__grep",
                 "eca__directory_tree",
                 "eca__editor_references",
                 "eca__editor_definition",
-                "eca__read_file",
-                "eca__preview_file_change",
-                "eca__fetch_rule"
+                "eca__preview_file_change"
             ],
             "prompts": {"chat": "${file:prompts/event-modeler.md}"}
         }
