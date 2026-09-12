@@ -20,6 +20,8 @@
                 "emcli_timeline",
                 "emcli_swimlane",
                 "emcli_spec",
+                "emcli_step",
+                "emcli_placement",
                 "emcli_wireframe"
             ],
             "prompts": {"chat": "${file:prompts/event-modeler.md}"},
@@ -79,13 +81,14 @@
                 "eca__spawn_agent",
                 "eca__ask_user",
                 "eca__bg_job",
-                "emcli_timeline",
-                "emcli_swimlane",
-                "emcli_slice",
                 "emcli_element",
                 "emcli_connection",
+                "emcli_slice",
+                "emcli_timeline",
+                "emcli_swimlane",
                 "emcli_spec",
                 "emcli_step",
+                "emcli_placement",
                 "emcli_validate"
             ],
             "toolCall": {

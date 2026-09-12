@@ -50,6 +50,7 @@ Field `--cardinality` values: `single`, `list`
 
 Field `--origin` values: `user_input`, `generated`, `external`
 
+
 ### emcli_connection
 
 **Derivation rule:** Only add a derivation when it carries information — a field **renamed** across the boundary (e.g. `recipientEmail` → `email`), or multiple source fields collapsed into one target (`firstName,lastName` → `displayName`). Never add a derivation where `--from` and `--target` share the same name — same-name derivations corrupt the information completeness check.
