@@ -1,0 +1,9 @@
+{
+    "plugins": [
+        {
+            "name": "event-modeling",
+            "description": "Agents and skills for Event Modeling",
+            "source": "plugins/event-modeling"
+        }
+    ]
+}
