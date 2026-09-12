@@ -33,53 +33,38 @@ Figure out if the model is empty by using `emcli_resolve`. Query for elements an
 
 If the model is empty, ask:
 - What system or domain are we modeling?
-- Who are the actors (users, automated systems, external services)?
-- What are the 2–4 core things users can DO?
 
-#### 0 - Initial setup
+Then follow these steps:
+
 1. Add swimlanes using `emcli_swimlane`: "Actor", "Interaction", "Event" (preserve this order!)
-
-#### 1 - Event storming
-In which you and USER explore the domain and create the initial narrative.
-
-Your guidelines for how to handle this phase are here: `${plugin:root}/skills/em-facilitation/references/event-storming.md`.
-
-#### 2 - Adding commands
-Goal of this step: Add commands that result in the events
-
-Your guidelines for how to handle this phase are here: `${plugin:root}/skills/em-facilitation/references/adding-commands.md`.
-
-#### 3 - Adding screens
-Goal of this step: Identify and add screens that trigger commands
-
-Your guidelines for how to handle this phase are here: `${plugin:root}/skills/em-facilitation/references/adding-screens.md`.
-
-#### 4 - Initial model done
-USER and you have now created an initial model, and the rest is going to be iteration on this model:
-
-- Add state_view slices
-- Rename elements
-- Add new swimlanes
-- Add new timelines
-- And other event modeling operations
-- Add Given-When-Then specs to slices (guideline for this is here: `${plugin:root}/skills/em-facilitation/references/gwt-specs.md`)
-
-All of this must be initiated by USER. USER may explicitly prompt you to work it out yourself, in which case you continue as far as you can using any tools available, and use `eca__ask_user` when you need USER input to continue.
-
+2. Load `${plugin:root}/skills/em-facilitation/references/event-storming.md`. Drive an event storming session.
+3. Load `${plugin:root}/skills/em-facilitation/references/adding-commands.md`. Add the necessary commands.
+4. Load `${plugin:root}/skills/em-facilitation/references/adding-screens.md`. Add the necessary screens.
+5. Done!
 
 ### Existing model
 
-#### 1 — Orient
-Use the names of timelines, slices and swimlanes to infer the domain; confirm with the USER.
+Follow these steps:
 
-Run `emcli_validate` to find spots that need attention and use `emcli__ask` to figure out which area USER wants to focus on. Remember to give the option of letting USER type something else than the options you provide.
+1. Use the names of timelines, slices and swimlanes to infer the domain; confirm with the USER.
+2. Run `emcli_validate` to find spots that need attention
+3. Iterate with USER on the model by following the working rhythm
 
-#### 2 - Act
-USER may want to do any number of things with an existing model. Most are relatively straight-forward single operations supported by the various `emcli_*` tools, but the following are more involved:
+## Detailed guidelines
 
-- Brainstorm a new feature (guidelines for how found here: `${plugin:root}/skills/em-facilitation/references/event-storming.md`)
-- Add a wireframe to a screen element (guidelines for how found here: `${plugin:root}/skills/em-facilitation/references/wireframing.md`)
-- Add Given-When-Then specs to a slice (guidelines for how found here: `${plugin:root}/skills/em-facilitation/references/gwt-specs.md`)
+USER may want to do one of these more involved tasks.
+
+### Brainstorm new feature
+
+Load `${plugin:root}/skills/em-facilitation/references/event-storming.md`.
+
+### Add wireframe to a screen
+
+Load `${plugin:root}/skills/em-facilitation/references/wireframing.md`.
+
+### Add Given-When-Then specs
+
+Load `${plugin:root}/skills/em-facilitation/references/gwt-specs.md`.
 
 
 ## Working rhythm
@@ -88,13 +73,11 @@ For each addition:
 
 1. **Ask** — understand what to model next
 2. **Confirm** — propose names and structure; get the human's approval before running anything
-3. **Execute** — call the appropriate per-group tool (`emcli_timeline`, `emcli_swimlane`, `emcli_slice`, `emcli_element`, `emcli_placement`, `emcli_connection`, `emcli_spec`, `emcli_step`, `emcli_wireframe`); read each result's `id` for subsequent calls — no need to resolve freshly created entities
+3. **Spawn** — spawn an `em-author` of `wireframer` sub-agent to do the tool calls
 4. **Report** — summarise what changed in terse and plain language; no raw JSON at the human
-
-**Corrections:** use `rename`, `reorder`, `remove` or `delete` verbs. Deletes cascade — removing a timeline removes its slices; removing a slice removes its placements and specs.
-
-**Looking up existing entities:** use `emcli_resolve` to find ids by name. Never guess ids.
 
 ## Begin
 
-Greet the human, confirm the server is running (or guide them to start it), then start Phase 1.
+1. Greet the human
+2. Confirm the server is running (or guide them to start it)
+3. Figure out if the model exists or not and start the appropriate phase

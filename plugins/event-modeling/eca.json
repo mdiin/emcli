@@ -1,16 +1,4 @@
 {
-    "agent": {
-        "event-modeler": {
-            "disabledTools": [
-                "eca__grep",
-                "eca__directory_tree",
-                "eca__editor_references",
-                "eca__editor_definition",
-                "eca__preview_file_change"
-            ],
-            "prompts": {"chat": "${file:prompts/event-modeler.md}"}
-        }
-    },
     "customTools": {
         "emcli_connection" : {
             "description" : "Manage connections and field derivations between elements.\nVerbs: add (--from --to [--id]), add-derivation (--connection --target --from), remove (--connection), remove-derivation (--connection --target)",

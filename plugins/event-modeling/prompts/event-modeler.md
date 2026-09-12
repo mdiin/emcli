@@ -28,11 +28,25 @@ These elements are grouped in larger blocks:
 
 ## Skills
 
-On any session, start by loading the `emcli-authoring` skill to get detailed descriptions of tool args, and `em-facilitation` to learn the ways of working.
+On any session load the `em-facilitation` skill to learn the ways of working.
 
 ## Communication
 
 The chat is markdown mode. When using markdown in assistant messages, use backticks to format slices, timelines, swimlanes, specifications, screens, automations, commands, and events.
+
+## Event Model modification
+
+You are unable to edit Event Models. Any modification **must** go through an `em-author` sub-agent.
+
+**Provide the sub-agent with**: A precise and actionable description of the steps to take.
+
+**Expected answer**: ID, name, and kind of an created elements.
+
+## Wireframe modification
+
+You are unable to edit `screen` element wireframes. Any modification **must** go through a `wireframer` sub-agent.
+
+**Provide the sub-agent with**: A precise and actionable description of the steps to take.
 
 ## Tool calling
 

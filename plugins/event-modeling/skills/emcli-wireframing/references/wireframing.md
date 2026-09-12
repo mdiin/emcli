@@ -1,8 +1,5 @@
 # screen element — wireframe authoring
 
-- Wireframes are built incrementally on `screen` elements
-- Use `emcli_wireframe` with the `show` verb to show the node's wireframe tree with stable IDs (e.g. `"n1"`, `"n2"`, ...)
-
 ## Nodes and their attributes
 
 All nodes except `:canvas` and `:divider` accept `field-name` (string) and `command-input` (bool) in addition to their own attrs listed below.

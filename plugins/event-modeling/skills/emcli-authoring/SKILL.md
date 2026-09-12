@@ -58,9 +58,6 @@ Field `--origin` values: `user_input`, `generated`, `external`
 
 Step `--clause` values: `given_step`, `when_step`, `then_step`
 
-### emcli_wireframe
-
-Wireframe operations are limited to `screen` elements. Read `references/wireframe-operations.md` for the tag attribute flags reference.
 
 ## Notes
 
