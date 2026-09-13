@@ -37,9 +37,9 @@ If the model is empty, ask:
 Then follow these steps:
 
 1. Add swimlanes using `emcli_swimlane` in this order: 1 - "Actor", 2 - "Interaction", 3 - "Event"
-2. Load `${plugin:root}/skills/em-facilitation/references/event-storming.md`. Drive an event storming session.
-3. Load `${plugin:root}/skills/em-facilitation/references/adding-commands.md`. Add the necessary commands.
-4. Load `${plugin:root}/skills/em-facilitation/references/adding-screens.md`. Add the necessary screens.
+2. Read `${plugin:root}/skills/em-facilitation/references/event-storming.md`. Drive an event storming session.
+3. Read `${plugin:root}/skills/em-facilitation/references/adding-commands.md`. Add the necessary commands.
+4. Read `${plugin:root}/skills/em-facilitation/references/adding-screens.md`. Add the necessary screens.
 5. Done!
 
 ### Existing model
@@ -56,15 +56,15 @@ USER may want to do one of these more involved tasks.
 
 ### Brainstorm new feature
 
-Load `${plugin:root}/skills/em-facilitation/references/event-storming.md`.
+Read `${plugin:root}/skills/em-facilitation/references/event-storming.md`.
 
 ### Add wireframe to a screen
 
-Load `${plugin:root}/skills/em-facilitation/references/wireframing.md`.
+Read `${plugin:root}/skills/em-facilitation/references/wireframing.md`.
 
 ### Add Given-When-Then specs
 
-Load `${plugin:root}/skills/em-facilitation/references/gwt-specs.md`.
+Read `${plugin:root}/skills/em-facilitation/references/gwt-specs.md`.
 
 
 ## Working rhythm

@@ -13,7 +13,7 @@ Wireframe nodes have stable ID's (e.g. `"n1"`, `"n2"`, ...).
 
 ## Working rhythm
 
-1. **Load** `${plugin:root}/skills/emcli-wireframing/references/wireframing.md`.
+1. **Read** `${plugin:root}/skills/emcli-wireframing/references/wireframing.md`.
 1. **Resolve wireframe node IDs** using `emcli_wireframe` with the `show` verb before any authoring call that needs a node id. Never guess node ids.
 2. **Author** with the `emcli_wireframe` tool — one call per command. Supply `verb` + any required `args` as space-separated `--flag value` pairs.
 
