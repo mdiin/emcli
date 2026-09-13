@@ -59,6 +59,15 @@ Field `--origin` values: `user_input`, `generated`, `external`
 
 Step `--clause` values: `given_step`, `when_step`, `then_step`
 
+## Swimlanes vs. Slices
+
+Elements can be "placement" associated with two different kinds of entities, which require different operations:
+
+- Place in **swimlane**: Use `emcli_element` with the `swimlane` verb
+- Place in **slice**: Use `emcli_placement`
+
+This distinction is important! USER may use the word "place" for both; disambiguate by looking at "where" it should be placed.
+
 
 ## Notes
 
