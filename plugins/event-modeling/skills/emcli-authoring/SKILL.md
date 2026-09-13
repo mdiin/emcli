@@ -68,6 +68,7 @@ Step `--clause` values: `given_step`, `when_step`, `then_step`
 - A per-group tool result on success is the created/modified entity as JSON. On error it returns an `Error:` prefixed string with the server's message.
 - Element and timeline names may contain spaces (e.g. `"User created"`, `"Order Flow"`).
 
+
 ## Gotchas
 
 - Args that refer to other parts of the model by an ID must not be renamed, so do not append `_id` to the flag name when making a tool call.
