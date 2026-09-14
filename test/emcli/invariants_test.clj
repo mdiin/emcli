@@ -1,7 +1,8 @@
 (ns emcli.invariants-test
   "invariant obligations: PlacementMatchesSliceKind, PlacementElementUnique,
-  SpecificationComposition, ValidConnectionKinds. Rules must reject any
-  mutation that would break one."
+  SpecificationComposition, ValidConnectionKinds, WireframeWellFormed,
+  WireframeReferencesResolve. Rules must reject any mutation that would break
+  one."
   (:require [clojure.test :refer [deftest testing is]]
             [emcli.invariants :as inv]
             [emcli.model :as m]
@@ -99,6 +100,88 @@
           [store' repairs] (inv/repair store)]
       (is (empty? repairs))
       (is (= store store')))))
+
+;; --- WireframeWellFormed / WireframeReferencesResolve ----------------------
+
+(defn- screen-with-field
+  "A store holding one screen element that declares a single :searchTerm field,
+  plus the model id and the screen's element id."
+  []
+  (let [[store mid] (s/with-model)
+        [store eid] (element store mid "OrderList" :screen)
+        store       (:store (s/ok store r/add-field {:element eid
+                                                     :field   {:name "searchTerm"
+                                                               :type :string}}))]
+    [store mid eid]))
+
+(defn- wireframe-violation
+  "The sole invariant violation `store` reports, or nil when it is valid."
+  [store]
+  (first (inv/check store)))
+
+(deftest a-stored-wireframe-must-be-well-formed
+  (testing "a malformed stored tree makes every later mutation fail"
+    (let [[store mid eid] (screen-with-field)
+          ;; bypass the rules: install the tree directly, as a hand-edited or
+          ;; older file would. A leaf tag carrying a child is malformed, and the
+          ;; child's dangling field-name is only reported when the tree itself
+          ;; is sound.
+          broken (m/set-field store :element eid :wireframe
+                              [:canvas {:-id "n1"}
+                               [:divider {:-id "n2"}
+                                [:input {:-id "n3"} {:field-name "noSuchField"}]]])
+          violation (wireframe-violation broken)]
+      (is (= :WireframeWellFormed (:invariant violation)))
+      (is (= eid (:element violation)))
+      (is (re-find #"leaf" (:message violation)))
+      (is (= 1 (count (inv/check broken)))
+          "one broken tree is reported once, not once per symptom")
+      (let [res (r/create-timeline broken {:model mid :title "T"})]
+        (is (r/error? res))
+        (is (= :invariant-violation (:error res))))))
+  (testing "an unknown tag in the stored tree is a well-formedness violation"
+    (let [[store mid eid] (screen-with-field)
+          broken          (m/set-field store :element eid :wireframe
+                                       [:canvas {:-id "n1"} [:foobar {:-id "n2"}]])]
+      (is (= :WireframeWellFormed (:invariant (wireframe-violation broken))))
+      (is (= :invariant-violation
+             (:error (r/create-timeline broken {:model mid :title "T"}))))))
+  (testing "a non-screen carrying a wireframe is a well-formedness violation"
+    (let [[store mid] (s/with-model)
+          [store cmd] (element store mid "PlaceOrder" :command)
+          broken      (m/set-field store :element cmd :wireframe [:canvas {:-id "n1"}])]
+      (is (= :WireframeWellFormed (:invariant (wireframe-violation broken))))
+      (is (= :invariant-violation
+             (:error (r/create-timeline broken {:model mid :title "T"}))))))
+  (testing "a sound stored tree naming a declared field keeps the store editable"
+    (let [[store mid eid] (screen-with-field)
+          sound           (m/set-field store :element eid :wireframe
+                                       [:canvas {:-id "n1"}
+                                        [:input {:-id "n2"} {:field-name "searchTerm"}]])]
+      (is (empty? (inv/check sound)))
+      (is (not (r/error? (r/create-timeline sound {:model mid :title "T"})))))))
+
+(deftest a-stored-wireframe-must-resolve-its-field-names
+  (testing "a stored tree naming a field the screen does not have fails every mutation"
+    (let [[store mid eid] (screen-with-field)
+          ;; the tree is structurally sound, so the reference is what is wrong.
+          dangling (m/set-field store :element eid :wireframe
+                                [:canvas {:-id "n1"}
+                                 [:input {:-id "n2"} {:field-name "noSuchField"}]])
+          violation (wireframe-violation dangling)]
+      (is (= :WireframeReferencesResolve (:invariant violation)))
+      (is (= eid (:element violation)))
+      (is (re-find #"noSuchField" (:message violation)))
+      (let [res (r/create-timeline dangling {:model mid :title "T"})]
+        (is (r/error? res))
+        (is (= :invariant-violation (:error res))))))
+  (testing "a reference that resolves is not a violation"
+    (let [[store _ eid] (screen-with-field)
+          resolved      (m/set-field store :element eid :wireframe
+                                     [:canvas {:-id "n1"}
+                                      [:input {:-id "n2"} {:field-name "searchTerm"}]])]
+      (is (not (some #(= :WireframeReferencesResolve (:invariant %))
+                     (inv/check resolved)))))))
 
 ;; --- ValidConnectionKinds --------------------------------------------------
 

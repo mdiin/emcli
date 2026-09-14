@@ -80,6 +80,33 @@
                   "the repaired model is not wedged: a later mutation is accepted"))))
         (finally (fs/delete-if-exists file))))))
 
+(deftest load-app-refuses-a-wireframe-naming-a-missing-field
+  (testing "a hand-edited file whose screen layout names an unknown field is refused, not loaded"
+    (let [file (tmp-file)
+          a    (app/new-app "Orders" file)]
+      (try
+        (let [scr (:result (cmd/run a "create-element" {:name "OrderList" :kind "screen"}))]
+          (cmd/run a "add-field" {:element (:id scr) :name "searchTerm" :type "string"})
+          ;; hand-edit the persisted file: give the screen a structurally sound
+          ;; layout naming a field it does not declare. No wireframe rule would
+          ;; ever install this, so only the load-time invariant check can catch
+          ;; it - and it is unrepairable, so the load must fail fast.
+          (let [{:keys [model store]} (edn/read-string (slurp file))
+                dirty                 (m/set-field store :element (:id scr) :wireframe
+                                                   [:canvas {:-id "n1"}
+                                                    [:input {:-id "n2"}
+                                                     {:field-name "noSuchField"}]])]
+            (is (some? (get-in dirty [:elements (:id scr) :wireframe])))
+            (spit file (pr-str {:model model :store dirty}))
+            (let [ex (try (app/load-app file) nil (catch Exception e e))]
+              (is (instance? clojure.lang.ExceptionInfo ex)
+                  "load-app throws instead of loading the invalid store")
+              (is (= :invalid-store (:error (ex-data ex))))
+              (is (= file (:file (ex-data ex))))
+              (is (= [:WireframeReferencesResolve]
+                     (distinct (map :invariant (:violations (ex-data ex)))))))))
+        (finally (fs/delete-if-exists file))))))
+
 (deftest open-app-loads-or-creates
   (let [file (tmp-file)]
     (try

@@ -455,13 +455,16 @@
           res         (s/ok store r/remove-field {:element eid :name "searchTerm"})]
       (is (empty? (:fields (:result res)))))))
 
-(deftest a-store-already-holding-a-stranded-reference-stays-editable
+(deftest a-store-holding-a-stranded-reference-is-refused
   (let [[store eid] (screen-with-layout-naming)
         store       (:store (s/ok store r/add-field {:element eid :field {:name "page" :type :int}}))
-        ;; The reference is stranded directly, the way the store can hold one
-        ;; today (written before this guard existed).
+        ;; The reference is stranded directly: with the wireframe invariants
+        ;; enforced at commit this state is unreachable through the rules, and a
+        ;; store holding it refuses to load, so a direct write is the only way
+        ;; left to reach it.
         store       (m/set-field store :element eid :fields [{:name "page" :type :int}])]
     (is (= ["n2"] (map :node-id (wf/field-references (:wireframe (m/fetch store :element eid))))))
-    (testing "an unrelated removal still succeeds — the rule guards the removal, not legacy state"
-      (let [res (s/ok store r/remove-field {:element eid :name "page"})]
-        (is (empty? (:fields (:result res))))))))
+    (testing "every mutation is refused — the invariant holds at every observable state"
+      (let [res (r/remove-field store {:element eid :name "page"})]
+        (is (r/error? res))
+        (is (= :invariant-violation (:error res)))))))

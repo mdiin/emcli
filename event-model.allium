@@ -932,6 +932,23 @@ invariant WireframeWellFormed {
             e.kind = screen and wireframe_well_formed(e.wireframe))
 }
 
+-- A layout refers only to fields its own screen declares: every field-name value
+-- in a screen's stored layout names a field the screen has. Two guards keep this
+-- true. Every wireframe edit that would name an unresolvable field is rejected
+-- before it is applied (see AddWireframeNode, AddWireframeNodeBefore and
+-- SetWireframeAttr), and the field side is guarded too: an edit that would remove
+-- a name the screen's stored layout still refers to is rejected (see RemoveField).
+-- Reference resolution therefore holds at every observable state, not merely at
+-- the moment a layout first names the field. field_references(tree) is every
+-- field-name value the tree names.
+invariant WireframeReferencesResolve {
+    for e in Elements:
+        e.wireframe != null implies (
+            e.kind = screen and
+            field_references(e.wireframe).all(ref =>
+                e.fields.any(f => f.name = ref.field_name)))
+}
+
 -- ---------------------------------------------------------------------------
 -- Interchange format contract
 -- ---------------------------------------------------------------------------

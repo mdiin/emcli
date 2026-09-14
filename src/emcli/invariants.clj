@@ -4,7 +4,8 @@
   reject any mutation that would break an invariant, so the invariants hold at
   every observable state."
   (:require [clojure.string :as str]
-            [emcli.model :as m]))
+            [emcli.model :as m]
+            [emcli.wireframe :as wf]))
 
 (defn- step-kind [store step]
   (:kind (m/step-element store step)))
@@ -159,6 +160,58 @@
      :message   (str "SpecStep " (:id st) " example[" idx "] must have a "
                      "non-empty field_name and field_value")}))
 
+;; Wireframes ----------------------------------------------------------------
+;; A layout carried by an element must be structurally well-formed and must name
+;; only fields its screen declares. Both used to be claims only the wireframe
+;; rules upheld (every edit validates the tree it is about to install), so a
+;; store loaded from disk could hold a malformed tree or a dangling field
+;; reference: `load-app` accepted it, and every later wireframe edit on that
+;; screen was refused by a cause nothing could see. Enforced at commit, such a
+;; store refuses to load instead. Structural well-formedness stays a separate
+;; invariant from reference resolution because it is deliberately structural:
+;; it says nothing about whether the layout's field names resolve.
+(defn- structural-wireframe-violation
+  "The WireframeWellFormed violation for element `e` carrying wireframe `w`, or
+  nil. A wireframe on a non-screen element is itself the violation — the
+  invariant's own statement is `e.kind = screen and wireframe_well_formed(...)`."
+  [e w]
+  (if (not= :screen (:kind e))
+    {:invariant :WireframeWellFormed
+     :element   (:id e)
+     :message   (str "Element " (:id e) " carries a wireframe but its kind is "
+                     (pr-str (:kind e)) ", not :screen")}
+    (let [{:keys [valid? errors]} (wf/validate w)]
+      (when-not valid?
+        {:invariant :WireframeWellFormed
+         :element   (:id e)
+         :message   (str "Element " (:id e) " carries a malformed wireframe: "
+                         (str/join "; " (map :message errors)))}))))
+
+(defn- wireframe-element-violations
+  "Every violation for one wireframe-carrying element `e`: the structural check
+  first and, only if it passes, the field-reference check. A structurally broken
+  tree has no trustworthy field references — its own walk may already be reading
+  a node shape that is not a node — so one broken tree is reported once instead
+  of spraying cascading noise."
+  [e]
+  (let [w (:wireframe e)]
+    (if-let [structural (structural-wireframe-violation e w)]
+      [structural]
+      (let [{:keys [valid? errors]} (wf/validate-semantics w e)]
+        (if valid?
+          []
+          [{:invariant :WireframeReferencesResolve
+            :element   (:id e)
+            :message   (str "Element " (:id e) " wireframe names field(s) the "
+                            "screen does not declare: "
+                            (str/join "; " (map :message errors)))}])))))
+
+(defn- wireframe-violations [store]
+  (into []
+        (comp (filter #(some? (:wireframe %)))
+              (mapcat wireframe-element-violations))
+        (m/all store :element)))
+
 (defn check
   "Return every invariant violation in `store` (empty when the store is valid)."
   [store]
@@ -166,7 +219,8 @@
                (duplicate-placement-violations store)
                (spec-violations store)
                (connection-violations store)
-               (example-violations store))))
+               (example-violations store)
+               (wireframe-violations store))))
 
 (defn valid? [store]
   (empty? (check store)))
