@@ -62,6 +62,12 @@
     (is (clojure.string/includes? output "show")
         "wireframe group help must list the CLI-only show verb")))
 
+(deftest set-wireframe-attr-node-note-names-current-show-command
+  (let [params (#'cli/command->manifest-params "set-wireframe-attr")
+        node   (first (filter #(= "node" (:flag %)) params))]
+    (testing "the node-id note points operators at the current command name"
+      (is (= "node id (nN) as shown by wireframe show" (:note node))))))
+
 ;; --queries "name[:kind_hint],..." parsing for `emcli resolve`.
 (deftest parse-resolve-queries-test
   (testing "bare names carry no kind_hint"

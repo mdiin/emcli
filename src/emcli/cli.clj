@@ -266,7 +266,7 @@
    [{:flag "element" :type "int" :required true :ref "elements[].id"
      :note "must be a screen element"}
     {:flag "node" :type "string" :required true
-     :note "node id (nN) as shown by element show-wireframe"}
+     :note "node id (nN) as shown by wireframe show"}
     {:flag "attr" :type "string" :required true
      :note "attribute name, e.g. label, placeholder, field-name"}
     {:flag "value" :type "string" :required true
