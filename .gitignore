@@ -1,5 +1,6 @@
 /.cpcache/
 /.clj-kondo/.cache/
+/.lsp/
 *.class
 .DS_Store
 /.claude/settings.local.json
