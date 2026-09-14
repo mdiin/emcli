@@ -515,10 +515,19 @@
         conns     (vals (into {} (map (juxt :id identity))
                               (concat (m/outgoing store element-id)
                                       (m/incoming store element-id))))
+        ;; Removing a connection can move the derived is_information_complete of
+        ;; its surviving :to endpoint — exactly why Disconnect restates its
+        ;; target element. The element being deleted is not a survivor, and an
+        ;; element fed by several removed connections is restated once.
+        survivors (->> conns
+                       (map :to)
+                       (remove #{element-id})
+                       distinct)
         acc       (reduce (fn [a p] (del a :placement (:id p)))
                           acc (m/element-placements store element-id))
-        acc       (reduce (fn [a c] (del a :connection (:id c))) acc conns)]
-    (del acc :element element-id)))
+        acc       (reduce (fn [a c] (del a :connection (:id c))) acc conns)
+        [store changes] (del acc :element element-id)]
+    [store (into changes (map #(updated store :element %)) survivors)]))
 
 (defn delete-specification [store {:keys [spec]}]
   (or (require-entity store :specification spec)

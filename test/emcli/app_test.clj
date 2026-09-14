@@ -246,3 +246,33 @@
         (is (some? el-chg) "delta must include element change for the target element")
         (is (= (:id to) (:id el-chg)))
         (is (false? (:is_information_complete (:entity el-chg))))))))
+
+(deftest delete-element-cascade-restates-surviving-target
+  (testing "DeleteElement restates each surviving element whose completeness moved"
+    (let [a    (app/new-app "Orders")
+          from (:result (cmd/run a "create-element" {:name "PlaceOrder" :kind "command"}))
+          to   (:result (cmd/run a "create-element" {:name "OrderPlaced" :kind "event"}))
+          _    (cmd/run a "add-field" {:element (:id from) :name "id" :type "uuid"})
+          _    (cmd/run a "add-field" {:element (:id to)   :name "id" :type "uuid"})
+          _    (cmd/run a "connect"   {:from (:id from) :to (:id to)})
+          [_ msgs] (recording-sub a)]
+      (is (true? (m/information-complete? (app/store a)
+                                          (m/fetch (app/store a) :element (:id to))))
+          "the event is complete while fed by the command")
+      (cmd/run a "delete-element" {:element (:id from)})
+      (let [delta   (last @msgs)
+            changes (:changes delta)
+            el-chg  (first (filter #(and (= :element (:type %))
+                                         (= :updated (:action %))) changes))]
+        (is (= :DeleteElement (:op delta)))
+        (is (some #(and (= :deleted (:action %)) (= :connection (:type %))) changes)
+            "delta must include the removed connection")
+        (is (some #(and (= :deleted (:action %)) (= :element (:type %))) changes)
+            "delta must include the removed element")
+        (is (some? el-chg) "delta must restate the surviving target element")
+        (is (= (:id to) (:id el-chg)))
+        (is (false? (:is_information_complete (:entity el-chg)))
+            "removing the feeding connection moved the event's completeness")
+        (is (false? (m/information-complete? (app/store a)
+                                             (m/fetch (app/store a) :element (:id to))))
+            "the restated value reflects the post-removal store")))))

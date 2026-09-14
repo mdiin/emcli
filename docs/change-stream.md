@@ -180,7 +180,7 @@ data: {"op":"DeleteTimeline","changes":[{"action":"deleted","type":"placement","
 | `CreateElement` | created | element |
 | `SetFields` / `SetElementContext` / `AssignSwimlane` / `SetImageUrl` / `SetFieldOrigins` / `RenameElement` | updated | element |
 | `AddWireframeNode` / `AddWireframeNodeBefore` / `SetWireframeAttr` / `SetWireframeText` / `DeleteWireframeNode` | updated | the screen element, restated with its new layout tree |
-| `DeleteElement` | deleted | element + cascaded placements, connections |
+| `DeleteElement` | deleted, updated | element + cascaded placements, connections, then the surviving `to` element(s) whose completeness the removed connections moved |
 | `PlaceElement` | created | placement |
 | `ReorderPlacement` | updated | placement |
 | `RemovePlacement` | deleted | placement |
@@ -195,11 +195,12 @@ data: {"op":"DeleteTimeline","changes":[{"action":"deleted","type":"placement","
 
 Within one delta the `changes` are ordered: the entity the operation was aimed at
 first, followed by any entity whose derived state moved with it (`Connect`,
-`Disconnect`, `SetConnectionDerivations` restate their `to` element;
-`DeleteSwimlane` restates the elements it unassigned before removing the
-swimlane). A cascade lists removed entities leaves-first, so each entity is gone
-before the one that contained it — apply the `changes` in the order given and the
-result is well-defined at every step.
+`Disconnect`, `SetConnectionDerivations` restate their `to` element, and the
+`DeleteElement` cascade restates each surviving `to` endpoint once, after its
+removals; `DeleteSwimlane` restates the elements it unassigned before removing
+the swimlane). A cascade lists removed entities leaves-first, so each entity is
+gone before the one that contained it — apply the `changes` in the order given
+and the result is well-defined at every step.
 
 ### Entity shapes
 
