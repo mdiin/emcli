@@ -43,6 +43,15 @@
     (let [params (#'cli/command->manifest-params cmd)]
       (is (seq params) (str cmd " must have non-empty manifest params")))))
 
+(deftest wireframe-add-node-commands-declare-optional-text-flag
+  (doseq [cmd ["add-wireframe-node" "add-wireframe-node-before"]]
+    (testing (str cmd " declares a text flag")
+      (let [params (#'cli/command->manifest-params cmd)
+            text   (first (filter #(= "text" (:flag %)) params))]
+        (is (some? text) (str cmd " must declare a text flag"))
+        (testing "the text flag is optional"
+          (is (false? (:required text))))))))
+
 (deftest top-level-help-includes-wireframe-show
   (let [output (with-out-str (#'cli/print-help))]
     (is (clojure.string/includes? output "wireframe")

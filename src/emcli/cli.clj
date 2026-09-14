@@ -242,6 +242,8 @@
      :note "must be a screen element"}
      {:flag "tag" :type "string" :required true
       :note "wireframe tag, e.g. button, input, row, col, text"}
+     {:flag "text" :type "string" :required false
+      :note "new node's text content on a text-children tag (h1, h2, h3, text, span), or the required text attribute on :alert; rejected for any other tag"}
      {:flag "parent" :type "string" :required false
       :note "node id (nN) to append under; omit to append at the root"}]
    "add-wireframe-node-before"
@@ -250,7 +252,9 @@
     {:flag "before" :type "string" :required true
      :note "node id (nN) of the existing sibling node to insert before"}
     {:flag "tag" :type "string" :required true
-     :note "wireframe tag, e.g. button, input, row, col, text"}]
+     :note "wireframe tag, e.g. button, input, row, col, text"}
+    {:flag "text" :type "string" :required false
+     :note "new node's text content on a text-children tag (h1, h2, h3, text, span), or the required text attribute on :alert; rejected for any other tag"}]
    "set-wireframe-text"
    [{:flag "element" :type "int" :required true :ref "elements[].id"
      :note "must be a screen element"}

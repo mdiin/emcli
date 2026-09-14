@@ -157,7 +157,7 @@
     }
   },
   "emcli_wireframe" : {
-    "description" : "Manage wireframe node trees on screen elements and display them.\nVerbs: add-node (--element --tag [--parent]), add-node-before (--element --before --tag), delete-node (--element --node), set-attr (--element --node --attr --value), set-text (--element --node --text), show (--element)",
+    "description" : "Manage wireframe node trees on screen elements and display them.\nVerbs: add-node (--element --tag [--text] [--parent]), add-node-before (--element --before --tag [--text]), delete-node (--element --node), set-attr (--element --node --attr --value), set-text (--element --node --text), show (--element)",
     "command" : "emcli wireframe {{verb}} {{args}}",
     "schema" : {
       "properties" : {
