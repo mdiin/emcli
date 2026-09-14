@@ -475,7 +475,7 @@ rule AddField {
 -- Remove the field named `name` from the element's fields; the rest is preserved.
 -- A name the element's stored layout still names cannot be removed: the guard is
 -- on the removal itself, not on every field edit whose proposed state fails to
--- resolve, so a store that already holds a stranded reference stays editable.
+-- resolve, so unrelated field edits are never blocked by the layout.
 rule RemoveField {
     when: RemoveField(element, name)
     requires: not (element.fields.any(f => f.name = name)
