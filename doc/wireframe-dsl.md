@@ -192,11 +192,15 @@ prints as just `[nN] :tag`.
 
 ## Current limitations
 
-- **`set-attr` can only set string-valued attributes.** The value is passed
-  through as text, so an attribute whose declared type is a choice or a flag
-  (`variant`, `align`, `tone`, `required`, `command-input`, …) is rejected — e.g.
-  `variant must be a keyword` — and `options` is rejected because it needs a
-  list. Those attributes can only be given a value when the node is created.
+- **`set-attr` coerces the value through the node's tag schema, and refuses text
+  it cannot coerce.** The value still arrives as text: `true`/`false` become
+  booleans (a flag such as `command-input` can be set), a choice value (`variant`,
+  `align`, `tone`, …) becomes a keyword, and a list attribute such as `options` is
+  split on commas. Text outside the set the tag allows for the attribute is
+  rejected — e.g. `variant value 'bogus' not in allowed set …` — and the node is
+  left unchanged. Text content is still not an attribute: on a text-children tag
+  it is set with `set-text` and `set-attr --attr text` is refused, while `:alert`
+  takes its message as the real `text` attribute and refuses `set-text` in turn.
 - **Removing a field a layout refers to is refused, not repaired.** `remove-field`
   (and any field edit that drops a name) is rejected when the screen's stored
   layout still names that field, with an error naming the field and the node ids
