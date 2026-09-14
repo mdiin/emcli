@@ -351,12 +351,16 @@
 
 (defn- require-valid-move
   "Exactly one of position/before/after selects the move; position is :front or
-  :back. Same :invalid-value shape as require-valid-value."
-  [{:keys [position before after]}]
+  :back, and a before/after anchor must name a different element from the one
+  being moved (an anchor equal to the moved element has no placement left to
+  insert next to once the moved placement is lifted out). Same :invalid-value
+  shape as require-valid-value."
+  [{:keys [element position before after]}]
   (let [selectors (cond-> []
                     (some? position) (conj :position)
                     (some? before)   (conj :before)
-                    (some? after)    (conj :after))]
+                    (some? after)    (conj :after))
+        anchor    (if (some? before) before after)]
     (cond
       (empty? selectors)
       {:error :invalid-value
@@ -365,7 +369,11 @@
       {:error :invalid-value
        :message (str "reorder accepts exactly one of --position, --before or --after, got "
                      (str/join " and " (map #(str "--" (name %)) selectors)))}
-      (some? position) (require-valid-value placement-positions position))))
+      (some? position) (require-valid-value placement-positions position)
+      (= anchor element)
+      {:error :invalid-value
+       :message (str "reorder anchor " anchor " is the element being moved; "
+                     "--before/--after must name a different element")})))
 
 (defn- no-placement [slice element]
   {:error :not-found :type :placement :slice slice :element element
@@ -382,10 +390,13 @@
 (defn- insert-next-to
   "`others` (a slice's placements minus the one being moved) with `target`
   inserted immediately before the placement of element `anchor` — or immediately
-  after it when `after?`. `anchor` is known to be placed in the slice."
+  after it when `after?`. `anchor` is known to be placed in the slice and to be a
+  different element from `target`, so it is always present in `others`; the
+  empty-`tail` branch merely keeps the helper total, degrading to an append
+  rather than splicing a nil placement in."
   [others target anchor after?]
   (let [[head tail] (split-with #(not= anchor (:element %)) others)]
-    (if after?
+    (if (and after? (seq tail))
       (vec (concat head [(first tail) target] (rest tail)))
       (vec (concat head [target] tail)))))
 
@@ -405,9 +416,10 @@
   "Assign index = 0-based rank to every placement in `order` (a slice's placements
   after a move), returning [store' changes] where changes restates each placement
   whose index actually moved. Renormalizing the whole slice is intentional:
-  indices are a sort key only (non-unique, non-contiguous after removals) and
-  ties break by creation order, so a relative before/after move cannot be
-  expressed by nudging a single integer."
+  indices are a sort key only, and ties break by creation order (now merely a
+  defensive tiebreak — PlaceElement and ReorderPlacement both yield distinct
+  indices), so a relative before/after move cannot be expressed by nudging a
+  single integer."
   [store order]
   (reduce (fn [[s changes] [i p]]
             (if (= i (:index p))

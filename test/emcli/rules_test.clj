@@ -323,6 +323,26 @@
         (is (= :invalid-value (:error err)))
         (is (= :middle (:value err)))))))
 
+(deftest reorder-placement-rejects-anchor-equal-to-moved-element
+  ;; The anchor is lifted out of the slice before the insert, so an anchor equal
+  ;; to the moved element has nothing left to insert next to: the before-branch
+  ;; would silently tail it and the after-branch would splice a nil placement
+  ;; (and renumber would commit a dangling id). Reject it up front instead.
+  (let [{:keys [store slid elements]} (slice-with-elements ["A" "B" "C"])]
+    (testing "--before the element being moved is rejected"
+      (let [err (s/err store r/reorder-placement {:slice slid :element (elements "B")
+                                                  :before (elements "B")})]
+        (is (= :invalid-value (:error err)))
+        (is (re-find #"different element" (:message err)))))
+    (testing "--after the element being moved is rejected"
+      (let [err (s/err store r/reorder-placement {:slice slid :element (elements "A")
+                                                  :after (elements "A")})]
+        (is (= :invalid-value (:error err)))
+        (is (re-find #"different element" (:message err)))))
+    (testing "the store is untouched: same order, same indices"
+      (is (= ["A" "B" "C"] (slice-order store slid)))
+      (is (= [0 1 2] (map :index (m/placements store slid)))))))
+
 ;; ---------------------------------------------------------------------------
 ;; Wireframe rules
 ;; ---------------------------------------------------------------------------
