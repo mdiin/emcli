@@ -209,7 +209,6 @@
         "op": { "$ref": "#/$defs/deltaOp" },
         "changes": {
           "type": "array",
-          "minItems": 1,
           "items": { "$ref": "#/$defs/Change" }
         }
       }

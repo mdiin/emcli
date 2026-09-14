@@ -39,7 +39,7 @@ A two-part refactoring session:
 
 ### Context and decisions
 
-**Why:** The Dirge Janet plugin (`/.dirge/plugins/emcli.janet`) is to be dropped. Its tool definitions needed to be migrated to a portable format usable by other harnesses (ECA.dev, Claude Code, Pi, etc.).
+**Why:** The Dirge Janet plugin is to be dropped. Its tool definitions needed to be migrated to a portable format usable by other harnesses (ECA.dev, Claude Code, Pi, etc.).
 
 **Key decisions made:**
 
@@ -85,8 +85,7 @@ Each group tool has:
 
 - **Latest tag:** `v2.1.1`
 - **Latest commit:** `81b0908` on `main`
-- **Dirge plugin:** still present at `.dirge/plugins/emcli.janet` — not yet removed; flagged for future removal. Note: the Dirge plugin still calls `element show-wireframe` (stale — should be `wireframe show`) but this will be moot when the plugin is dropped.
+- **Dirge plugin:** removed — the Janet plugin and its surrounding Dirge config directory are gone; the maintained integration is the ECA plugin at `plugins/event-modeling/`.
 - **Open / deferred work:**
-  - Drop the `.dirge/` plugin directory
   - HTTP route restructuring to `/authoring/<group>/...` (requires all groups done at once)
   - The `emcli_resolve` and `emcli_validate` tools are in `tools.json` but the Dirge plugin equivalents had richer descriptions (including the `emcli_show_wireframe` Dirge tool description) — worth reviewing once Dirge is dropped

@@ -444,7 +444,7 @@ rule ReorderSlice {
 -- EVERY placement in the slice is renumbered instead: after the move the slice's
 -- placements carry 0..n-1, their new display order.
 -- A placement is addressed by (slice, element), its natural key (see invariant
--- PlacementElementUnique), so no placement id appears in the surface.
+-- PlacementElementUnique), so no placement id is used to address one.
 rule ReorderPlacement {
     when: ReorderPlacement(slice, element, move)
     -- The target must be placed in the slice; a before/after anchor must name a
@@ -572,7 +572,7 @@ rule PlaceElement {
 
 -- Remove the placement of `element` from `slice`. A placement is addressed by
 -- (slice, element), its natural key (see invariant PlacementElementUnique), so
--- no placement id appears in the surface; removing a placement that is not in
+-- no placement id is used to address one; removing a placement that is not in
 -- the slice is rejected rather than a silent no-op.
 rule RemovePlacement {
     when: RemovePlacement(slice, element)
@@ -917,7 +917,7 @@ invariant PlacementMatchesSliceKind {
 -- may still be placed in many slices and many timelines. This makes
 -- (slice, element) the placement's natural key: ReorderPlacement and
 -- RemovePlacement address a placement by it rather than by the surrogate
--- placement id, which is why no placement id appears in the surface.
+-- placement id, which is why no placement id is used to address one.
 invariant PlacementElementUnique {
     for s in Slices:
         for p in s.placements:

@@ -44,31 +44,11 @@ bbin install io.github.mdiin/emcli
 
 Requires [bbin](https://github.com/babashka/bbin). Or grab a prebuilt binary from [Releases](https://github.com/mdiin/emcli/releases).
 
-## dirge extension
+## Event Modeling plugin
 
-A [dirge](https://github.com/dirge-code/dirge) plugin is included at `.dirge/plugins/emcli.janet`. It registers four LLM-visible tools (`emcli_resolve`, `emcli_validate`, `emcli_author`, `emcli_wireframe_show`) and a `/em-validate` slash command.
+The Event Modeling integration is maintained as an [ECA](https://eca.dev) plugin bundle at [`plugins/event-modeling/`](plugins/event-modeling), registered in [`.eca-plugin/marketplace.json`](.eca-plugin/marketplace.json). It ships the per-group `emcli_*` custom tools (`eca.json`), the `emcli-authoring` and `em-facilitation` skills, and the `event-modeler`, `em-author` and `wireframer` prompts.
 
-To use it in your project, copy the plugin, skills, and prompt into place:
-
-```
-cp /path/to/emcli/.dirge/plugins/emcli.janet ~/.config/dirge/plugins/
-cp -r /path/to/emcli/.dirge/skills/emcli-authoring ~/.config/dirge/skills/
-cp -r /path/to/emcli/.dirge/skills/event-model ~/.config/dirge/skills/
-cp /path/to/emcli/.dirge/prompts/em.md ~/.config/dirge/prompts/
-```
-
-Or, to keep it project-local, copy into the project's `.dirge/` directory instead.
-
-### Auto-approving emcli tool calls
-
-When using the `em` prompt you can safely auto-approve all tool calls by this plugin like this:
-
-```
-dirge --prompt em
-/allow add plugin_tool *
-```
-
-The `/allow add` grant persists for the session. The `deny_tools` list is enforced at the permission layer, so built-in tools are hard-blocked regardless of mode.
+The authoring skill lives at `plugins/event-modeling/skills/emcli-authoring/SKILL.md`.
 
 ## Why?
 
