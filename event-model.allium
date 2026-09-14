@@ -3,7 +3,7 @@
 
 -- Scope: Authoring of Event Models via a CLI tool (create & update)
 -- Includes:
---   - Canonical model: EventModel, Timeline, Slice, Element
+--   - Canonical model: EventModel, Timeline, Swimlane, Slice, Element
 --     (Command / Event / ReadModel / Screen / Automation), Field,
 --     Specification (Given / When / Then)
 --   - Single-source Elements, referenced from slices across timelines
@@ -11,6 +11,10 @@
 --     traces to a source (carried from an incoming connection's source element,
 --     derived from named source fields, or introduced via an operator override),
 --     rolled up into a derived per-element completeness verdict
+--   - Screen layouts: a screen element may carry a wireframe, a tree of layout
+--     nodes (rows, columns, headings, inputs, actions, content) addressed by
+--     stable node ids and referring only to that screen's own fields. A
+--     wireframe says what a screen presents and accepts, never how it is drawn.
 --   - Import & export of the eventmodeling.schema.json interchange format,
 --     round-tripped at the semantic level
 --   - A live, read-only change stream a frontend subscribes to in order to
@@ -18,7 +22,12 @@
 -- Excludes:
 --   - Canvas / whiteboard format (an external LLM agent drives this CLI to
 --     recreate canvas models; no native canvas parser)
---   - Visual layout (positions, colours, handles, node snapshots)
+--   - Visual presentation: pixel layout, positions, colours, typography, and
+--     rendering a wireframe to HTML/SVG (a separate consumer's concern)
+--   - Durable storage of the model between process lifetimes: the model's
+--     existence is given to this specification, not authored by it
+--   - LLM tool manifests derived from this surface, and the harnesses that
+--     consume them (delivery mechanism, not domain)
 --   - CLI argument parsing & terminal output (delivery mechanism, not domain)
 -- Interchange format:
 --   github.com/dilgerma/event-modeling-spec  eventmodeling.schema.json
@@ -123,8 +132,14 @@ entity Element {
     -- typically sit outside any consistency boundary.
     swimlane: Swimlane?
 
-    -- Screen elements may carry a wireframe reference (image URL or Figma link).
+    -- A screen element may point at an external mockup (image URL or Figma
+    -- link), shown instead of - or alongside - a layout tree.
     image_url: String?
+
+    -- A screen's layout tree (see WireframeNode). Absent until its first node is
+    -- added, and absent again once the whole tree is removed. Only screens carry
+    -- one.
+    wireframe: WireframeNode?
 
     -- Reverse references, walked by cascade-on-delete.
     placements: ElementPlacement with element = this
@@ -209,6 +224,61 @@ value FieldOrigin {
     origin: user_input | generated | external
 }
 
+-- Screen layout vocabulary (the wireframe DSL) ------------------------------
+
+-- The tags a layout node may carry, by role:
+--   layout     - canvas (the node a layout is rooted at), row, col, divider
+--   typography - h1, h2, h3, text, span (those that carry text content)
+--   input      - input, textarea, dropdown, checkbox, toggle
+--   action     - button, icon-button
+--   content    - link, image, icon, alert
+enum WireframeTag {
+    canvas | row | col | divider
+    h1 | h2 | h3 | text | span
+    input | textarea | dropdown | checkbox | toggle
+    button | `icon-button`
+    link | image | icon | alert
+}
+
+-- The attributes a node may carry, besides its node id. Which of them a given
+-- tag admits, which are mandatory for it, and the value type and allowed set
+-- each takes, is that tag's schema: the full per-tag matrix is tabulated in
+-- doc/wireframe-dsl.md. Values are always expressible as text (a flag as
+-- "true"/"false", a choice as its name, a list comma-separated), which is how an
+-- operator supplies them.
+enum WireframeAttributeName {
+    align | gap | width | tone | type | aspect | size | variant
+    name | label | placeholder | alt | `aria-label` | options | text
+    required | default | disabled | `field-name` | `command-input`
+}
+
+-- One attribute set on a layout node.
+value WireframeAttribute {
+    name: WireframeAttributeName
+    value: String
+}
+
+-- One node of a screen's layout tree: a tag, that tag's attributes, a text
+-- content (only where the tag carries one), and child nodes (only where the tag
+-- is a container).
+--
+-- node_id is a stable address ("n1", "n2", ...) allocated when the node is
+-- created: one past the highest id currently in the tree, and never reused, so
+-- removing a node neither shifts nor recycles any other node's id and an address
+-- read once stays valid across unrelated edits. Node ids address nodes for
+-- editing only; the rest of the canonical model knows nothing of them.
+value WireframeNode {
+    node_id: String
+    tag: WireframeTag
+
+    attributes: List<WireframeAttribute>
+
+    -- The node's text content, where its tag carries one.
+    text: String?
+
+    children: List<WireframeNode>
+}
+
 entity Specification {
     slice: Slice
     title: String
@@ -255,30 +325,59 @@ value Example {
 }
 
 -- ---------------------------------------------------------------------------
+-- Config
+-- ---------------------------------------------------------------------------
+
+config {
+    -- How many candidates name resolution returns per queried name, and the
+    -- size of the near-miss suggestion set as well (NameResolution). The bound
+    -- is what keeps a resolve response a function of the number of names asked
+    -- about rather than of the size of the model.
+    resolve_candidate_cap: Integer = 5
+}
+
+-- ---------------------------------------------------------------------------
 -- Authoring operations
 -- ---------------------------------------------------------------------------
 
 -- Timelines ----------------------------------------------------------------
 
+-- Two conventions hold across the operations below.
+--
+-- Optional pre-assigned identity: every operation that creates an entity accepts
+-- an optional `id`, so a caller can name an entity before it exists. Identity is
+-- one sequence shared by every entity of a model, so an id already in use by any
+-- entity of any type is rejected rather than silently overwriting or colliding;
+-- an omitted id is allocated by the model. Identity is otherwise opaque to this
+-- specification (see the note under ModelChangeStream).
+--
+-- Non-blank names: every operation taking a name, title or field name rejects a
+-- blank one, so no entity can be created or renamed to an unusable, unnameable
+-- state.
+
 rule CreateTimeline {
-    when: CreateTimeline(model, title)
+    when: CreateTimeline(model, title, id?)
+    requires: title != ""
     ensures: Timeline.created(model: model, title: title)
 }
 
 rule RenameTimeline {
     when: RenameTimeline(timeline, new_title)
+    requires: new_title != ""
     ensures: timeline.title = new_title
 }
 
 -- Swimlanes -----------------------------------------------------------------
 
 rule CreateSwimlane {
-    when: CreateSwimlane(model, name, index)
+    when: CreateSwimlane(model, name, index, id?)
+    requires: name != ""
     ensures: Swimlane.created(model: model, name: name, index: index)
 }
 
 rule RenameSwimlane {
     when: RenameSwimlane(lane, new_name)
+    requires: new_name != ""
     ensures: lane.name = new_name
 }
 
@@ -289,6 +388,7 @@ rule ReorderSwimlane {
 
 rule RenameElement {
     when: RenameElement(element, new_name)
+    requires: new_name != ""
     ensures: element.name = new_name
 }
 
@@ -304,7 +404,8 @@ rule DeleteSwimlaneCascades {
 -- Slices --------------------------------------------------------------------
 
 rule AddSlice {
-    when: AddSlice(timeline, title, kind, index)
+    when: AddSlice(timeline, title, kind, index, id?)
+    requires: title != ""
     ensures: Slice.created(
         timeline: timeline,
         title: title,
@@ -337,7 +438,8 @@ rule SetSliceKind {
 -- Elements ------------------------------------------------------------------
 
 rule CreateElement {
-    when: CreateElement(model, name, kind)
+    when: CreateElement(model, name, kind, id?)
+    requires: name != ""
     ensures: Element.created(
         model: model,
         name: name,
@@ -347,7 +449,7 @@ rule CreateElement {
 }
 
 -- Field editing touches a single field by name, preserving the rest of the
--- element's field list (subfields included). Two black-box collection helpers
+-- element's field list (subfields included). Three black-box collection helpers
 -- express the shared key-based semantics used throughout the authoring
 -- operations below:
 --   upsert_by(list, item, key_of): returns the list with `item` replacing any
@@ -355,11 +457,16 @@ rule CreateElement {
 --     `item` added when no entry matches; every other entry is preserved.
 --   remove_by(list, key, key_of): returns the list with every entry whose key
 --     equals `key` removed; every other entry is preserved.
+--   next_index(list): the sort key that places a new entry after every existing
+--     one - one past the highest key in the list, or 0 for an empty list. Order
+--     is a sort key only, so this merely makes the new entry render last until
+--     the operator reorders it.
 
 -- Upsert `field` into the element's fields, replacing any existing field with
 -- the same name; the rest of the list is preserved.
 rule AddField {
     when: AddField(element, field)
+    requires: field.name != ""
     ensures: element.fields = upsert_by(element.fields, field, f => f.name)
 }
 
@@ -392,6 +499,7 @@ rule SetImageUrl {
 -- replacing any existing entry for the same field name; the rest is preserved.
 rule AddFieldOrigin {
     when: AddFieldOrigin(element, field, origin)
+    requires: field != ""
     let entry = FieldOrigin{ field: field, origin: origin }
     ensures: element.field_origins = upsert_by(element.field_origins, entry, o => o.field)
 }
@@ -404,9 +512,17 @@ rule RemoveFieldOrigin {
 
 -- Placements ----------------------------------------------------------------
 
+-- A placement is appended after the slice's existing ones: its index is one past
+-- the highest index already in the slice, or zero when it is the first. The same
+-- element may be placed in a slice more than once, so placements are not keyed by
+-- element.
 rule PlaceElement {
-    when: PlaceElement(slice, element)
-    ensures: ElementPlacement.created(slice: slice, element: element)
+    when: PlaceElement(slice, element, id?)
+    ensures: ElementPlacement.created(
+        slice: slice,
+        element: element,
+        index: next_index(slice.placements)
+    )
 }
 
 rule RemovePlacement {
@@ -417,7 +533,7 @@ rule RemovePlacement {
 -- Connections ---------------------------------------------------------------
 
 rule Connect {
-    when: Connect(from, to)
+    when: Connect(from, to, id?)
     ensures: Connection.created(model: from.model, from: from, to: to)
 }
 
@@ -434,6 +550,8 @@ rule Disconnect {
 -- is preserved.
 rule AddDerivation {
     when: AddDerivation(connection, target_field, source_fields)
+    requires: target_field != ""
+    requires: source_fields.count > 0
     let entry = FieldDerivation{ target_field: target_field, source_fields: source_fields }
     ensures: connection.derivations = upsert_by(connection.derivations, entry, d => d.target_field)
 }
@@ -447,13 +565,14 @@ rule RemoveDerivation {
 -- Specifications (Given / When / Then) --------------------------------------
 
 rule AddSpecification {
-    when: AddSpecification(slice, title)
+    when: AddSpecification(slice, title, id?)
+    requires: title != ""
     ensures: Specification.created(slice: slice, title: title)
 }
 
 -- Add a normal step that asserts about an existing element.
 rule AddSpecStep {
-    when: AddSpecStep(spec, clause, element, index)
+    when: AddSpecStep(spec, clause, element, index, id?)
     ensures: SpecStep.created(
         spec: spec,
         clause: clause,
@@ -466,7 +585,8 @@ rule AddSpecStep {
 
 -- Add an error outcome (a then-step with no element).
 rule AddErrorStep {
-    when: AddErrorStep(spec, error_name, index)
+    when: AddErrorStep(spec, error_name, index, id?)
+    requires: error_name != ""
     ensures: SpecStep.created(
         spec: spec,
         clause: then_step,
@@ -496,17 +616,19 @@ rule AddStepExample {
     ensures: step.examples = upsert_by(step.examples, entry, e => e.field_name)
 
     @guidance
-        -- This rule is the single authoring entry point for example values and
-        -- now owns their shape validation: it rejects any AddStepExample whose
+        -- This rule is the authoring surface's entry point for example values
+        -- and owns their shape validation: it rejects any AddStepExample whose
         -- field_name or field_value is blank, rather than trusting adapters to
-        -- pre-validate (that guard formerly lived in CLI-adapter code that
-        -- called the now-removed SetStepExamples). A historical bug persisted
-        -- CLI --examples-json objects keyed `field`/`value` verbatim without
-        -- mapping them to the Example shape, so read paths (GET model,
+        -- pre-validate (that guard formerly lived in CLI-adapter code). A
+        -- historical bug persisted CLI objects keyed `field`/`value` verbatim
+        -- without mapping them to the Example shape, so read paths (GET model,
         -- ModelChangeStream) saw empty examples. The requires guards here reject
         -- that at the source; the ExamplesWellFormed invariant catches any
         -- residual empty-string degradation reaching persisted state by any
-        -- other path.
+        -- other path. A whole-list replace form of this edit still exists
+        -- internally (the interchange import uses it to re-attach a document's
+        -- examples), but it is not exposed on the authoring surface, so this
+        -- rule is the only shape-validated entry point an operator has.
 }
 
 -- Remove the example for `field_name`; the rest is preserved.
@@ -518,6 +640,124 @@ rule RemoveStepExample {
 rule SetStepExpectEmpty {
     when: SetStepExpectEmpty(step, value)
     ensures: step.expect_empty = value
+}
+
+-- Wireframes ----------------------------------------------------------------
+
+-- Wireframe editing works on a screen's layout tree as a whole: every edit is
+-- validated before it is applied, so an operation that would leave the tree
+-- malformed, or that would leave it referring to a field the screen does not
+-- have, is rejected and changes nothing. That second check runs at edit time
+-- only: removing a field afterwards is not blocked, so a stored layout can be
+-- left referring to a field that no longer exists (see the open question on
+-- removing referenced fields).
+--
+-- The tag vocabulary is the black box here; the full per-tag matrix is tabulated
+-- in doc/wireframe-dsl.md. These helpers express it:
+--   tag_schema_valid(tag, attributes): `attributes` are exactly the attributes
+--     `tag` admits, every attribute `tag` requires is present, and each value
+--     holds the type - and, where the tag declares one, lies within the allowed
+--     set - that the tag's schema declares for it.
+--   attribute_admitted(tag, attribute) and
+--     attribute_value_valid(tag, attribute, value): the per-attribute halves of
+--     the same check.
+--   text_tag(tag): the tag carries a text content.
+--   fields_resolve(screen, attributes): every field-name value among
+--     `attributes` names a field declared on `screen`, so a layout refers only
+--     to the fields of the screen that owns it.
+--   wireframe_well_formed(node): the tree rooted at `node` is structurally
+--     valid: every tag is known, every node's attributes satisfy its tag's
+--     schema, leaf tags carry no children, text tags carry a text content
+--     instead of child nodes, container tags carry child nodes, and the root is
+--     the canvas node.
+-- Tree addressing, and the edits themselves:
+--   empty_wireframe: a layout consisting of just its canvas root.
+--   root_node_id(tree), node_exists(tree, node_id), node_tag(tree, node_id),
+--     next_node_id(tree).
+--   append_node(tree, parent, node), insert_before(tree, sibling, node),
+--     set_node_attribute(tree, node, attribute, value),
+--     set_node_text(tree, node, text), remove_node(tree, node).
+
+-- Append a node as the last child of `parent`, or of the root when no parent is
+-- named. Only container tags take children, so this is what grows a tree; `text`
+-- supplies the content of a text tag. A screen with no layout yet starts from an
+-- empty wireframe.
+rule AddWireframeNode {
+    when: AddWireframeNode(screen, tag, attributes, parent?, text?)
+    requires: screen.kind = screen
+    requires: tag_schema_valid(tag, attributes)
+    requires: fields_resolve(screen, attributes)
+    let tree = screen.wireframe ?? empty_wireframe
+    let node = WireframeNode{
+        node_id: next_node_id(tree),
+        tag: tag,
+        attributes: attributes,
+        text: text,
+        children: []
+    }
+    ensures: screen.wireframe = append_node(tree, parent, node)
+
+    @guidance
+        -- A named parent that does not exist falls back to the root rather than
+        -- being rejected; see the open question on unknown parents.
+}
+
+-- Insert a node immediately before an existing sibling, preserving the target
+-- sibling's position and every existing node id. The root has no parent, so it
+-- cannot be a target.
+rule AddWireframeNodeBefore {
+    when: AddWireframeNodeBefore(screen, sibling, tag, attributes, text?)
+    requires: screen.kind = screen
+    requires: screen.wireframe != null
+    requires: node_exists(screen.wireframe, sibling)
+    requires: sibling != root_node_id(screen.wireframe)
+    requires: tag_schema_valid(tag, attributes)
+    requires: fields_resolve(screen, attributes)
+    let node = WireframeNode{
+        node_id: next_node_id(screen.wireframe),
+        tag: tag,
+        attributes: attributes,
+        text: text,
+        children: []
+    }
+    ensures: screen.wireframe = insert_before(screen.wireframe, sibling, node)
+}
+
+-- Replace one attribute of a node, leaving that node's other attributes, its
+-- children and every node id untouched. The attribute must be one the node's tag
+-- admits, carrying a value of the type that tag's schema declares for it.
+rule SetWireframeAttr {
+    when: SetWireframeAttr(screen, node, attribute, value)
+    requires: screen.wireframe != null
+    requires: node_exists(screen.wireframe, node)
+    requires: attribute_admitted(node_tag(screen.wireframe, node), attribute)
+    requires: attribute_value_valid(node_tag(screen.wireframe, node), attribute, value)
+    requires: fields_resolve(screen, [{name: attribute, value: value}])
+    ensures: screen.wireframe = set_node_attribute(screen.wireframe, node, attribute, value)
+}
+
+-- Replace the text content of a text tag, leaving its attributes and children
+-- alone.
+rule SetWireframeText {
+    when: SetWireframeText(screen, node, text)
+    requires: screen.wireframe != null
+    requires: node_exists(screen.wireframe, node)
+    requires: text_tag(node_tag(screen.wireframe, node))
+    ensures: screen.wireframe = set_node_text(screen.wireframe, node, text)
+}
+
+-- Remove a node together with its whole subtree; unaffected nodes keep their
+-- ids. Removing the root removes the screen's layout entirely - the screen
+-- itself is untouched and may carry a new layout later.
+rule DeleteWireframeNode {
+    when: DeleteWireframeNode(screen, node)
+    requires: screen.wireframe != null
+    requires: node_exists(screen.wireframe, node)
+    ensures:
+        if node = root_node_id(screen.wireframe):
+            screen.wireframe = null
+        else:
+            screen.wireframe = remove_node(screen.wireframe, node)
 }
 
 -- Change stream subscriptions -----------------------------------------------
@@ -653,6 +893,18 @@ invariant ValidConnectionKinds {
         (c.from.kind = automation and c.to.kind = command)
 }
 
+-- A layout tree is always structurally well-formed: known tags only, each node's
+-- attributes exactly as its tag's schema admits, no children on leaf tags, a
+-- text content (and no child nodes) on text tags, child nodes (and no text
+-- content) on container tags, and a canvas root. Every wireframe edit validates
+-- the resulting tree before it is applied, so this holds at every observable
+-- state.
+invariant WireframeWellFormed {
+    for e in Elements:
+        e.wireframe != null implies (
+            e.kind = screen and wireframe_well_formed(e.wireframe))
+}
+
 -- ---------------------------------------------------------------------------
 -- Interchange format contract
 -- ---------------------------------------------------------------------------
@@ -675,9 +927,9 @@ contract SchemaCodec {
         -- canonical model is the source of truth, so everything the interchange
         -- format can carry round-trips without loss. Fields the
         -- eventmodeling.schema.json format has no place for - Connection.derivations,
-        -- Element.field_origins and Swimlane.index (see the dropped-fields
-        -- guidance) - are excluded from this guarantee; they are dropped on
-        -- export like the other unrepresentable fields.
+        -- Element.field_origins, Element.wireframe and Swimlane.index (see the
+        -- dropped-fields guidance) - are excluded from this guarantee; they are
+        -- dropped on export like the other unrepresentable fields.
 
     @invariant SchemaRoundtrip
         -- Round-tripping a foreign document is semantic, not byte-lossless. For
@@ -725,6 +977,12 @@ contract SchemaCodec {
         --     aggregate ordering (aggregates are bare names on elements), so the
         --     order is dropped on export; swimlane NAMES still round-trip via
         --     element.aggregate. Reimported swimlanes fall back to creation order.
+        --   * Element.wireframe: a screen's layout tree is authoring-only in the
+        --     same way. The format describes an element's name, kind, context,
+        --     fields and aggregate, but carries no layout of any kind, so a
+        --     wireframe is dropped on export and not reconstructed on import. A
+        --     screen's fields still round-trip; only the layout that presents
+        --     them is lost.
         -- Preserved mappings: slice.context <-> Timeline.title;
         --   element.aggregate <-> Swimlane.name; sliceType <-> Slice.kind;
         --   element.context <-> Element.context;
@@ -734,13 +992,19 @@ contract SchemaCodec {
 
 -- @note SchemaCodec import/export is implemented in emcli.schema: export
 -- rejects models that are not export-ready and drops the fields with no schema
--- representation - informational slices, the technical/visual fields, and the
+-- representation - informational slices, the technical/visual fields, the
 -- information-completeness provenance (Connection.derivations,
--- Element.field_origins) - emitting one embedded element per placement sharing
--- the element's groupId; import collapses elements by groupId and deduplicates
--- dependencies back into connections. ModelRoundtrip (over the schema-
--- representable subset) and the groupId/dependency identity invariants are
--- covered by emcli.schema-test.
+-- Element.field_origins) and screen layouts (Element.wireframe) - emitting one
+-- embedded element per placement sharing the element's groupId; import collapses
+-- elements by groupId and deduplicates dependencies back into connections.
+-- ModelRoundtrip (over the schema-representable subset) and the
+-- groupId/dependency identity invariants are covered by emcli.schema-test.
+--
+-- @note Import applies a document through the same operations an operator uses,
+-- so the always-on authoring invariants hold while importing too: a document
+-- those invariants admit imports cleanly, while a document they reject has no
+-- representation in the canonical model at all. When that applies is an open
+-- question below.
 
 -- The live change stream a frontend consumes to visualise a model as it is
 -- edited. Outbound only: the frontend receives changes, never issues edits over
@@ -761,6 +1025,12 @@ contract ChangeStream {
         -- Every authoring operation that mutates the model (every mutating
         -- operation of the ModelAuthoring surface) produces exactly one delta,
         -- delivered in commit order to every active Subscription on that model.
+        -- A delta carries every entity whose observable state changed, not only
+        -- the entity the operation was aimed at: because an element's
+        -- completeness follows from the connections pointing at it, wiring or
+        -- unwiring an element re-states that element as well as creating or
+        -- removing the connection. Each affected entity appears once, carrying
+        -- its full new state.
 
     @invariant CanonicalShape
         -- Snapshots and deltas carry the canonical model shape - timelines,
@@ -813,8 +1083,8 @@ contract NameResolution {
         -- name/title field:
         --   exact     - case-insensitive equality;
         --   substring - case-insensitive containment, used only as a fallback;
-        --   near_miss - a small, bounded set of nearest candidates by edit
-        --               distance ("did you mean"), produced if and ONLY if
+        --   near_miss - the config.resolve_candidate_cap nearest candidates by
+        --               edit distance ("did you mean"), produced if and ONLY if
         --               neither exact nor substring matched anything for that
         --               name.
         -- Near-miss candidates never dilute a result that already has exact or
@@ -829,10 +1099,14 @@ contract NameResolution {
         -- the one hinted.
 
     @invariant NoImplicitBestPick
-        -- resolve always returns the full candidate set for each name and never
-        -- collapses it into a synthetic "best guess" field, even when exactly one
-        -- candidate matches. Disambiguation among multiple candidates is left to
-        -- the caller (the LLM or the user), never decided by this operation.
+        -- resolve reports candidates and never collapses them into a synthetic
+        -- "best guess" field, even when exactly one candidate matches.
+        -- Disambiguation among multiple candidates is left to the caller (the
+        -- LLM or the user), never decided by this operation. A name's candidate
+        -- list is capped at config.resolve_candidate_cap, so a very common name
+        -- yields a prefix of its matches rather than all of them; the result
+        -- states whether anything was left out, so a truncated list can never be
+        -- mistaken for an exhaustive one.
 
     @invariant CandidateDisambiguation
         -- Each candidate carries enough breadcrumb/location context to be told
@@ -845,11 +1119,13 @@ contract NameResolution {
 
     @invariant BoundedByQueryCount
         -- THE core architectural property: the size of a resolve response scales
-        -- with the number of names queried (times a bounded per-name candidate
-        -- cap), NOT with the total size of the model. Resolving a handful of
-        -- names costs the same against a model of thousands of elements as
-        -- against a small one. This is what keeps name resolution cheap on a
-        -- local LLM's context, versus dumping the model or a full id/name index.
+        -- with the number of names queried (times the per-name candidate cap,
+        -- config.resolve_candidate_cap), NOT with the total size of the model.
+        -- Matching itself walks the model, but what comes back is bounded by the
+        -- question asked, so resolving a handful of names costs the same against
+        -- a model of thousands of elements as against a small one. This is what
+        -- keeps name resolution cheap on a local LLM's context, versus dumping
+        -- the model or a full id/name index.
 
     @guidance
         -- Free-text / semantic resolution ("the event that fires when checkout
@@ -860,9 +1136,13 @@ contract NameResolution {
 }
 
 -- ---------------------------------------------------------------------------
--- Authoring surface (the CLI boundary)
+-- Authoring surface (the operator's boundary)
 -- ---------------------------------------------------------------------------
 
+-- Reached by a local single operator through a command-line client, which is a
+-- thin front end over these operations and the exposes projection below; the
+-- boundary and the client are separate concerns (see the scope note on
+-- delivery).
 surface ModelAuthoring {
     -- No facing actor: a local CLI has a single operator with no modelled
     -- identity or auth. The surface is scoped to one model at a time.
@@ -914,6 +1194,9 @@ surface ModelAuthoring {
             -- Whether every field on this element is sourced (carried, derived
             -- or introduced); drives the completeness affordance in the UI.
             el.is_information_complete
+            -- A screen's layout tree (absent until it has one), so an operator
+            -- or an agent can read the tree and its node ids before editing it.
+            el.wireframe
 
         for c in model.connections:
             c.from.name
@@ -921,25 +1204,25 @@ surface ModelAuthoring {
 
     provides:
         -- Timelines
-        CreateTimeline(model, title)
+        CreateTimeline(model, title, id?)
         RenameTimeline(timeline, new_title)
         DeleteTimeline(timeline)
 
         -- Swimlanes
-        CreateSwimlane(model, name, index)
+        CreateSwimlane(model, name, index, id?)
         RenameSwimlane(lane, new_name)
         ReorderSwimlane(lane, new_index)
         DeleteSwimlane(lane)
 
         -- Slices
-        AddSlice(timeline, title, kind, index)
+        AddSlice(timeline, title, kind, index, id?)
         ReorderSlice(slice, new_index)
         SetSliceStatus(slice, new_status)
         SetSliceKind(slice, new_kind)
         DeleteSlice(slice)
 
         -- Elements
-        CreateElement(model, name, kind)
+        CreateElement(model, name, kind, id?)
         AddField(element, field)
         RemoveField(element, name)
         SetElementContext(element, new_context)
@@ -950,23 +1233,30 @@ surface ModelAuthoring {
         RenameElement(element, new_name)
         DeleteElement(element)
 
+        -- Screen layouts (a screen's layout tree, edited node by node)
+        AddWireframeNode(screen, tag, attributes, parent?, text?)
+        AddWireframeNodeBefore(screen, sibling, tag, attributes, text?)
+        SetWireframeAttr(screen, node, attribute, value)
+        SetWireframeText(screen, node, text)
+        DeleteWireframeNode(screen, node)
+
         -- Placements
-        PlaceElement(slice, element)
+        PlaceElement(slice, element, id?)
         ReorderPlacement(placement, new_index)
         RemovePlacement(placement)
 
         -- Connections (a command is triggered only via a screen -> command or
         -- automation -> command connection)
-        Connect(from, to)
+        Connect(from, to, id?)
         Disconnect(connection)
         AddDerivation(connection, target_field, source_fields)
         RemoveDerivation(connection, target_field)
 
         -- Specifications (Given / When / Then)
-        AddSpecification(slice, title)
+        AddSpecification(slice, title, id?)
         DeleteSpecification(spec)
-        AddSpecStep(spec, clause, element, index)
-        AddErrorStep(spec, error_name, index)
+        AddSpecStep(spec, clause, element, index, id?)
+        AddErrorStep(spec, error_name, index, id?)
         RemoveSpecStep(step)
         AddStepExample(step, field_name, field_value)
         RemoveStepExample(step, field_name)
@@ -985,7 +1275,20 @@ surface ModelAuthoring {
         -- and the NameResolution.resolve query are also invoked through this
         -- surface (none of them being plain mutating provides: rules):
         -- import/export are governed by the SchemaCodec contract, and name
-        -- resolution by the NameResolution contract.
+        -- resolution by the NameResolution contract. Reading a screen's layout as
+        -- an addressed tree - so an operator can see which node ids exist before
+        -- editing one - is a read of the exposes projection above, not an
+        -- operation.
+        --
+        -- The optional `id` on the entity-creating operations is the pre-assigned
+        -- identity described with the rules: identity is unique across every
+        -- entity of a model, so an id already in use is rejected rather than
+        -- colliding. Operations themselves address entities by identity, not by
+        -- name; turning a name into an identity is NameResolution's job.
+        --
+        -- No operation is provided for the model itself. Its existence and its
+        -- name are given as the process starts, and it is never renamed: the
+        -- surface is scoped to one model for its lifetime.
 }
 
 -- ---------------------------------------------------------------------------
@@ -1017,13 +1320,19 @@ surface ModelChangeStream {
                     -- Per-element completeness, so the frontend can render which
                     -- elements still have unsourced fields.
                     p.element.is_information_complete
+                    -- A screen's external mockup reference (absent unless one was
+                    -- set), for a frontend that shows a mockup instead of, or
+                    -- alongside, the layout tree.
+                    p.element.image_url
+                    -- A screen's layout tree (absent until it has one), so the
+                    -- frontend can draw the screen as the author described it.
+                    p.element.wireframe
                     -- Field shape only (name/type/optional/cardinality), so the
                     -- frontend can render an element's fields directly on the
-                    -- canvas. Nested subfields are not streamed here; the full
-                    -- Field shape (subfields included) is only readable via
-                    -- SchemaCodec export or the ModelAuthoring exposes
-                    -- projection. This live stream carries only the flat
-                    -- per-field shape.
+                    -- canvas. Nested subfields are not streamed here: the full
+                    -- recursive Field shape is readable only through the
+                    -- SchemaCodec export, and this live stream carries just the
+                    -- flat per-field shape.
                     for f in p.element.fields:
                         f.name
                         f.type
@@ -1067,6 +1376,22 @@ surface ModelChangeStream {
         -- client); a WebSocket would satisfy the same contract. Subscribe opens
         -- the stream and triggers the initial snapshot; the server then pushes a
         -- delta per committed authoring mutation. This boundary is outbound only.
+        --
+        -- Identity is what ties the two messages together: every entity in a
+        -- snapshot and every entity in a delta carries the same identity, so a
+        -- consumer seeds its state from the snapshot and patches it by identity
+        -- as deltas arrive - element identity being reachable through the
+        -- placement and connection entries, which nest the element they refer
+        -- to. A snapshot also carries the same identity for entities the
+        -- interchange format has no place for (timelines, swimlanes), which is
+        -- why the stream, not the export, is what a live visualiser consumes.
+        -- An entity that is never placed or wired appears in no snapshot (the
+        -- projection is placement-bound) even though the delta that created it
+        -- still arrives here.
+        --
+        -- The same snapshot shape is also served on a one-shot read, for a client
+        -- that wants the current model without holding a stream open, with a
+        -- health check beside it. Both are delivery, not behaviour.
 }
 
 -- ---------------------------------------------------------------------------
@@ -1077,3 +1402,11 @@ surface ModelChangeStream {
 -- SchemaCodec contract above.
 
 open question "NameResolution.NameQuery.kind_hint currently records only the resolvable entity kind (Timeline/Swimlane/Slice/Element/Specification). Should it also carry a finer sub-kind hint (Element.kind: command/event/read_model/screen/automation, or Slice.kind: state_change/state_view/automation) to further rank candidates? Those are inline enums on Element/Slice today; supporting them as hint fields requires promoting them to named enums (a change to existing entities) or a parallel named enum duplicating their literals. Deferred pending a decision on whether the extra ranking signal is worth that."
+
+open question "SchemaCodec import reuses the authoring operations, so the always-on authoring invariants hold during import as well. A document those invariants reject - a state_change slice carrying two commands, say, which the interchange format's per-slice arrays happily allow - therefore has no representation in the canonical model, and PlacementMatchesSliceKind makes it unimportable. Today such a document is neither imported nor cleanly rejected: the offending placement is refused mid-import and the import returns having lost the document's entities entirely (in the running process, a model with nothing left in it). Should import reject a document the invariants forbid, naming the offending slices, or should it admit a canonical model that is simply not is_complete?"
+
+open question "AddWireframeNode treats a parent node id that does not exist as 'append at the root' rather than as an error, unlike AddWireframeNodeBefore, SetWireframeAttr, SetWireframeText and DeleteWireframeNode, which all reject an unknown node id. A mistyped parent id therefore places a node somewhere other than intended instead of failing. Should an unknown parent be rejected like an unknown sibling?"
+
+open question "The layout-to-field reference check belongs to the wireframe edits, so a layout is only checked against the screen's fields at the moment it is edited. Removing a field from a screen afterwards is not blocked, so a stored layout can name a field that no longer exists, and nothing afterwards reports the dangling reference. Should removing a field that a layout refers to be rejected, or should the affected node's reference be cleared as part of that removal?"
+
+open question "SetWireframeAttr takes its value as text and requires it to hold the type the node's tag declares for that attribute, so attributes whose declared type is a choice or a flag (variant, align, gap, width, tone, type, aspect, size, required, default, disabled, command-input) cannot be set through it at all: the text value can never satisfy the declared type, and the edit is rejected with the only route to those attributes being AddWireframeNode. Should SetWireframeAttr coerce the supplied text to the attribute's declared type, as AddWireframeNode does when it reads the same attributes from operator input?"
