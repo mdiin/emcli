@@ -35,7 +35,7 @@
                     "type": "array",
                     "items": {
                       "type": "object",
-                      "required": ["id", "title", "kind", "status", "index", "placements"],
+                      "required": ["id", "title", "kind", "status", "index", "is_complete", "placements", "specifications"],
                       "additionalProperties": false,
                       "properties": {
                         "id": { "type": "integer", "description": "Slice id" },
@@ -43,14 +43,19 @@
                         "kind": { "$ref": "#/$defs/sliceKind" },
                         "status": { "$ref": "#/$defs/sliceStatus" },
                         "index": { "type": "integer" },
+                        "is_complete": {
+                          "type": "boolean",
+                          "description": "The slice's pattern composition: one command (state_change), one read model (state_view), or one command and one automation (automation). Independent of `status`: an informational slice still reports it."
+                        },
                         "placements": {
                           "type": "array",
                           "items": {
                             "type": "object",
-                            "required": ["id", "element"],
+                            "required": ["id", "index", "element"],
                             "additionalProperties": false,
                             "properties": {
                               "id": { "type": "integer", "description": "ElementPlacement id" },
+                              "index": { "type": "integer", "description": "display order within the slice" },
                               "element": {
                                 "type": "object",
                                 "required": ["id", "name", "kind", "is_information_complete", "fields"],
@@ -84,6 +89,11 @@
                               }
                             }
                           }
+                        },
+                        "specifications": {
+                          "type": "array",
+                          "description": "The slice's specifications, in creation order.",
+                          "items": { "$ref": "#/$defs/SnapshotSpecification" }
                         }
                       }
                     }
@@ -95,11 +105,12 @@
               "type": "array",
               "items": {
                 "type": "object",
-                "required": ["id", "name"],
+                "required": ["id", "name", "index"],
                 "additionalProperties": false,
                 "properties": {
                   "id": { "type": "integer", "description": "Swimlane id" },
-                  "name": { "type": "string" }
+                  "name": { "type": "string" },
+                  "index": { "type": "integer", "description": "author-controlled display order within the model" }
                 }
               }
             },
@@ -141,6 +152,51 @@
       "properties": {
         "id": { "type": "integer", "description": "Element id" },
         "name": { "type": "string" }
+      }
+    },
+
+    "SnapshotSpecification": {
+      "type": "object",
+      "description": "A specification as projected on a snapshot slice.",
+      "required": ["id", "title", "is_complete", "steps"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "integer", "description": "Specification id" },
+        "title": { "type": "string" },
+        "is_complete": {
+          "type": "boolean",
+          "description": "One when_step naming a command (state_change/automation slice), or one then_step naming a read model (state_view slice)."
+        },
+        "steps": { "type": "array", "items": { "$ref": "#/$defs/SnapshotStep" } }
+      }
+    },
+
+    "SnapshotStep": {
+      "type": "object",
+      "description": "A given/when/then step as projected on a snapshot specification.",
+      "required": ["id", "clause", "index", "is_error", "error_name", "element", "examples"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "integer", "description": "SpecStep id" },
+        "clause": { "$ref": "#/$defs/clause" },
+        "index": { "type": "integer" },
+        "is_error": { "type": "boolean" },
+        "error_name": {
+          "type": ["string", "null"],
+          "description": "the error outcome this step asserts; null unless is_error"
+        },
+        "element": {
+          "oneOf": [
+            { "$ref": "#/$defs/connectionEnd" },
+            { "type": "null" }
+          ],
+          "description": "the element this step asserts about; null on an error step"
+        },
+        "examples": {
+          "type": "array",
+          "description": "concrete example values for the referenced element's fields",
+          "items": { "$ref": "#/$defs/Example" }
+        }
       }
     },
 
@@ -214,13 +270,14 @@
     },
     "Swimlane": {
       "type": "object",
-      "required": ["id", "type", "model", "name"],
+      "required": ["id", "type", "model", "name", "index"],
       "additionalProperties": false,
       "properties": {
         "id": { "type": "integer" },
         "type": { "const": "swimlane" },
         "model": { "type": "integer" },
-        "name": { "type": "string" }
+        "name": { "type": "string" },
+        "index": { "type": "integer", "description": "author-controlled display order within the model" }
       }
     },
     "Slice": {
@@ -262,21 +319,29 @@
           "description": "operator overrides marking fields that are legitimately introduced here",
           "items": { "$ref": "#/$defs/FieldOrigin" }
         },
+        "is_information_complete": {
+          "type": "boolean",
+          "description": "True iff every field on the element is sourced (carried, derived or introduced). Present on updated element changes; ABSENT on a created one, where the entity is sent as stored."
+        },
         "wireframe": {
-          "$ref": "#/$defs/WireframeNode",
-          "description": "hiccup-like wireframe tree; present only on screen elements that have one"
+          "oneOf": [
+            { "$ref": "#/$defs/WireframeNode" },
+            { "type": "null" }
+          ],
+          "description": "hiccup-like layout tree; absent until a screen's first node is added, and null again once its root node is deleted"
         }
       }
     },
     "Placement": {
       "type": "object",
-      "required": ["id", "type", "slice", "element"],
+      "required": ["id", "type", "slice", "element", "index"],
       "additionalProperties": false,
       "properties": {
         "id": { "type": "integer" },
         "type": { "const": "placement" },
-        "slice": { "type": "integer" },
-        "element": { "type": "integer" }
+        "slice": { "type": "integer", "description": "owning Slice id" },
+        "element": { "type": "integer", "description": "placed Element id" },
+        "index": { "type": "integer", "description": "display order within the slice" }
       }
     },
     "Connection": {
@@ -333,7 +398,8 @@
 
     "Field": {
       "type": "object",
-      "required": ["name", "type", "optional", "cardinality", "subfields"],
+      "description": "An element field as stored. `optional`, `cardinality` and `subfields` are present only when the field carries them: authoring may omit all three, and the interchange export defaults them to false, single and [].",
+      "required": ["name", "type"],
       "additionalProperties": false,
       "properties": {
         "name": { "type": "string" },
@@ -345,9 +411,9 @@
     },
 
     "SnapshotField": {
-      "description": "A field as streamed on a snapshot placement's element: shape only, no subfields. The full recursive Field shape (subfields included) travels only in delta entities.",
+      "description": "A field as streamed on a snapshot placement's element: shape only, no subfields. The full recursive Field shape (subfields included) travels only in delta entities. `optional` and `cardinality` are absent when the field was authored without them.",
       "type": "object",
-      "required": ["name", "type", "optional", "cardinality"],
+      "required": ["name", "type"],
       "additionalProperties": false,
       "properties": {
         "name": { "type": "string" },
@@ -388,25 +454,34 @@
 
     "WireframeNode": {
       "type": "array",
-      "description": "A wireframe node in hiccup-like form: [tag, attrs, ...children]. Cheshire serialises Clojure keywords as strings, so the Clojure vector `[:button {:label \"OK\" :-id \"n2\"}]` arrives on the wire as `[\"button\", {\"-id\": \"n2\", \"label\": \"OK\"}]`. The root node is always `\"screen\"`. The attrs object always contains `\"-id\"` (a stable string address used for incremental edits); other attrs are tag-specific. Children are either nested WireframeNodes or plain strings (for text-children tags such as h1, h2, h3).",
-      "minItems": 1,
+      "description": "A layout node in hiccup-like form: [tag, id-map, attrs?, ...children]. Cheshire serialises Clojure keywords as strings, so the Clojure vector `[:button {:-id \"n2\"} {:label \"OK\" :variant :primary}]` arrives on the wire as `[\"button\", {\"-id\": \"n2\"}, {\"label\": \"OK\", \"variant\": \"primary\"}]`. The first element is the tag; the second always carries \"-id\", a stable string address for incremental edits, allocated one past the highest id in the tree and never reused (so deleting a node neither shifts nor recycles another node's id). A third object, when the node has content attributes, holds those attributes in a map of its own — the id map stays separate — and the children follow it. The tree's root node is always tagged \"canvas\" (the tree IS the wireframe; there is no wrapper object). The tag and attribute vocabulary is in doc/wireframe-dsl.md.",
+      "minItems": 2,
       "prefixItems": [
-        { "type": "string", "description": "tag name (e.g. \"screen\", \"button\", \"input\")" },
+        { "type": "string", "description": "tag name (e.g. \"canvas\", \"row\", \"col\", \"button\", \"input\")" },
         {
           "type": "object",
-          "description": "node attributes; always contains \"-id\"",
+          "description": "the node's id map; always contains \"-id\" and nothing else",
           "required": ["-id"],
           "properties": {
             "-id": { "type": "string", "description": "stable node address for incremental edits" }
           },
-          "additionalProperties": { "type": ["string", "boolean", "number"] }
+          "additionalProperties": false
         }
       ],
       "items": {
         "oneOf": [
           { "$ref": "#/$defs/WireframeNode" },
-          { "type": "string", "description": "text child (only on text-children tags: h1, h2, h3, text, span)" }
+          { "type": "string", "description": "text child (only on text-children tags: h1, h2, h3, text, span)" },
+          { "$ref": "#/$defs/WireframeAttributes" }
         ]
+      }
+    },
+
+    "WireframeAttributes": {
+      "type": "object",
+      "description": "A layout node's content attributes, valid per its tag (see doc/wireframe-dsl.md). Keyword values arrive as their names, booleans as booleans, and a list-valued attribute such as a dropdown's options as an array of strings.",
+      "additionalProperties": {
+        "type": ["string", "boolean", "number", "array", "null"]
       }
     },
 
@@ -425,19 +500,20 @@
     },
     "fieldCardinality": { "enum": ["single", "list"] },
     "deltaOp": {
-      "description": "The authoring operation that produced the delta (also the SSE event name).",
+      "description": "The authoring operation that produced the delta (also the SSE event name). Every mutating operation of the ModelAuthoring surface appears here; nothing else produces a delta, and import re-snapshots instead.",
       "enum": [
         "CreateTimeline", "RenameTimeline", "DeleteTimeline",
-        "CreateSwimlane", "RenameSwimlane", "DeleteSwimlane",
+        "CreateSwimlane", "RenameSwimlane", "ReorderSwimlane", "DeleteSwimlane",
         "AddSlice", "ReorderSlice", "SetSliceStatus", "SetSliceKind", "DeleteSlice",
         "CreateElement", "SetFields", "SetElementContext", "AssignSwimlane",
         "SetImageUrl", "SetFieldOrigins", "RenameElement", "DeleteElement",
-        "PlaceElement", "RemovePlacement",
+        "AddWireframeNode", "AddWireframeNodeBefore", "SetWireframeAttr",
+        "SetWireframeText", "DeleteWireframeNode",
+        "PlaceElement", "ReorderPlacement", "RemovePlacement",
         "Connect", "Disconnect", "SetConnectionDerivations",
         "AddSpecification", "DeleteSpecification",
         "AddSpecStep", "AddErrorStep", "RemoveSpecStep",
-        "SetStepExamples", "SetStepExpectEmpty",
-        "AddWireframeNode", "SetWireframeAttr", "DeleteWireframeNode"
+        "SetStepExamples", "SetStepExpectEmpty"
       ]
     }
   }
