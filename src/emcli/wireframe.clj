@@ -274,12 +274,20 @@
                      [{:node-id node-id :field-name fn-}])]
       (concat own (mapcat field-names-in-node (filter vector? children))))))
 
+(defn field-references
+  "Every :field-name a layout names, as {:node-id str :field-name str} maps,
+  empty when there is no layout. The published form of the traversal
+  validate-semantics uses, so callers outside this namespace (e.g. a rule that
+  must not strand a reference) need no tree walk of their own."
+  [wireframe]
+  (vec (field-names-in-node wireframe)))
+
 (defn validate-semantics
   "Semantic validation: all :field-name values must exist in the screen's
   :fields array. Returns {:valid? true} or {:valid? false :errors [...]}."
   [wireframe screen-element]
   (let [field-set (set (map :name (:fields screen-element)))
-        refs      (field-names-in-node wireframe)
+        refs      (field-references wireframe)
         errs      (for [{:keys [node-id field-name]} refs
                         :when (not (contains? field-set field-name))]
                     {:node-id node-id

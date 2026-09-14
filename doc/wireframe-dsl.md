@@ -197,8 +197,10 @@ prints as just `[nN] :tag`.
   (`variant`, `align`, `tone`, `required`, `command-input`, …) is rejected — e.g.
   `variant must be a keyword` — and `options` is rejected because it needs a
   list. Those attributes can only be given a value when the node is created.
-- **Removing a field a layout refers to is not blocked.** The layout keeps its
-  `field-name` and afterwards names a field that no longer exists; nothing
-  reports the dangling reference.
-
-The last is recorded as an open question in `event-model.allium`.
+- **Removing a field a layout refers to is refused, not repaired.** `remove-field`
+  (and any field edit that drops a name) is rejected when the screen's stored
+  layout still names that field, with an error naming the field and the node ids
+  that refer to it, so a field edit cannot strand a reference. A model that
+  already holds one — written before the guard existed — is left alone: unrelated
+  field edits still go through, and the layout has to be repaired by editing or
+  deleting the referring node.

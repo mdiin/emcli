@@ -276,6 +276,34 @@
       (is (= :invalid-wireframe (:error res)))
       (is (= "wireframe validation failed: unknown attribute :align" (:message res))))))
 
+;; --- field removal vs a stored layout (BUGS.md item 5) ----------------------
+;; RemoveField now guards the removal against the screen's stored layout, so a
+;; CLI remove-field that would drop a field a node still names surfaces the
+;; rule's :field-referenced error instead of silently stranding the reference.
+
+(deftest remove-field-rejects-a-field-the-layout-names
+  (let [[a eid] (screen-app)]
+    (cmd/run a "add-field" {:element eid :name "searchTerm" :type "string"})
+    (cmd/run a "add-wireframe-node" {:element eid :tag "input" :field-name "searchTerm"})
+    (testing "the removal is refused, naming the field and the referring node"
+      (let [res (cmd/run a "remove-field" {:element eid :name "searchTerm"})]
+        (is (= :field-referenced (:error res)))
+        (is (= "searchTerm" (:field res)))
+        (is (= ["n2"] (:nodes res)))
+        (is (= "field searchTerm is referenced by layout node(s) n2 and cannot be removed"
+               (:message res)))))
+    (testing "nothing was committed: the field is still declared"
+      (is (= ["searchTerm"] (map :name (:fields (m/fetch (app/store a) :element eid))))))
+    (testing "a field no node names is still removable"
+      (cmd/run a "add-field" {:element eid :name "page" :type "int"})
+      (let [res (cmd/run a "remove-field" {:element eid :name "page"})]
+        (is (not (r/error? res)))
+        (is (= ["searchTerm"] (map :name (:fields (:result res))))))
+      (testing "and the layout still names the field it was about"
+        (is (= ["n2"] (map :node-id
+                           (wf/field-references
+                            (:wireframe (m/fetch (app/store a) :element eid))))))))))
+
 ;; NameResolution.resolve (event-model.allium): batched name -> candidate
 ;; lookup, so an LLM never has to pull the whole model to resolve a name.
 (deftest resolve-names-test

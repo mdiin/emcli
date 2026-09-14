@@ -220,12 +220,38 @@
                                                            :field_origins []} id))]
         (commit store :CreateElement [(created :element el)] el))))
 
+(defn- stranding-removal
+  "A name this edit drops (present in the element's current fields, absent from
+  `fields`) that the element's stored layout still names. Returns
+  {:field name :nodes [ids]} for the first such name, else nil. Only the removal
+  itself is checked, never the proposed state as a whole: a store that already
+  holds a stranded reference stays editable, since its guard bites only when
+  this edit would create one."
+  [el fields]
+  (let [proposed (set (map :name fields))
+        refs     (wf/field-references (:wireframe el))]
+    (some (fn [name]
+            (let [nodes (->> refs
+                             (filter #(= name (:field-name %)))
+                             (map :node-id)
+                             distinct
+                             vec)]
+              (when (seq nodes) {:field name :nodes nodes})))
+          (remove proposed (map :name (:fields el))))))
+
+(defn- referenced-field-error [{:keys [field nodes]}]
+  {:error :field-referenced :field field :nodes nodes
+   :message (str "field " field " is referenced by layout node(s) "
+                 (str/join ", " nodes) " and cannot be removed")})
+
 (defn set-fields [store {:keys [element fields]}]
   (or (require-entity store :element element)
       (require-valid-fields fields)
-      (let [store (m/set-field store :element element :fields (vec fields))]
-        (commit store :SetFields [(updated store :element element)]
-                (m/fetch store :element element)))))
+      (or (when-let [stranded (stranding-removal (m/fetch store :element element) fields)]
+            (referenced-field-error stranded))
+          (let [store (m/set-field store :element element :fields (vec fields))]
+            (commit store :SetFields [(updated store :element element)]
+                    (m/fetch store :element element))))))
 
 ;; Convenience composite (a CLI affordance, not a domain operation): append (or
 ;; replace by name) a single field, preserving the element's others. Decomposes

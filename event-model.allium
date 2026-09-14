@@ -471,8 +471,13 @@ rule AddField {
 }
 
 -- Remove the field named `name` from the element's fields; the rest is preserved.
+-- A name the element's stored layout still names cannot be removed: the guard is
+-- on the removal itself, not on every field edit whose proposed state fails to
+-- resolve, so a store that already holds a stranded reference stays editable.
 rule RemoveField {
     when: RemoveField(element, name)
+    requires: not (element.fields.any(f => f.name = name)
+                   and field_referenced_by_layout(element, name))
     ensures: element.fields = remove_by(element.fields, name, f => f.name)
 }
 
@@ -647,10 +652,10 @@ rule SetStepExpectEmpty {
 -- Wireframe editing works on a screen's layout tree as a whole: every edit is
 -- validated before it is applied, so an operation that would leave the tree
 -- malformed, or that would leave it referring to a field the screen does not
--- have, is rejected and changes nothing. That second check runs at edit time
--- only: removing a field afterwards is not blocked, so a stored layout can be
--- left referring to a field that no longer exists (see the open question on
--- removing referenced fields).
+-- have, is rejected and changes nothing. The reference is protected from the
+-- field side too: an edit that would remove a field name the screen's stored
+-- layout still names is rejected (see RemoveField), so no field edit can strand
+-- a layout reference.
 --
 -- The tag vocabulary is the black box here; the full per-tag matrix is tabulated
 -- in doc/wireframe-dsl.md. These helpers express it:
@@ -670,6 +675,11 @@ rule SetStepExpectEmpty {
 --   fields_resolve(screen, attributes): every field-name value among
 --     `attributes` names a field declared on `screen`, so a layout refers only
 --     to the fields of the screen that owns it.
+--   field_referenced_by_layout(screen, name): a node in `screen`'s stored layout
+--     still names the field `name` through its field-name attribute; false when
+--     the screen carries no layout, or no node names that field. A field a
+--     stored layout names may not be removed (see RemoveField), so no field edit
+--     can leave a layout referring to a field the screen no longer declares.
 --   wireframe_well_formed(node): the tree rooted at `node` is structurally
 --     valid: every tag is known, every node's attributes satisfy its tag's
 --     schema, leaf tags carry no children, text tags carry a text content
@@ -1411,5 +1421,3 @@ surface ModelChangeStream {
 -- SchemaCodec contract above.
 
 open question "NameResolution.NameQuery.kind_hint currently records only the resolvable entity kind (Timeline/Swimlane/Slice/Element/Specification). Should it also carry a finer sub-kind hint (Element.kind: command/event/read_model/screen/automation, or Slice.kind: state_change/state_view/automation) to further rank candidates? Those are inline enums on Element/Slice today; supporting them as hint fields requires promoting them to named enums (a change to existing entities) or a parallel named enum duplicating their literals. Deferred pending a decision on whether the extra ranking signal is worth that."
-
-open question "The layout-to-field reference check belongs to the wireframe edits, so a layout is only checked against the screen's fields at the moment it is edited. Removing a field from a screen afterwards is not blocked, so a stored layout can name a field that no longer exists, and nothing afterwards reports the dangling reference. Should removing a field that a layout refers to be rejected, or should the affected node's reference be cleared as part of that removal?"

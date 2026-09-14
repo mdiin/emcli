@@ -398,3 +398,70 @@
         store       (:store (s/ok store r/add-wireframe-node {:element eid :tag :col :parent "n1"}))
         err         (s/err store r/add-wireframe-node-before {:element eid :before "n99" :tag :divider :attrs {}})]
     (is (= :not-found (:error err)))))
+
+;; --- field removal vs a stored layout reference (BUGS.md item 5) -----------
+;; RemoveField guards the removal itself: an edit that drops a field name the
+;; screen's stored layout still names is refused, so a field edit cannot strand
+;; the reference. A store that already holds one stays editable.
+
+(defn- screen-with-layout-naming
+  "A store with one screen declaring :searchTerm and an :input node naming it.
+  Returns [store element-id]."
+  []
+  (let [[store eid] (screen-with-field)]
+    [(:store (s/ok store r/add-wireframe-node {:element eid :tag :input
+                                               :attrs {:field-name "searchTerm"}
+                                               :parent "n1"}))
+     eid]))
+
+(deftest remove-field-rejects-a-field-a-layout-still-names
+  (let [[store eid] (screen-with-layout-naming)
+        err         (s/err store r/remove-field {:element eid :name "searchTerm"})]
+    (testing "the removal is refused, naming the field and the node referring to it"
+      (is (= :field-referenced (:error err)))
+      (is (= "searchTerm" (:field err)))
+      (is (= ["n2"] (:nodes err)))
+      (is (re-find #"searchTerm" (:message err)))
+      (is (re-find #"n2" (:message err))))
+    (testing "nothing was committed: the field is still declared"
+      (is (= ["searchTerm"] (map :name (:fields (m/fetch store :element eid))))))))
+
+(deftest set-fields-rejects-dropping-a-referenced-field
+  (let [[store eid] (screen-with-layout-naming)
+        store       (:store (s/ok store r/add-field {:element eid :field {:name "page" :type :int}}))
+        err         (s/err store r/set-fields {:element eid :fields [{:name "page" :type :int}]})]
+    (testing "a whole-list replace that drops the referenced name is refused too"
+      (is (= :field-referenced (:error err)))
+      (is (= "searchTerm" (:field err)))
+      (is (= ["n2"] (:nodes err))))))
+
+(deftest field-edits-not-removing-a-referenced-name-still-succeed
+  (testing "a field no node names can be removed while the layout stays"
+    (let [[store eid] (screen-with-layout-naming)
+          store       (:store (s/ok store r/add-field {:element eid :field {:name "page" :type :int}}))
+          res         (s/ok store r/remove-field {:element eid :name "page"})]
+      (is (= ["searchTerm"] (map :name (:fields (:result res)))))))
+  (testing "adding a field is unaffected"
+    (let [[store eid] (screen-with-layout-naming)
+          res         (s/ok store r/add-field {:element eid :field {:name "page" :type :int}})]
+      (is (= ["searchTerm" "page"] (map :name (:fields (:result res)))))))
+  (testing "a whole-list replace that keeps the referenced name is accepted"
+    (let [[store eid] (screen-with-layout-naming)
+          res         (s/ok store r/set-fields {:element eid
+                                                :fields [{:name "searchTerm" :type :string}]})]
+      (is (= ["searchTerm"] (map :name (:fields (:result res)))))))
+  (testing "a screen with no layout is unaffected"
+    (let [[store eid] (screen-with-field)
+          res         (s/ok store r/remove-field {:element eid :name "searchTerm"})]
+      (is (empty? (:fields (:result res)))))))
+
+(deftest a-store-already-holding-a-stranded-reference-stays-editable
+  (let [[store eid] (screen-with-layout-naming)
+        store       (:store (s/ok store r/add-field {:element eid :field {:name "page" :type :int}}))
+        ;; The reference is stranded directly, the way the store can hold one
+        ;; today (written before this guard existed).
+        store       (m/set-field store :element eid :fields [{:name "page" :type :int}])]
+    (is (= ["n2"] (map :node-id (wf/field-references (:wireframe (m/fetch store :element eid))))))
+    (testing "an unrelated removal still succeeds — the rule guards the removal, not legacy state"
+      (let [res (s/ok store r/remove-field {:element eid :name "page"})]
+        (is (empty? (:fields (:result res))))))))
