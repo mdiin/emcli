@@ -115,8 +115,8 @@ the screen's own fields, so a screen can only lay out data it declares.
 - `:alert` — **`text` required**; attrs: `type` (info|warning|danger|success)
 
 Note that `:alert` takes its message as the `text` *attribute*, whereas the
-text-children tags take it as a string child through `set-text`. No other tag
-accepts `text`.
+text-children tags take it as a string child — passed as `--text` when the node
+is created, or set afterwards with `set-text`. No other tag accepts `text`.
 
 ## CLI commands
 
@@ -130,8 +130,10 @@ emcli wireframe add-node --element 42 --tag col
 emcli wireframe add-node --element 42 --tag input --parent n2 --placeholder "Search..." --field-name searchTerm
 emcli wireframe add-node --element 42 --tag button --parent n2 --label "Create order" --variant primary --command-input true
 
-# Text-children tags take their content afterwards, once they have an id
-emcli wireframe add-node --element 42 --tag h1 --parent n2
+# Text-children tags take their content up front with --text
+emcli wireframe add-node --element 42 --tag h1 --parent n2 --text "Your orders"
+
+# ...or afterwards, once the node has an id
 emcli wireframe set-text --element 42 --node n7 --text "Your orders"
 
 # Insert a node before an existing sibling (--before is the existing sibling's id)
@@ -180,16 +182,16 @@ prints as just `[nN] :tag`.
   tag's schema: `true`/`false` become booleans, choice values (`primary`,
   `center`) become keywords, a list attribute such as `options` is split on
   commas, and everything else stays a string.
+- `--text` is not an attribute: on a text-children tag (`h1`, `h2`, `h3`,
+  `text`, `span`) it becomes the new node's content, and on `:alert` it is the
+  required `text` attribute. Any other tag rejects it with
+  `unknown attribute :text for :<tag>`.
 - Errors name the node they concern, e.g. `label is required for :button`,
   `unknown attribute :bogus`, `Field 'x' does not exist on screen`, or
   `node nZZ does not exist`.
 
 ## Current limitations
 
-- **Text tags cannot take their content at creation time.** `add-node` rejects
-  `--text` for `h1`/`h2`/`h3`/`text`/`span` (`unknown attribute :text for :h1`):
-  create the node, then set its content with `set-text`. Only `:alert` accepts a
-  `text` attribute.
 - **`set-attr` can only set string-valued attributes.** The value is passed
   through as text, so an attribute whose declared type is a choice or a flag
   (`variant`, `align`, `tone`, `required`, `command-input`, …) is rejected — e.g.
@@ -202,7 +204,4 @@ prints as just `[nN] :tag`.
   `field-name` and afterwards names a field that no longer exists; nothing
   reports the dangling reference.
 
-The last three are recorded as open questions in `event-model.allium`. The first
-is a mismatch rather than a design question: the authoring rule accepts a text
-child when a node is created, but the CLI adapter rejects the `--text` flag for
-text tags before the rule is ever reached.
+The last two are recorded as open questions in `event-model.allium`.

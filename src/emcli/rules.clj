@@ -526,7 +526,7 @@
    :message (str "wireframe validation failed: "
                  (str/join "; " (map :message (:errors validation))))})
 
-(defn add-wireframe-node [store {:keys [element tag parent attrs]}]
+(defn add-wireframe-node [store {:keys [element tag parent attrs text]}]
   (or (require-entity store :element element)
       (let [el (m/fetch store :element element)]
         (or (when (not= :screen (:kind el))
@@ -535,9 +535,10 @@
             (let [seed     [:canvas {:-id "n1"}]
                   wf       (or (:wireframe el) seed)
                   schema   (wf/tag-schema tag)
-                  ;; For text-children tags, :text in attrs becomes a string child
-                  text-child (when (:text-children? schema) (:text attrs))
-                  clean-attrs (if text-child (dissoc attrs :text) attrs)
+                  ;; For text-children tags, the rule's own :text input becomes a
+                  ;; string child; a stray :text in attrs is not a node attribute
+                  text-child (when (:text-children? schema) text)
+                  clean-attrs (if (:text-children? schema) (dissoc attrs :text) attrs)
                   child    (cond-> [tag]
                              (seq clean-attrs) (conj clean-attrs)
                              text-child        (conj text-child))
@@ -550,7 +551,7 @@
                      (commit store :AddWireframeNode [(updated store :element element)]
                              (m/fetch store :element element)))))))))
 
-(defn add-wireframe-node-before [store {:keys [element before tag attrs]}]
+(defn add-wireframe-node-before [store {:keys [element before tag attrs text]}]
   (or (require-entity store :element element)
       (let [el (m/fetch store :element element)]
         (or (when (not= :screen (:kind el))
@@ -563,8 +564,10 @@
               {:error :not-found :type :wireframe-node :id before
                :message (str "node " before " does not exist")})
             (let [schema      (wf/tag-schema tag)
-                  text-child  (when (:text-children? schema) (:text attrs))
-                  clean-attrs (if text-child (dissoc attrs :text) attrs)
+                  ;; Same split as add-wireframe-node: :text is the rule's own
+                  ;; input for text-children tags, never a node attribute
+                  text-child  (when (:text-children? schema) text)
+                  clean-attrs (if (:text-children? schema) (dissoc attrs :text) attrs)
                   child       (cond-> [tag]
                                 (seq clean-attrs) (conj clean-attrs)
                                 text-child        (conj text-child))

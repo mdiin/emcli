@@ -226,9 +226,12 @@
 (deftest add-wireframe-node-appends-nested-node
   (let [[store eid] (screen-with-field)
         store       (:store (s/ok store r/add-wireframe-node {:element eid :tag :col :parent "n1"}))
-        res         (s/ok store r/add-wireframe-node {:element eid :tag :h1 :attrs {:text "Hello"} :parent "n2"})
-        el          (:result res)]
-    (is (some? (wf/find-node (:wireframe el) "n3")))))
+        res         (s/ok store r/add-wireframe-node {:element eid :tag :h1 :text "Hello" :parent "n2"})
+        el          (:result res)
+        node        (wf/find-node (:wireframe el) "n3")]
+    (is (some? node))
+    (is (some #(= "Hello" %) node)
+        ":text is the rule's own input and becomes the node's string child")))
 
 (deftest add-wireframe-node-rejects-non-screen-element
   (let [[store mid] (s/with-model)

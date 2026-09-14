@@ -6,7 +6,8 @@
             [emcli.app :as app]
             [emcli.commands :as cmd]
             [emcli.model :as m]
-            [emcli.rules :as r]))
+            [emcli.rules :as r]
+            [emcli.wireframe :as wf]))
 
 (deftest non-integer-int-arg-is-rejected
   (let [a (app/new-app "M")]
@@ -84,6 +85,65 @@
       (is (= :missing-args (:error (cmd/run a "add-field" {:element eid :name "x"})))))
     (testing "missing --element is a missing-args error"
       (is (= :missing-args (:error (cmd/run a "add-field" {:name "x" :type "uuid"})))))))
+
+;; --- wireframe add-node --text (BUGS.md item 6) -----------------------------
+;; AddWireframeNode declares text as its own input, separate from attributes, so
+;; the CLI must deliver --text to the rule rather than smuggle it into the
+;; attribute map, where parse-node-attrs correctly rejects it for text tags.
+
+(defn- screen-app
+  "An app with one screen element; returns [app screen-element-id]."
+  []
+  (let [a   (app/new-app "M")
+        eid (:id (:result (cmd/run a "create-element" {:name "OrderList" :kind "screen"})))]
+    [a eid]))
+
+(defn- node-attrs
+  "The attribute map of a wireframe node vector (its map child that is not the
+  id map), or nil."
+  [node]
+  (some #(when (and (map? %) (not (contains? % :-id))) %) (rest node)))
+
+(deftest add-wireframe-node-accepts-text-for-text-tags
+  (let [[a eid] (screen-app)]
+    (testing "a text-children tag takes --text as content, not as an attribute"
+      (let [res  (cmd/run a "add-wireframe-node" {:element eid :tag "h1" :text "Your orders"})
+            node (wf/find-node (:wireframe (:result res)) "n2")]
+        (is (not (r/error? res)))
+        (is (= :h1 (first node)))
+        (is (some #(= "Your orders" %) node)
+            "the text lands as the node's string child")
+        (is (nil? (node-attrs node))
+            "text must not become a node attribute")))))
+
+(deftest add-wireframe-node-before-accepts-text-for-text-tags
+  (let [[a eid] (screen-app)]
+    (cmd/run a "add-wireframe-node" {:element eid :tag "col"})
+    (testing "the insert-before variant delivers --text the same way"
+      (let [res  (cmd/run a "add-wireframe-node-before"
+                          {:element eid :before "n2" :tag "span" :text "Hi"})
+            node (wf/find-node (:wireframe (:result res)) "n3")]
+        (is (not (r/error? res)))
+        (is (= :span (first node)))
+        (is (some #(= "Hi" %) node))
+        (is (nil? (node-attrs node)))))))
+
+(deftest add-wireframe-node-still-rejects-text-for-other-tags
+  (let [[a eid] (screen-app)]
+    (testing "--text on a tag that takes neither text children nor a text attribute"
+      (let [res (cmd/run a "add-wireframe-node" {:element eid :tag "col" :text "nope"})]
+        (is (= :invalid-value (:error res)))
+        (is (= "unknown attribute :text for :col" (:message res)))))))
+
+(deftest add-wireframe-node-keeps-text-as-attribute-for-alert
+  (let [[a eid] (screen-app)]
+    (testing ":alert declares text in its attrs, so --text stays an attribute"
+      (let [res  (cmd/run a "add-wireframe-node" {:element eid :tag "alert"
+                                                  :text "Heads up" :type "warning"})
+            node (wf/find-node (:wireframe (:result res)) "n2")]
+        (is (not (r/error? res)))
+        (is (= "Heads up" (:text (node-attrs node))))
+        (is (= :warning (:type (node-attrs node))))))))
 
 ;; NameResolution.resolve (event-model.allium): batched name -> candidate
 ;; lookup, so an LLM never has to pull the whole model to resolve a name.

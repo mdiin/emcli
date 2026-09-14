@@ -185,30 +185,44 @@
 
     (= command "add-wireframe-node")
     (if (and (get opts :element) (get opts :tag))
-      (let [eid    (->int (get opts :element))
-            tag    (keyword (str (get opts :tag)))
-            parent (some-> (get opts :parent) str)
-            ;; All remaining opts (minus :element, :tag, :parent, :server) are attrs
-            attrs  (dissoc opts :element :tag :parent :server)
+      (let [eid       (->int (get opts :element))
+            tag       (keyword (str (get opts :tag)))
+            parent    (some-> (get opts :parent) str)
+            ;; AddWireframeNode takes text as its own input, separate from
+            ;; attributes: for a text-children tag it is the node's content, so
+            ;; it must not go through parse-node-attrs (no text tag admits a
+            ;; text attribute). Any other tag keeps :text in the attribute map,
+            ;; where :alert admits it and everything else rejects it.
+            text      (when (:text-children? (wf/tag-schema tag))
+                        (some-> (get opts :text) str))
+            ;; All remaining opts (minus :element, :tag, :parent, :server, and
+            ;; :text when it is the rule's own input) are attrs
+            attrs     (cond-> (dissoc opts :element :tag :parent :server)
+                        (some? text) (dissoc :text))
             ;; Coerce attrs per tag schema
-            parsed (wf/parse-node-attrs tag (into {} (map (fn [[k v]] [k (str v)]) attrs)))]
+            parsed    (wf/parse-node-attrs tag (into {} (map (fn [[k v]] [k (str v)]) attrs)))]
         (if (:error parsed)
           {:error :invalid-value :message (:error parsed)}
           (app/apply-rule! app r/add-wireframe-node
-                           {:element eid :tag tag :parent parent :attrs (:ok parsed)})))
+                           {:element eid :tag tag :parent parent :attrs (:ok parsed) :text text})))
       {:error :missing-args :message "add-wireframe-node requires :element and :tag"})
 
     (= command "add-wireframe-node-before")
     (if (and (get opts :element) (get opts :before) (get opts :tag))
-      (let [eid    (->int (get opts :element))
-            before (str (get opts :before))
-            tag    (keyword (str (get opts :tag)))
-            attrs  (dissoc opts :element :before :tag :server)
-            parsed (wf/parse-node-attrs tag (into {} (map (fn [[k v]] [k (str v)]) attrs)))]
+      (let [eid       (->int (get opts :element))
+            before    (str (get opts :before))
+            tag       (keyword (str (get opts :tag)))
+            ;; Same split as add-wireframe-node: text is the rule's own input for
+            ;; a text-children tag, an attribute for :alert, rejected otherwise.
+            text      (when (:text-children? (wf/tag-schema tag))
+                        (some-> (get opts :text) str))
+            attrs     (cond-> (dissoc opts :element :before :tag :server)
+                        (some? text) (dissoc :text))
+            parsed    (wf/parse-node-attrs tag (into {} (map (fn [[k v]] [k (str v)]) attrs)))]
         (if (:error parsed)
           {:error :invalid-value :message (:error parsed)}
           (app/apply-rule! app r/add-wireframe-node-before
-                           {:element eid :before before :tag tag :attrs (:ok parsed)})))
+                           {:element eid :before before :tag tag :attrs (:ok parsed) :text text})))
       {:error :missing-args :message "add-wireframe-node-before requires :element, :before and :tag"})
 
     (= command "set-wireframe-attr")
