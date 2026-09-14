@@ -671,6 +671,9 @@ rule SetStepExpectEmpty {
 --     set later through SetWireframeAttr. Text that cannot be coerced, or that
 --     falls outside the set the tag allows for the attribute, is rejected and
 --     the edit changes nothing.
+--     The String declared on WireframeAttribute.value is the form an operator
+--     supplies, not the type the model holds: the value is held as the type the
+--     tag's schema declares for that attribute.
 --   text_tag(tag): the tag carries a text content.
 --   fields_resolve(screen, attributes): every field-name value among
 --     `attributes` names a field declared on `screen`, so a layout refers only
