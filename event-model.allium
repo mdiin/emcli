@@ -354,17 +354,18 @@ config {
 --
 -- Non-blank names: every operation taking a name, title or field name rejects a
 -- blank one, so no entity can be created or renamed to an unusable, unnameable
--- state.
+-- state. The guards below state this through non_blank, a black box function:
+-- true when the string has at least one non-whitespace character.
 
 rule CreateTimeline {
     when: CreateTimeline(model, title, id?)
-    requires: title != ""
+    requires: non_blank(title)
     ensures: Timeline.created(model: model, title: title)
 }
 
 rule RenameTimeline {
     when: RenameTimeline(timeline, new_title)
-    requires: new_title != ""
+    requires: non_blank(new_title)
     ensures: timeline.title = new_title
 }
 
@@ -372,13 +373,13 @@ rule RenameTimeline {
 
 rule CreateSwimlane {
     when: CreateSwimlane(model, name, index, id?)
-    requires: name != ""
+    requires: non_blank(name)
     ensures: Swimlane.created(model: model, name: name, index: index)
 }
 
 rule RenameSwimlane {
     when: RenameSwimlane(lane, new_name)
-    requires: new_name != ""
+    requires: non_blank(new_name)
     ensures: lane.name = new_name
 }
 
@@ -389,7 +390,7 @@ rule ReorderSwimlane {
 
 rule RenameElement {
     when: RenameElement(element, new_name)
-    requires: new_name != ""
+    requires: non_blank(new_name)
     ensures: element.name = new_name
 }
 
@@ -406,7 +407,7 @@ rule DeleteSwimlaneCascades {
 
 rule AddSlice {
     when: AddSlice(timeline, title, kind, index, id?)
-    requires: title != ""
+    requires: non_blank(title)
     ensures: Slice.created(
         timeline: timeline,
         title: title,
@@ -440,7 +441,7 @@ rule SetSliceKind {
 
 rule CreateElement {
     when: CreateElement(model, name, kind, id?)
-    requires: name != ""
+    requires: non_blank(name)
     ensures: Element.created(
         model: model,
         name: name,
@@ -467,7 +468,7 @@ rule CreateElement {
 -- the same name; the rest of the list is preserved.
 rule AddField {
     when: AddField(element, field)
-    requires: field.name != ""
+    requires: non_blank(field.name)
     ensures: element.fields = upsert_by(element.fields, field, f => f.name)
 }
 
@@ -505,7 +506,7 @@ rule SetImageUrl {
 -- replacing any existing entry for the same field name; the rest is preserved.
 rule AddFieldOrigin {
     when: AddFieldOrigin(element, field, origin)
-    requires: field != ""
+    requires: non_blank(field)
     let entry = FieldOrigin{ field: field, origin: origin }
     ensures: element.field_origins = upsert_by(element.field_origins, entry, o => o.field)
 }
@@ -557,7 +558,7 @@ rule Disconnect {
 -- is preserved.
 rule AddDerivation {
     when: AddDerivation(connection, target_field, source_fields)
-    requires: target_field != ""
+    requires: non_blank(target_field)
     requires: source_fields.count > 0
     let entry = FieldDerivation{ target_field: target_field, source_fields: source_fields }
     ensures: connection.derivations = upsert_by(connection.derivations, entry, d => d.target_field)
@@ -573,7 +574,7 @@ rule RemoveDerivation {
 
 rule AddSpecification {
     when: AddSpecification(slice, title, id?)
-    requires: title != ""
+    requires: non_blank(title)
     ensures: Specification.created(slice: slice, title: title)
 }
 
@@ -593,7 +594,7 @@ rule AddSpecStep {
 -- Add an error outcome (a then-step with no element).
 rule AddErrorStep {
     when: AddErrorStep(spec, error_name, index, id?)
-    requires: error_name != ""
+    requires: non_blank(error_name)
     ensures: SpecStep.created(
         spec: spec,
         clause: then_step,
@@ -617,8 +618,8 @@ rule RemoveSpecStep {
 -- Both field_name and field_value must be non-blank.
 rule AddStepExample {
     when: AddStepExample(step, field_name, field_value)
-    requires: field_name != ""
-    requires: field_value != ""
+    requires: non_blank(field_name)
+    requires: non_blank(field_value)
     let entry = Example{ field_name: field_name, field_value: field_value }
     ensures: step.examples = upsert_by(step.examples, entry, e => e.field_name)
 
@@ -907,7 +908,7 @@ invariant SpecificationComposition {
 -- keys and lets missing/absent values default to empty on read.
 invariant ExamplesWellFormed {
     for step in SpecSteps:
-        step.examples.all(e => e.field_name != "" and e.field_value != "")
+        step.examples.all(e => non_blank(e.field_name) and non_blank(e.field_value))
 }
 
 -- Connections may only follow the Event Modeling patterns.
