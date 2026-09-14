@@ -114,11 +114,13 @@ entity ElementPlacement {
     slice: Slice
     element: Element
     -- Author-controlled display order of this placement within its slice, so a
-    -- frontend renders placements in the order the author arranged them. A sort
-    -- key only: non-unique and non-contiguous, ties broken by creation order.
-    -- Reorder (ReorderPlacement) renormalizes a whole slice to 0..n-1, while
-    -- removing a placement (RemovePlacement) leaves the survivors' indices as
-    -- they were, so they may stay non-contiguous.
+    -- frontend renders placements in the order the author arranged them. Unique
+    -- within a slice as produced by every operation that sets it: PlaceElement
+    -- appends one past the highest index (or 0 when it is the first), and
+    -- ReorderPlacement renumbers the whole slice 0..n-1. Gaps appear after
+    -- removals (RemovePlacement leaves the survivors' indices as they were).
+    -- Still a sort key only, read with a creation-order tiebreak that is now
+    -- merely defensive: the indices in play are already distinct.
     index: Integer
 }
 
@@ -437,12 +439,25 @@ rule ReorderSlice {
 --     placement at the head, at the tail, or immediately before/after the anchor
 --     placement; every other placement keeps its relative order.
 --   index_in(list, placement): the 0-based index of `placement` in `list`.
--- An index is a sort key only - non-unique, and non-contiguous once placements
--- have been removed - so a relative move cannot be expressed by nudging a single
--- integer. EVERY placement in the slice is renumbered instead: after the move the
--- slice's placements carry 0..n-1, their new display order.
+-- An index is a sort key only - non-contiguous once placements have been
+-- removed - so a relative move cannot be expressed by nudging a single integer.
+-- EVERY placement in the slice is renumbered instead: after the move the slice's
+-- placements carry 0..n-1, their new display order.
+-- A placement is addressed by (slice, element), its natural key (see invariant
+-- PlacementElementUnique), so no placement id appears in the surface.
 rule ReorderPlacement {
     when: ReorderPlacement(slice, element, move)
+    -- The target must be placed in the slice; a before/after anchor must name a
+    -- different element that is placed in the same slice. An anchor equal to the
+    -- moved element has nothing left to insert next to once the moved placement
+    -- is lifted out of the slice.
+    requires: slice.placements.any(p => p.element = element)
+    requires: move.before = null or (
+        move.before != element
+        and slice.placements.any(p => p.element = move.before))
+    requires: move.after = null or (
+        move.after != element
+        and slice.placements.any(p => p.element = move.after))
     let order = reposition(slice.placements, element, move)
     ensures:
         for p in order:
@@ -555,8 +570,13 @@ rule PlaceElement {
     )
 }
 
+-- Remove the placement of `element` from `slice`. A placement is addressed by
+-- (slice, element), its natural key (see invariant PlacementElementUnique), so
+-- no placement id appears in the surface; removing a placement that is not in
+-- the slice is rejected rather than a silent no-op.
 rule RemovePlacement {
     when: RemovePlacement(slice, element)
+    requires: slice.placements.any(p => p.element = element)
     ensures: not exists ElementPlacement{slice, element}
 }
 
@@ -894,7 +914,10 @@ invariant PlacementMatchesSliceKind {
 -- A slice may never hold two placements of the same element, informational
 -- slices included: the same element placed twice in one slice is an
 -- inconsistent state. The constraint is slice-scoped only, so the same element
--- may still be placed in many slices and many timelines.
+-- may still be placed in many slices and many timelines. This makes
+-- (slice, element) the placement's natural key: ReorderPlacement and
+-- RemovePlacement address a placement by it rather than by the surrogate
+-- placement id, which is why no placement id appears in the surface.
 invariant PlacementElementUnique {
     for s in Slices:
         for p in s.placements:
@@ -1244,6 +1267,7 @@ surface ModelAuthoring {
                 s.is_complete
                 s.timeline.title
                 for p in s.placements:
+                    p.index
                     p.element.name
                 for e in s.events:
                     e.element.name
@@ -1395,6 +1419,7 @@ surface ModelChangeStream {
                 s.index
                 s.is_complete
                 for p in s.placements:
+                    p.index
                     p.element.name
                     p.element.kind
                     -- Which swimlane row this element is assigned to (absent if

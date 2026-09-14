@@ -203,7 +203,14 @@
    "spec"       "timelines[].slices[].specifications[].id"
    "step"       "timelines[].slices[].specifications[].steps[].id"
    "from"       "elements[].id"
-   "to"         "elements[].id"})
+   "to"         "elements[].id"
+   ;; Reorder-placement's --before/--after name an element id. Both flag names
+   ;; are used only by reorder-placement among registry commands (the wireframe
+   ;; add-node-before command's --before is a node id passed through the literal
+   ;; structured params, which never consult this map), so a global entry is
+   ;; enough and leaks nowhere.
+   "before"     "elements[].id"
+   "after"      "elements[].id"})
 
 ;; Valid keyword values per (command, flag) — only listed when the rule enforces
 ;; a bounded set; free-form keyword flags are left without :values.

@@ -182,7 +182,7 @@ data: {"op":"DeleteTimeline","changes":[{"action":"deleted","type":"placement","
 | `AddWireframeNode` / `AddWireframeNodeBefore` / `SetWireframeAttr` / `SetWireframeText` / `DeleteWireframeNode` | updated | the screen element, restated with its new layout tree |
 | `DeleteElement` | deleted, updated | element + cascaded placements, connections, then the surviving `to` element(s) whose completeness the removed connections moved |
 | `PlaceElement` | created | placement |
-| `ReorderPlacement` | updated | placement |
+| `ReorderPlacement` | updated (one per placement whose index moved, in new-index order; an empty `changes` list when the move changes nothing) | placement |
 | `RemovePlacement` | deleted | placement |
 | `Connect` | created, updated | connection, then the `to` element (wiring it may have changed its completeness) |
 | `Disconnect` | deleted, updated | connection, then the `to` element |
@@ -193,14 +193,17 @@ data: {"op":"DeleteTimeline","changes":[{"action":"deleted","type":"placement","
 | `RemoveSpecStep` | deleted | spec-step |
 | `SetStepExamples` / `SetStepExpectEmpty` | updated | spec-step |
 
-Within one delta the `changes` are ordered: the entity the operation was aimed at
-first, followed by any entity whose derived state moved with it (`Connect`,
-`Disconnect`, `SetConnectionDerivations` restate their `to` element, and the
-`DeleteElement` cascade restates each surviving `to` endpoint once, after its
-removals; `DeleteSwimlane` restates the elements it unassigned before removing
-the swimlane). A cascade lists removed entities leaves-first, so each entity is
-gone before the one that contained it — apply the `changes` in the order given
-and the result is well-defined at every step.
+Within one delta the `changes` are ordered: for an operation aimed at a single
+entity, that entity comes first, followed by any entity whose derived state moved
+with it (`Connect`, `Disconnect`, `SetConnectionDerivations` restate their `to`
+element, and the `DeleteElement` cascade restates each surviving `to` endpoint
+once, after its removals; `DeleteSwimlane` restates the elements it unassigned
+before removing the swimlane). `ReorderPlacement` is the exception: it restates
+every placement whose index moved, in new-index order — the moved placement is
+not necessarily first, and a move that changes nothing emits an empty `changes`
+list. A cascade lists removed entities leaves-first, so each entity is gone
+before the one that contained it — apply the `changes` in the order given and the
+result is well-defined at every step.
 
 ### Entity shapes
 
