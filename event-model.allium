@@ -518,9 +518,10 @@ rule RemoveFieldOrigin {
 -- Placements ----------------------------------------------------------------
 
 -- A placement is appended after the slice's existing ones: its index is one past
--- the highest index already in the slice, or zero when it is the first. The same
--- element may be placed in a slice more than once, so placements are not keyed by
--- element.
+-- the highest index already in the slice, or zero when it is the first. An
+-- element may be placed in a given slice at most once (see invariant
+-- PlacementElementUnique), while the same element may still be placed in many
+-- slices and many timelines.
 rule PlaceElement {
     when: PlaceElement(slice, element, id?)
     ensures: ElementPlacement.created(
@@ -864,6 +865,17 @@ invariant PlacementMatchesSliceKind {
             (s.kind = automation implies
                 (s.commands.count <= 1 and s.automations.count <= 1
                  and s.read_models.count = 0)))
+}
+
+-- A slice may never hold two placements of the same element, informational
+-- slices included: the same element placed twice in one slice is an
+-- inconsistent state. The constraint is slice-scoped only, so the same element
+-- may still be placed in many slices and many timelines.
+invariant PlacementElementUnique {
+    for s in Slices:
+        for p in s.placements:
+            for q in s.placements:
+                p != q implies p.element != q.element
 }
 
 -- A specification's Given/When/Then steps must match its slice's pattern.

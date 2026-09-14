@@ -31,6 +31,70 @@
                      "placement composition: commands=" c
                      " read_models=" r " automations=" a)}))
 
+;; PlacementElementUnique ----------------------------------------------------
+;; No slice may hold two placements of the same element. Informational slices
+;; are not exempt; the same element may still be placed in different slices.
+(defn- duplicate-placement-violations [store]
+  (for [s     (m/all store :slice)
+        :let  [dups (->> (m/placements store (:id s))
+                         (map :element)
+                         frequencies
+                         (keep (fn [[el n]] (when (< 1 n) el)))
+                         sort
+                         vec)]
+        :when (seq dups)]
+    {:invariant :PlacementElementUnique
+     :slice     (:id s)
+     :message   (str "Slice " (:id s) " places element(s) "
+                     (str/join ", " dups) " more than once")}))
+
+;; repair ---------------------------------------------------------------------
+;; A store loaded from disk must never leave the model wedged: rules/commit
+;; re-checks the WHOLE store on every mutation, so one bad entity from a
+;; hand-edited or older file would make every later mutation fail with an
+;; invisible :invariant-violation. `repair` fixes what can be fixed without
+;; guessing the author's intent, and reports what it did.
+(defn- duplicate-placement-repair
+  "For every slice holding the same element more than once, the placements to
+  drop: each placement after the first in `m/placements` order (lowest :index,
+  then lowest :id). Keeping the first is principled — it is already the
+  placement the author's own ordering puts first."
+  [store]
+  (for [s     (m/all store :slice)
+        :let  [[_ dropped] (reduce (fn [[seen acc] p]
+                                     (if (contains? seen (:element p))
+                                       [seen (conj acc (:id p))]
+                                       [(conj seen (:element p)) acc]))
+                                   [#{} []]
+                                   (m/placements store (:id s)))]
+        :when (seq dropped)]
+    {:invariant :PlacementElementUnique
+     :slice     (:id s)
+     :dropped   dropped}))
+
+(defn repair
+  "Repair `store`, returning `[store' repairs]`. `repairs` is a vector of
+  `{:invariant :PlacementElementUnique :slice <slice-id> :dropped [placement-ids]}`
+  describing every change `store'` makes to `store`.
+
+  Only invariants that have a principled, non-arbitrary repair are repaired —
+  currently PlacementElementUnique alone: the first placement of an element in a
+  slice (in placement order) is kept and every later duplicate is dropped.
+  Anything else, such as a category error like a read_model placed in a
+  state_change slice, is left alone, because repairing it would mean guessing
+  what the author meant.
+
+  Repairing is a best-effort normalisation, NOT validation: callers MUST
+  re-check the returned store with `check` and decide what to do with whatever
+  remains. `repair` is idempotent — repairing a repaired store returns it
+  unchanged with no repairs."
+  [store]
+  (let [repairs (vec (duplicate-placement-repair store))
+        store'  (reduce (fn [s {:keys [dropped]}]
+                          (reduce #(m/delete %1 :placement %2) s dropped))
+                        store repairs)]
+    [store' repairs]))
+
 ;; SpecificationComposition --------------------------------------------------
 ;; Given steps are events; When steps are commands; the Then shape follows the
 ;; slice's pattern. The "exactly one" singleton requirement is deferred to
@@ -99,6 +163,7 @@
   "Return every invariant violation in `store` (empty when the store is valid)."
   [store]
   (vec (concat (placement-violations store)
+               (duplicate-placement-violations store)
                (spec-violations store)
                (connection-violations store)
                (example-violations store))))
