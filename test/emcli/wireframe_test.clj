@@ -30,24 +30,6 @@
     (is (= "n4" (wf/next-node-id [:canvas {:-id "n1"} [:col {:-id "n3"}]])))))
 
 ;; ---------------------------------------------------------------------------
-;; strip-ids
-;; ---------------------------------------------------------------------------
-
-(deftest strip-ids-removes-all-internal-ids
-  (let [stripped (wf/strip-ids simple-wf)]
-    (testing "root attrs stripped"
-      (is (not (contains? (second stripped) :-id))))
-    (testing "nested node attrs stripped"
-      (let [col (nth stripped 2)]
-        (is (not (contains? (second col) :-id)))))
-    (testing "leaf with merged attrs stripped"
-      ;; [:input {:-id "n4"} {:placeholder ...}] -> [:input {:placeholder ...}]
-      (let [input (nth (nth stripped 2) 3)]
-        (is (not (contains? (second input) :-id)))))
-    (testing "tag preserved"
-      (is (= :canvas (first stripped))))))
-
-;; ---------------------------------------------------------------------------
 ;; validate — structural
 ;; ---------------------------------------------------------------------------
 

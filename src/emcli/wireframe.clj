@@ -113,27 +113,6 @@
   (keep-indexed (fn [i x] (when (and (pos? i) (vector? x)) i)) node))
 
 ;; ---------------------------------------------------------------------------
-;; strip-ids
-;; ---------------------------------------------------------------------------
-
-(defn strip-ids
-  "Remove all :-id keys from a wireframe tree, merging the id-map and
-  content-map into one map per node. Preserves the attrs map even when empty
-  (so callers can navigate by index). Preserves child order."
-  [node]
-  (when (vector? node)
-    (let [tag      (first node)
-          rest-    (rest node)
-          maps     (take-while map? rest-)
-          children (drop-while map? rest-)
-          attrs    (dissoc (apply merge maps) :-id)
-          ;; Preserve document order: strings and child vectors interleaved
-          kids     (mapv #(if (vector? %) (strip-ids %) %) children)]
-      (if (seq maps)
-        (into [tag attrs] kids)
-        (into [tag] kids)))))
-
-;; ---------------------------------------------------------------------------
 ;; next-node-id
 ;; ---------------------------------------------------------------------------
 

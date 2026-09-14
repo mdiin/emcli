@@ -272,7 +272,3 @@
   [store element]
   (empty? (unsourced-fields store element)))
 
-(defn screen-has-field?
-  "True if `screen` element has a field named `field-name`."
-  [screen field-name]
-  (boolean (some #(= field-name (:name %)) (:fields screen))))

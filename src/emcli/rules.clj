@@ -26,6 +26,12 @@
     (missing type id)))
 
 (defn- created [type entity] {:action :created :type type :id (:id entity) :entity entity})
+;; A `created` element delta deliberately omits :is_information_complete, while
+;; `updated` (below) carries it: the value is *derived* from the store (every
+;; declared field sourced), never stored on the entity. A fresh element has no
+;; fields yet, so there is nothing to derive. Consumers seeding state from a
+;; create delta must therefore treat :is_information_complete as unknown until
+;; the next update delta supplies it.
 (defn- updated [store type id]
   (let [entity (m/fetch store type id)]
     (cond-> {:action :updated :type type :id id :entity entity}
