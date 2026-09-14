@@ -51,6 +51,35 @@
             (is (> (:id next) (:tl ids)))))
         (finally (fs/delete-if-exists file))))))
 
+(deftest load-app-repairs-a-duplicate-placement
+  (testing "a hand-edited file with a duplicate placement loads repaired, not wedged"
+    (let [file (tmp-file)
+          a    (app/new-app "Orders" file)]
+      (try
+        (let [ids (author! a)
+              ev  (:result (cmd/run a "create-element" {:name "OrderPlaced" :kind "event"}))]
+          (cmd/run a "place-element" {:slice (:sl ids) :element (:id ev)})
+          ;; hand-edit the persisted file: duplicate the EVENT placement. `repair`
+          ;; drops the later duplicate regardless of element kind, so the load
+          ;; succeeds. Only a violation `repair` cannot fix — e.g. a read_model
+          ;; in a state_change slice — takes the fail-fast :invalid-store path.
+          (let [{:keys [model store]} (edn/read-string (slurp file))
+                [dirty dup]           (m/create store :placement {:slice   (:sl ids)
+                                                                  :element (:id ev)
+                                                                  :index   99})]
+            (is (m/exists? dirty :placement (:id dup)))
+            (spit file (pr-str {:model model :store dirty}))
+            (let [b       (app/load-app file)
+                  repairs (:repairs @b)]
+              (is (seq repairs) "the repair is reported on the app")
+              (is (= [(:id dup)] (:dropped (first repairs))))
+              (is (= 1 (count (filter #(= (:id ev) (:element %))
+                                      (m/placements (app/store b) (:sl ids)))))
+                  "exactly one placement of the event survives")
+              (is (not (:error (cmd/run b "create-timeline" {:title "After"})))
+                  "the repaired model is not wedged: a later mutation is accepted"))))
+        (finally (fs/delete-if-exists file))))))
+
 (deftest open-app-loads-or-creates
   (let [file (tmp-file)]
     (try

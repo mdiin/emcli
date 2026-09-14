@@ -17,6 +17,8 @@
   are cleared on save and start empty after a reload."
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
+            [clojure.string :as str]
+            [emcli.invariants :as inv]
             [emcli.model :as m]
             [emcli.rules :as r])
   (:import [java.nio.channels FileChannel]
@@ -64,12 +66,38 @@
      app)))
 
 (defn load-app
-  "Rehydrate an app from an EDN `file` previously written by persist!. Runtime
-  subscriptions and the broadcast lock are reconstructed fresh."
+  "Rehydrate an app from an EDN `file` previously written by persist!.
+
+  The loaded store is REPAIRED where a principled repair exists (see
+  invariants/repair: currently a later duplicate placement of an element in a
+  slice is dropped, keeping the first in placement order), and one warning line
+  per repair is written to stderr. If any violation remains after repair the
+  load fails fast with an :invalid-store ex-info naming the file and the
+  violations — `rules` re-checks the whole store on every mutation, so a
+  still-invalid store would otherwise make every later mutation fail with an
+  invisible :invariant-violation.
+
+  The repairs are stashed on the app under :repairs; they are deliberately NOT
+  written back to the file, because repair is idempotent and the next committed
+  mutation flushes the repaired store. Runtime subscriptions and the broadcast
+  lock are reconstructed fresh."
   [file]
-  (let [{:keys [store model]} (edn/read-string (slurp file))]
-    (atom {:store (assoc store :subscriptions {}) :model model
-           :subscribers {} :lock (Object.) :file file})))
+  (let [{:keys [store model]} (edn/read-string (slurp file))
+        [repaired repairs]    (inv/repair store)
+        violations            (inv/check repaired)]
+    (when (seq violations)
+      (throw (ex-info (str "invalid store in " file ": " (count violations)
+                           " invariant violation(s) remain after repair: "
+                           (str/join "; " (map :message violations)))
+                      {:error :invalid-store :file file :violations violations})))
+    (doseq [{:keys [invariant slice dropped]} repairs]
+      (binding [*out* *err*]
+        (println (str "warning: repaired " invariant " in " file
+                      ": dropped placement(s) " (str/join ", " dropped)
+                      " from slice " slice))))
+    (atom {:store (assoc repaired :subscriptions {}) :model model
+           :subscribers {} :lock (Object.) :file file
+           :repairs repairs})))
 
 (defn open-app
   "Open the app backed by `file`: load it if the file exists, otherwise create a
