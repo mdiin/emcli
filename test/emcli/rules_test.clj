@@ -247,6 +247,49 @@
                                                         :attrs {:field-name "nonexistent"} :parent "n1"})]
     (is (= :invalid-wireframe (:error err)))))
 
+;; -- parent addressing: a named parent must exist, no parent means the root --
+
+(defn- child-ids
+  "Ids of the immediate child nodes of the node with `node-id` in `el`."
+  [el node-id]
+  (map #(some :-id %) (filter vector? (rest (wf/find-node (:wireframe el) node-id)))))
+
+(deftest add-wireframe-node-rejects-unknown-parent
+  (testing "on a fresh screen (no wireframe yet)"
+    (let [[store eid] (screen-with-field)
+          err         (s/err store r/add-wireframe-node {:element eid :tag :button
+                                                         :attrs {:label "Save"} :parent "nX"})]
+      (is (= :not-found (:error err)))
+      (is (= :wireframe-node (:type err)))
+      (is (= "nX" (:id err)))
+      (is (= "node nX does not exist" (:message err)))))
+  (testing "on a screen that already has a layout"
+    (let [[store eid] (screen-with-field)
+          store       (:store (s/ok store r/add-wireframe-node {:element eid :tag :col :parent "n1"}))
+          err         (s/err store r/add-wireframe-node {:element eid :tag :button
+                                                         :attrs {:label "Save"} :parent "n99"})]
+      (is (= :not-found (:error err)))
+      (is (= :wireframe-node (:type err))))))
+
+(deftest add-wireframe-node-explicit-root-parent-appends-at-root
+  (let [[store eid] (screen-with-field)
+        el          (:result (s/ok store r/add-wireframe-node {:element eid :tag :col :parent "n1"}))]
+    (is (= ["n2"] (child-ids el "n1")))))
+
+(deftest add-wireframe-node-without-parent-appends-at-root
+  (let [[store eid] (screen-with-field)
+        el          (:result (s/ok store r/add-wireframe-node {:element eid :tag :col}))]
+    (is (= ["n2"] (child-ids el "n1")))))
+
+(deftest add-wireframe-node-existing-nested-parent-still-works
+  (let [[store eid] (screen-with-field)
+        store       (:store (s/ok store r/add-wireframe-node {:element eid :tag :col :parent "n1"}))
+        el          (:result (s/ok store r/add-wireframe-node {:element eid :tag :h1
+                                                               :text "Hello" :parent "n2"}))
+        node        (wf/find-node (:wireframe el) "n3")]
+    (is (= ["n3"] (child-ids el "n2")))
+    (is (some #(= "Hello" %) node))))
+
 (deftest set-wireframe-attr-updates-node
   (let [[store eid] (screen-with-field)
         store       (:store (s/ok store r/add-wireframe-node {:element eid :tag :button

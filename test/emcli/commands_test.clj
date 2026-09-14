@@ -145,6 +145,44 @@
         (is (= "Heads up" (:text (node-attrs node))))
         (is (= :warning (:type (node-attrs node))))))))
 
+;; --- wireframe add-node --parent addressing (BUGS.md item 3) ----------------
+;; A named --parent must exist; only omitting it (or naming the root) appends
+;; at the root. See AddWireframeNode's `requires` in event-model.allium.
+
+(defn- canvas-child-ids
+  "Ids of the immediate child nodes of `node-id` in the screen `el`."
+  [el node-id]
+  (map #(some :-id %) (filter vector? (rest (wf/find-node (:wireframe el) node-id)))))
+
+(deftest add-wireframe-node-rejects-unknown-parent
+  (let [[a eid] (screen-app)]
+    (testing "a non-existent --parent is rejected like an unknown sibling"
+      (let [res (cmd/run a "add-wireframe-node" {:element eid :tag "button"
+                                                 :parent "nX" :label "Save"})]
+        (is (= :not-found (:error res)))
+        (is (= :wireframe-node (:type res)))
+        (is (= "nX" (:id res)))
+        (is (= "node nX does not exist" (:message res)))))))
+
+(deftest add-wireframe-node-parent-addressing-still-works
+  (let [[a eid] (screen-app)]
+    (testing "an explicit root id appends at the root"
+      (let [res (cmd/run a "add-wireframe-node" {:element eid :tag "col" :parent "n1"})]
+        (is (not (r/error? res)))
+        (is (= ["n2"] (canvas-child-ids (:result res) "n1")))))
+    (testing "omitting --parent appends at the root"
+      (let [res (cmd/run a "add-wireframe-node" {:element eid :tag "col"})]
+        (is (not (r/error? res)))
+        (is (= ["n2" "n3"] (canvas-child-ids (:result res) "n1")))))
+    (testing "an existing nested parent still works"
+      (let [res  (cmd/run a "add-wireframe-node" {:element eid :tag "h1"
+                                                  :parent "n2" :text "Hello"})
+            node (wf/find-node (:wireframe (:result res)) "n4")]
+        (is (not (r/error? res)))
+        (is (= ["n4"] (canvas-child-ids (:result res) "n2")))
+        (is (= :h1 (first node)))
+        (is (some #(= "Hello" %) node))))))
+
 ;; --- wireframe set-attr coercion (BUGS.md item 2) ---------------------------
 ;; SetWireframeAttr takes its value as operator text, but the rule stores that
 ;; value verbatim and re-validates the whole tree; the adapter must therefore

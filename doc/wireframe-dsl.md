@@ -197,11 +197,8 @@ prints as just `[nN] :tag`.
   (`variant`, `align`, `tone`, `required`, `command-input`, …) is rejected — e.g.
   `variant must be a keyword` — and `options` is rejected because it needs a
   list. Those attributes can only be given a value when the node is created.
-- **An unknown `--parent` appends at the root** instead of failing, unlike
-  `add-node-before`, `set-attr`, `set-text` and `delete-node`, which all reject
-  an unknown node id.
 - **Removing a field a layout refers to is not blocked.** The layout keeps its
   `field-name` and afterwards names a field that no longer exists; nothing
   reports the dangling reference.
 
-The last two are recorded as open questions in `event-model.allium`.
+The last is recorded as an open question in `event-model.allium`.

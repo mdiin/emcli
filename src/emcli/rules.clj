@@ -545,7 +545,10 @@
                   wf'      (wf/append-child-at wf (or parent "n1") child)
                   sv       (wf/validate wf')
                   ss       (wf/validate-semantics wf' el)]
-              (or (when-not (:valid? sv) (wireframe-invalid sv))
+              (or (when (and parent (not (wf/find-node wf parent)))
+                    {:error :not-found :type :wireframe-node :id parent
+                     :message (str "node " parent " does not exist")})
+                  (when-not (:valid? sv) (wireframe-invalid sv))
                   (when-not (:valid? ss) (wireframe-invalid ss))
                    (let [store (m/set-field store :element element :wireframe wf')]
                      (commit store :AddWireframeNode [(updated store :element element)]

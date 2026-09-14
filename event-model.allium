@@ -693,6 +693,7 @@ rule AddWireframeNode {
     requires: tag_schema_valid(tag, attributes)
     requires: fields_resolve(screen, attributes)
     let tree = screen.wireframe ?? empty_wireframe
+    requires: parent = null or node_exists(tree, parent)
     let node = WireframeNode{
         node_id: next_node_id(tree),
         tag: tag,
@@ -701,10 +702,6 @@ rule AddWireframeNode {
         children: []
     }
     ensures: screen.wireframe = append_node(tree, parent, node)
-
-    @guidance
-        -- A named parent that does not exist falls back to the root rather than
-        -- being rejected; see the open question on unknown parents.
 }
 
 -- Insert a node immediately before an existing sibling, preserving the target
@@ -1414,7 +1411,5 @@ surface ModelChangeStream {
 -- SchemaCodec contract above.
 
 open question "NameResolution.NameQuery.kind_hint currently records only the resolvable entity kind (Timeline/Swimlane/Slice/Element/Specification). Should it also carry a finer sub-kind hint (Element.kind: command/event/read_model/screen/automation, or Slice.kind: state_change/state_view/automation) to further rank candidates? Those are inline enums on Element/Slice today; supporting them as hint fields requires promoting them to named enums (a change to existing entities) or a parallel named enum duplicating their literals. Deferred pending a decision on whether the extra ranking signal is worth that."
-
-open question "AddWireframeNode treats a parent node id that does not exist as 'append at the root' rather than as an error, unlike AddWireframeNodeBefore, SetWireframeAttr, SetWireframeText and DeleteWireframeNode, which all reject an unknown node id. A mistyped parent id therefore places a node somewhere other than intended instead of failing. Should an unknown parent be rejected like an unknown sibling?"
 
 open question "The layout-to-field reference check belongs to the wireframe edits, so a layout is only checked against the screen's fields at the moment it is edited. Removing a field from a screen afterwards is not blocked, so a stored layout can name a field that no longer exists, and nothing afterwards reports the dangling reference. Should removing a field that a layout refers to be rejected, or should the affected node's reference be cleared as part of that removal?"
