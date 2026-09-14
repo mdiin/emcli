@@ -1,6 +1,7 @@
 (ns emcli.schema
   "SchemaCodec: import and export of the eventmodeling.schema.json interchange
-  format, round-tripped at the semantic level (event-model.allium:495-549).
+  format, round-tripped at the semantic level (see `contract SchemaCodec` in
+  event-model.allium).
 
   Works on parsed data (Clojure maps with the schema's string keys) so the
   round-trip invariants can be tested as pure data transforms; `read-json` /

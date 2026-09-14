@@ -277,7 +277,7 @@
                  "add-wireframe-node" "add-wireframe-node-before" "set-wireframe-attr" "set-wireframe-text"])))
 
 (defn authoring-view
-  "The ModelAuthoring `exposes:` read projection (event-model.allium:598-635):
+  "The `surface ModelAuthoring` `exposes:` read projection (event-model.allium):
   the full authoring view, richer than the ChangeStream snapshot — it carries
   the events/screens projections, timeline_title and spec_title denormalised
   onto their child slices/steps, and the element list and connection names."
