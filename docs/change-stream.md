@@ -147,7 +147,7 @@ Create:
 
 ```
 event: CreateElement
-data: {"op":"CreateElement","changes":[{"action":"created","type":"element","id":5,"entity":{"model":1,"name":"PlaceOrder","kind":"command","context":"internal","fields":[],"field_origins":[],"id":5,"type":"element"}}]}
+data: {"op":"CreateElement","changes":[{"action":"created","type":"element","id":5,"entity":{"model":1,"name":"PlaceOrder","kind":"command","context":"internal","fields":[],"field_origins":[],"is_information_complete":true,"id":5,"type":"element"}}]}
 ```
 
 Update (full new entity state is sent):
@@ -211,18 +211,17 @@ All entities carry integer `id` and `type`; relationships are integer ids.
 | `timeline` | `id, type, model, title` |
 | `swimlane` | `id, type, model, name, index` |
 | `slice` | `id, type, timeline, title, kind, index, status` |
-| `element` | `id, type, model, name, kind, context, fields[], field_origins[], is_information_complete?, swimlane?, image_url?, wireframe?` |
+| `element` | `id, type, model, name, kind, context, fields[], field_origins[], is_information_complete, swimlane?, image_url?, wireframe?` |
 | `placement` | `id, type, slice, element, index` |
 | `connection` | `id, type, model, from, to, derivations[]` |
 | `specification` | `id, type, slice, title` |
 | `spec-step` | `id, type, spec, clause, index, element?, is_error, error_name?, expect_empty, examples[]` |
 
-`is_information_complete?`, `swimlane?`, `image_url?`, `wireframe?`, `element?`
-and `error_name?` are conditional rather than merely rare:
+`swimlane?`, `image_url?`, `wireframe?`, `element?` and `error_name?` are
+conditional rather than merely rare (`is_information_complete` is always present
+— it is derived, every declared field sourced, and a fresh element declares no
+fields):
 
-- `is_information_complete` is present on every `updated` element change, but
-  **absent on a `created` one** — it is derived, not stored, so a `CreateElement`
-  delta does not carry it.
 - `swimlane` is absent until the element is assigned a swimlane; afterwards it is
   an integer id, or an explicit `null` once the swimlane it pointed at has been
   deleted.
@@ -274,9 +273,7 @@ Two shape differences to keep in mind:
 - Deltas carry canonical fields the snapshot projection omits — an element's
   `context` and `field_origins` appear in a delta `entity` but nowhere in the
   snapshot — and the snapshot's `fields` are a reduced shape. Treat the delta
-  `entity` as the authoritative latest state for that id, with one exception: a
-  `created` element delta lacks `is_information_complete`, which the snapshot
-  always provides.
+  `entity` as the authoritative latest state for that id.
 
 ## Reconnection
 

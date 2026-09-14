@@ -26,12 +26,6 @@
     (missing type id)))
 
 (defn- created [type entity] {:action :created :type type :id (:id entity) :entity entity})
-;; A `created` element delta deliberately omits :is_information_complete, while
-;; `updated` (below) carries it: the value is *derived* from the store (every
-;; declared field sourced), never stored on the entity. A fresh element has no
-;; fields yet, so there is nothing to derive. Consumers seeding state from a
-;; create delta must therefore treat :is_information_complete as unknown until
-;; the next update delta supplies it.
 (defn- updated [store type id]
   (let [entity (m/fetch store type id)]
     (cond-> {:action :updated :type type :id id :entity entity}
@@ -223,8 +217,15 @@
       (require-valid-value element-kinds kind)
       (let [[store el] (m/create store :element (with-id {:model model :name name :kind kind
                                                            :context :internal :fields []
-                                                           :field_origins []} id))]
-        (commit store :CreateElement [(created :element el)] el))))
+                                                           :field_origins []} id))
+            ;; DeltaPerMutation: every entity carries its full new state, so the
+            ;; `created` element delta carries the derived verdict too — a fresh
+            ;; element declares no fields, so it is complete. Computed from the
+            ;; post-insert store, exactly as `updated` computes from the current.
+            change     (assoc-in (created :element el)
+                                 [:entity :is_information_complete]
+                                 (m/information-complete? store el))]
+        (commit store :CreateElement [change] el))))
 
 (defn- stranding-removal
   "A name this edit drops (present in the element's current fields, absent from

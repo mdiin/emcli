@@ -196,6 +196,20 @@
         (is (contains? entity :is_information_complete))
         (is (true? (:is_information_complete entity)))))))
 
+(deftest create-element-delta-includes-is-information-complete
+  (testing "CreateElement delta carries is_information_complete on the element entity"
+    (let [a   (app/new-app "Orders")
+          [_ msgs] (recording-sub a)]
+      (cmd/run a "create-element" {:name "PlaceOrder" :kind "command"})
+      (let [delta  (last @msgs)
+            change (first (:changes delta))
+            entity (:entity change)]
+        (is (= :CreateElement (:op delta)))
+        (is (= :element (:type change)))
+        (is (contains? entity :is_information_complete))
+        (is (true? (:is_information_complete entity))
+            "a fresh element declares no fields, so it is complete")))))
+
 (deftest connection-delta-includes-target-element-change
   (testing "SetConnectionDerivations delta includes an updated change for the target element"
     (let [a    (app/new-app "Orders")
