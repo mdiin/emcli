@@ -230,9 +230,26 @@
       (let [eid  (->int (get opts :element))
             node (str (get opts :node))
             attr (keyword (str (get opts :attr)))
-            val  (str (get opts :value))]
-        (app/apply-rule! app r/set-wireframe-attr
-                         {:element eid :node node :attr attr :value val}))
+            raw  (str (get opts :value))
+            ;; SetWireframeAttr takes its value as operator text while the rule
+            ;; stores it verbatim and re-validates the whole tree, so the text
+            ;; must already carry the type the node's tag declares for that
+            ;; attribute — the same treatment AddWireframeNode gives the very
+            ;; same attributes. The schema entry comes from the node's tag on
+            ;; the current store; when the node does not exist or the tag does
+            ;; not admit the attribute there is no entry, the raw text goes
+            ;; through unchanged and the rule's own validation decides.
+            schema (get-in (wf/tag-schema (first (wf/find-node
+                                                  (:wireframe (m/fetch (app/store app) :element eid))
+                                                  node)))
+                           [:attrs attr])
+            typed  (try
+                     {:ok (wf/coerce-attr-value attr raw schema)}
+                     (catch Exception e {:error (ex-message e)}))]
+        (if (:error typed)
+          {:error :invalid-value :message (:error typed)}
+          (app/apply-rule! app r/set-wireframe-attr
+                           {:element eid :node node :attr attr :value (:ok typed)})))
       {:error :missing-args :message "set-wireframe-attr requires :element, :node, :attr and :value"})
 
     (= command "set-wireframe-text")

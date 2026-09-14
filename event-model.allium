@@ -660,7 +660,12 @@ rule SetStepExpectEmpty {
 --     set - that the tag's schema declares for it.
 --   attribute_admitted(tag, attribute) and
 --     attribute_value_valid(tag, attribute, value): the per-attribute halves of
---     the same check.
+--     the same check. An attribute value supplied as operator text is coerced
+--     to the type the tag declares for that attribute before it is checked, the
+--     same treatment whether the attribute is given when the node is created or
+--     set later through SetWireframeAttr. Text that cannot be coerced, or that
+--     falls outside the set the tag allows for the attribute, is rejected and
+--     the edit changes nothing.
 --   text_tag(tag): the tag carries a text content.
 --   fields_resolve(screen, attributes): every field-name value among
 --     `attributes` names a field declared on `screen`, so a layout refers only
@@ -1413,5 +1418,3 @@ open question "NameResolution.NameQuery.kind_hint currently records only the res
 open question "AddWireframeNode treats a parent node id that does not exist as 'append at the root' rather than as an error, unlike AddWireframeNodeBefore, SetWireframeAttr, SetWireframeText and DeleteWireframeNode, which all reject an unknown node id. A mistyped parent id therefore places a node somewhere other than intended instead of failing. Should an unknown parent be rejected like an unknown sibling?"
 
 open question "The layout-to-field reference check belongs to the wireframe edits, so a layout is only checked against the screen's fields at the moment it is edited. Removing a field from a screen afterwards is not blocked, so a stored layout can name a field that no longer exists, and nothing afterwards reports the dangling reference. Should removing a field that a layout refers to be rejected, or should the affected node's reference be cleared as part of that removal?"
-
-open question "SetWireframeAttr takes its value as text and requires it to hold the type the node's tag declares for that attribute, so attributes whose declared type is a choice or a flag (variant, align, gap, width, tone, type, aspect, size, required, default, disabled, command-input) cannot be set through it at all: the text value can never satisfy the declared type, and the edit is rejected with the only route to those attributes being AddWireframeNode. Should SetWireframeAttr coerce the supplied text to the attribute's declared type, as AddWireframeNode does when it reads the same attributes from operator input?"

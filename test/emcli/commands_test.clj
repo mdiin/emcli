@@ -145,6 +145,99 @@
         (is (= "Heads up" (:text (node-attrs node))))
         (is (= :warning (:type (node-attrs node))))))))
 
+;; --- wireframe set-attr coercion (BUGS.md item 2) ---------------------------
+;; SetWireframeAttr takes its value as operator text, but the rule stores that
+;; value verbatim and re-validates the whole tree; the adapter must therefore
+;; hand it a value that already carries the type the node's tag declares, the
+;; same treatment AddWireframeNode gives the same attributes.
+
+(defn- set-attr-app
+  "An app with a screen whose canvas holds a :button (n2), an :input (n3) and a
+  :dropdown (n4); returns [app screen-element-id]."
+  []
+  (let [[a eid] (screen-app)]
+    (cmd/run a "add-wireframe-node" {:element eid :tag "button" :label "Save"})
+    (cmd/run a "add-wireframe-node" {:element eid :tag "input" :label "Name"})
+    (cmd/run a "add-wireframe-node" {:element eid :tag "dropdown" :options "draft"})
+    [a eid]))
+
+(defn- stored-node-attrs
+  "The attribute map the store currently holds for node `node-id` of element
+  `eid` (nil when the node carries no attributes)."
+  [a eid node-id]
+  (let [el (m/fetch (app/store a) :element eid)]
+    (node-attrs (wf/find-node (:wireframe el) node-id))))
+
+(deftest set-wireframe-attr-coerces-keyword-values
+  (let [[a eid] (set-attr-app)]
+    (testing "a keyword-typed attribute can be set from operator text"
+      (let [res (cmd/run a "set-wireframe-attr"
+                         {:element eid :node "n2" :attr "variant" :value "primary"})]
+        (is (not (r/error? res)))
+        (is (= :primary (:variant (stored-node-attrs a eid "n2")))
+            "the stored node carries the keyword, not the raw string")))
+    (testing "a value outside the attribute's allowed set is rejected by coercion"
+      (let [res (cmd/run a "set-wireframe-attr"
+                         {:element eid :node "n2" :attr "variant" :value "bogus"})]
+        (is (= :invalid-value (:error res)))
+        (is (re-find #"^variant value 'bogus' not in allowed set " (:message res)))
+        (is (= :primary (:variant (stored-node-attrs a eid "n2")))
+            "the store is left untouched")))))
+
+(deftest set-wireframe-attr-coerces-boolean-values
+  (let [[a eid] (set-attr-app)]
+    (testing "true coerces to the boolean true"
+      (is (not (r/error? (cmd/run a "set-wireframe-attr"
+                                  {:element eid :node "n3" :attr "required" :value "true"}))))
+      (is (true? (:required (stored-node-attrs a eid "n3")))))
+    (testing "false coerces to the boolean false"
+      (is (not (r/error? (cmd/run a "set-wireframe-attr"
+                                  {:element eid :node "n2" :attr "disabled" :value "false"}))))
+      (is (false? (:disabled (stored-node-attrs a eid "n2")))))
+    (testing "text that is not a boolean is rejected"
+      (let [res (cmd/run a "set-wireframe-attr"
+                         {:element eid :node "n3" :attr "required" :value "maybe"})]
+        (is (= :invalid-value (:error res)))
+        (is (= "required must be a boolean (true/false)" (:message res)))
+        (is (true? (:required (stored-node-attrs a eid "n3")))
+            "the store is left untouched")))))
+
+(deftest set-wireframe-attr-coerces-list-values
+  (let [[a eid] (set-attr-app)]
+    (testing "comma-separated text becomes a vector of strings"
+      (let [res (cmd/run a "set-wireframe-attr"
+                         {:element eid :node "n4" :attr "options" :value "a,b"})]
+        (is (not (r/error? res)))
+        (is (= ["a" "b"] (:options (stored-node-attrs a eid "n4"))))))))
+
+(deftest set-wireframe-attr-still-sets-string-values
+  (let [[a eid] (set-attr-app)]
+    (testing "a string-typed attribute still takes the text as-is"
+      (let [res (cmd/run a "set-wireframe-attr"
+                         {:element eid :node "n2" :attr "label" :value "Save it"})]
+        (is (not (r/error? res)))
+        (is (= "Save it" (:label (stored-node-attrs a eid "n2"))))))))
+
+(deftest set-wireframe-attr-missing-node-keeps-the-rule-rejection
+  (let [[a eid] (set-attr-app)
+        res     (cmd/run a "set-wireframe-attr"
+                         {:element eid :node "n99" :attr "label" :value "X"})]
+    (testing "an unknown node is not pre-empted by the adapter"
+      (is (= :not-found (:error res)))
+      (is (= :wireframe-node (:type res)))
+      (is (= "node n99 does not exist" (:message res))))))
+
+(deftest set-wireframe-attr-leaves-unadmitted-attributes-to-the-rule
+  (let [[a eid] (set-attr-app)
+        ;; :align is not one of :button's attributes, so there is no schema
+        ;; entry to coerce against: the raw text goes through unchanged and the
+        ;; rule's own tree validation reports it — exactly as before.
+        res     (cmd/run a "set-wireframe-attr"
+                         {:element eid :node "n2" :attr "align" :value "center"})]
+    (testing "an attribute the node's tag does not admit is still the rule's call"
+      (is (= :invalid-wireframe (:error res)))
+      (is (= "wireframe validation failed: unknown attribute :align" (:message res))))))
+
 ;; NameResolution.resolve (event-model.allium): batched name -> candidate
 ;; lookup, so an LLM never has to pull the whole model to resolve a name.
 (deftest resolve-names-test
