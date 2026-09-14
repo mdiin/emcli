@@ -79,6 +79,7 @@
    "add-derivation" [:connection] "remove-derivation" [:connection]
    "add-step-example" [:step] "remove-step-example" [:step]
     "add-wireframe-node" [:element] "set-wireframe-attr" [:element]
+    "add-wireframe-node-before" [:element]
     "set-wireframe-text" [:element]})
 
 (defn- int-opt-keys [command]

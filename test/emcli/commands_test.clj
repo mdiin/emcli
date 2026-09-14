@@ -22,6 +22,12 @@
     (testing "structured/composite command: bad :connection is rejected"
       (is (= :bad-argument (:error (cmd/run a "add-derivation"
                                             {:connection "xyz" :target "t" :from "a"})))))
+    (testing "wireframe composite: bad :element is rejected, not leaked as a sentinel"
+      (let [res (cmd/run a "add-wireframe-node-before"
+                         {:element "abc" :before "a" :tag "event"})]
+        (is (= :bad-argument (:error res)))
+        (is (= ["element"] (:args res)))
+        (is (= "expected an integer for: element" (:message res)))))
     (testing "a fractional value is not an integer"
       (is (= :bad-argument (:error (cmd/run a "create-swimlane" {:name "X" :index "1.5"})))))))
 
