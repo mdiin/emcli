@@ -960,11 +960,15 @@ contract SchemaCodec {
 
     @invariant SchemaRoundtrip
         -- Round-tripping a foreign document is semantic, not byte-lossless. For
-        -- a document valid against eventmodeling.schema.json,
+        -- a document valid against eventmodeling.schema.json and accepted by
+        -- import (see ImportRejectsForbiddenDocument),
         -- export(import(document)) preserves the canonical subset of the
         -- document - the fields this model represents - normalising ids and
         -- ordering and dropping visual layout. Fields outside the canonical
-        -- model (see the dropped-fields guidance below) are NOT preserved.
+        -- model (see the dropped-fields guidance below) are NOT preserved. A
+        -- document the always-on invariants reject has no import result, so this
+        -- guarantee is vacuous for it (see GroupIdIsElementIdentity for the
+        -- concrete case: the same groupId embedded twice inside one slice).
 
     @invariant GroupIdIsElementIdentity
         -- A canonical Element's identity is its schema groupId. Each placement
@@ -975,6 +979,10 @@ contract SchemaCodec {
         -- only PLACED elements participate in the round-trip: an element with no
         -- placement has no embedded representation and is not exported (the
         -- round-trip is placement-bound).
+        -- Placed copies therefore appear as one embedded element per placement, and
+        -- within a single slice at most one embedded element may carry a given groupId;
+        -- a document embedding the same groupId twice inside one slice is unrepresentable
+        -- and is rejected on import as a whole (see ImportRejectsForbiddenDocument).
 
     @invariant DependenciesPerPlacement
         -- Each Connection exports as an OUTBOUND dependency on every embedded
