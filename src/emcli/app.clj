@@ -193,10 +193,14 @@
 
 (defn replace-model!
   "Replace the entire model (used by import). Persists and re-snapshots every
-  active subscriber. Runs under the app lock."
+  active subscriber. Runs under the app lock.
+
+  The load-time :repairs diagnostic is dropped: it described the store that was
+  read from disk, which is exactly the store being replaced."
   [app new-store new-model]
   (locking (:lock @app)
     (swap! app assoc :store (assoc new-store :subscriptions {}) :model new-model)
+    (swap! app dissoc :repairs)
     (persist! app)
     (let [snap (snapshot app)]
       (doseq [send-fn (vals (:subscribers @app))] (send-fn snap)))))

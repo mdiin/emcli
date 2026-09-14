@@ -80,6 +80,28 @@
                   "the repaired model is not wedged: a later mutation is accepted"))))
         (finally (fs/delete-if-exists file))))))
 
+(deftest replace-model-clears-load-time-repairs
+  (testing "repairs describe the store that was loaded, not the one installed after"
+    (let [file (tmp-file)
+          a    (app/new-app "Orders" file)]
+      (try
+        (let [ids (author! a)
+              ev  (:result (cmd/run a "create-element" {:name "OrderPlaced" :kind "event"}))]
+          (cmd/run a "place-element" {:slice (:sl ids) :element (:id ev)})
+          ;; hand-edit the file into a repairable state, as in the duplicate
+          ;; placement test, then load it: the app reports the repair it made.
+          (let [{:keys [model store]} (edn/read-string (slurp file))
+                [dirty _dup]          (m/create store :placement {:slice   (:sl ids)
+                                                                  :element (:id ev)
+                                                                  :index   99})]
+            (spit file (pr-str {:model model :store dirty}))
+            (let [b (app/load-app file)]
+              (is (seq (:repairs @b)) "a loaded app reports the repairs it made")
+              (app/replace-model! b store model)
+              (is (empty? (:repairs @b))
+                  "a loaded app reports no repairs once the store is replaced"))))
+        (finally (fs/delete-if-exists file))))))
+
 (deftest load-app-refuses-a-wireframe-naming-a-missing-field
   (testing "a hand-edited file whose screen layout names an unknown field is refused, not loaded"
     (let [file (tmp-file)
