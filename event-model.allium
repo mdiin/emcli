@@ -263,10 +263,11 @@ value WireframeAttribute {
 -- is a container).
 --
 -- node_id is a stable address ("n1", "n2", ...) allocated when the node is
--- created: one past the highest id currently in the tree, and never reused, so
--- removing a node neither shifts nor recycles any other node's id and an address
--- read once stays valid across unrelated edits. Node ids address nodes for
--- editing only; the rest of the canonical model knows nothing of them.
+-- created: one past the highest numeric id currently in the tree. Removing a
+-- node neither shifts nor changes any surviving node's id, so an address read
+-- once stays valid across unrelated edits; a removed node's number may be reused
+-- if it was the highest in the tree. Node ids address nodes for editing only;
+-- the rest of the canonical model knows nothing of them.
 value WireframeNode {
     node_id: String
     tag: WireframeTag
