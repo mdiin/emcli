@@ -21,6 +21,20 @@
 (defn- emit [x] (println (json/generate-string x {:pretty true})))
 (defn- die [msg] (binding [*out* *err*] (println msg)) (System/exit 1))
 
+(defn- startup-failure
+  "The report for a `serve` that could not start. A store the app refuses to load
+  is named with its file and the reasons it cannot be used; any other failure is
+  still named with the port and its cause."
+  [port e]
+  (let [{:keys [error file violations]} (ex-data e)]
+    (if (= :invalid-store error)
+      (let [reasons (->> (if (seq violations) (map :message violations) [(ex-message e)])
+                         (remove str/blank?))]
+        (str "✗ " file " cannot be used as a model"
+             (when (seq reasons) (str "\n  " (str/join "\n  " reasons)))))
+      (str "✗ could not start the model server on port " port ": "
+           (or (ex-message e) (str (class e)))))))
+
 ;; --- HTTP helpers ----------------------------------------------------------
 
 (defn- request [method url & [body]]
@@ -86,7 +100,12 @@
   (let [port  (parse-long (str (or (:port opts) "8090")))
         name  (or (:name opts) "model")
         file  (:file opts)
-        {:keys [stop]} (server/start! {:port port :model-name name :file file})]
+        ;; a store the app cannot load is a user error, not a crash: report it
+        ;; like every other one (stderr + exit 1).
+        {:keys [stop]} (try
+                         (server/start! {:port port :model-name name :file file})
+                         (catch Exception e
+                           (die (startup-failure port e))))]
     (.addShutdownHook (Runtime/getRuntime) (Thread. ^Runnable stop))
     (println (str "emcli serving model \"" name "\" on http://localhost:" port))
     (when file (println (str "  persisting to:        " file)))
