@@ -1,7 +1,9 @@
 (ns emcli.schema-test
   "SchemaCodec contract obligations: contract signatures, ExportRequiresComplete,
-  ModelRoundtrip, SchemaRoundtrip, GroupIdIsElementIdentity, DependenciesPerPlacement."
-  (:require [clojure.test :refer [deftest testing is]]
+  ImportRejectsForbiddenDocument, ModelRoundtrip, SchemaRoundtrip,
+  GroupIdIsElementIdentity, DependenciesPerPlacement."
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest testing is]]
             [emcli.model :as m]
             [emcli.rules :as r]
             [emcli.schema :as sc]
@@ -268,3 +270,35 @@
                                [(:name (m/fetch store2 :element (:from c)))
                                 (:name (m/fetch store2 :element (:to c)))]))]
       (is (= before after)))))
+
+;; --- ImportRejectsForbiddenDocument ----------------------------------------
+
+(defn- foreign-doc-with-second-command
+  "`foreign-doc` with a second command embedded in its state_change slice. The
+  document is valid against eventmodeling.schema.json - a slice's arrays hold as
+  many commands as they like - but the always-on authoring invariant
+  PlacementMatchesSliceKind forbids a state_change slice holding two commands."
+  [doc]
+  (let [extra {"id" "emb-cmd-2" "groupId" "grp-cmd-2" "title" "CancelOrder" "type" "COMMAND"
+               "context" "INTERNAL" "aggregate" "Orders" "fields" [] "dependencies" []}]
+    (update-in doc ["slices" 0 "commands"] conj extra)))
+
+(defn- import-failure
+  "The ex-info `sc/import-model` threw, or nil if the document was accepted."
+  [doc]
+  (try (sc/import-model doc) nil (catch clojure.lang.ExceptionInfo e e)))
+
+(deftest import-rejects-a-document-the-authoring-invariants-forbid
+  (testing "a document the invariants forbid is rejected as a whole, naming the offending slice"
+    (let [e (import-failure (foreign-doc-with-second-command foreign-doc))]
+      (is (some? e) "the import is refused, not silently truncated to a nil store")
+      (is (= :import-rejected (:error (ex-data e))))
+      (is (= ["sl-1"] (:slices (ex-data e))) "the offending slice is named")
+      (is (= :invariant-violation (:error (:rule-error (ex-data e))))
+          "the underlying rule error is carried out")
+      (is (str/includes? (ex-message e) "sl-1"))))
+  (testing "the same document with one command in the slice imports (happy path)"
+    (let [[store mid] (sc/import-model foreign-doc)]
+      (is (some? mid))
+      (is (= #{"PlaceOrder" "OrderPlaced" "OrderList" "OrderScreen"}
+             (set (map :name (m/elements store mid))))))))

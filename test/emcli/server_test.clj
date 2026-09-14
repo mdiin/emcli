@@ -97,6 +97,59 @@
             (is (= 200 (:status resp)) "now complete")
             (is (seq (get (body-json resp) :slices)))))))))
 
+(defn- import-doc
+  "A document in the eventmodeling.schema.json interchange shape whose
+  STATE_CHANGE slice carries `n` commands. n = 1 is valid and imports; n = 2 is
+  still valid against the schema (a slice's arrays hold as many commands as they
+  like) but the always-on authoring invariant PlacementMatchesSliceKind forbids
+  it, so the document must be refused."
+  [n]
+  {"name" "Imported"
+   "slices"
+   [{"id" "sl-1" "title" "Place order" "index" 0 "status" "Created"
+     "context" "Ordering" "sliceType" "STATE_CHANGE"
+     "commands" (mapv (fn [i] {"id" (str "emb-cmd-" i) "groupId" (str "grp-cmd-" i)
+                               "title" (nth ["PlaceOrder" "CancelOrder"] i)
+                               "type" "COMMAND" "context" "INTERNAL" "aggregate" "Orders"
+                               "fields" [] "dependencies" []})
+                      (range n))
+     "events" [{"id" "emb-evt" "groupId" "grp-evt" "title" "OrderPlaced" "type" "EVENT"
+                "context" "INTERNAL" "fields" [] "dependencies" []}]
+     "specifications" []}]})
+
+(defn- snapshot-placement-names
+  "The element names of the first slice's placements in a /snapshot body."
+  [snap]
+  (map #(get-in % [:element :name])
+       (-> snap :model :timelines first :slices first :placements)))
+
+(deftest import-rejects-a-document-the-invariants-forbid
+  (testing "POST /import of a valid-but-forbidden document is refused and installs nothing"
+    (let [tl     (:result (body-json (post "/authoring/create-timeline" {:title "Ordering"})))
+          sl     (:result (body-json (post "/authoring/add-slice" {:timeline (:id tl) :title "Place"
+                                                                   :kind "state_change" :index 0})))
+          cmd    (:result (body-json (post "/authoring/create-element" {:name "PlaceOrder"
+                                                                        :kind "command"})))
+          _      (post "/authoring/place-element" {:slice (:id sl) :element (:id cmd)})
+          before (body-json (get* "/snapshot"))
+          resp   (post "/import" (import-doc 2))
+          body   (body-json resp)
+          after  (body-json (get* "/snapshot"))]
+      (is (= 422 (:status resp)) "a rejected import is a 422, never a 200")
+      (is (false? (:ok body)))
+      (is (= "import-rejected" (:error body)))
+      (is (= ["sl-1"] (:slices body)) "the refusal names the offending slice")
+      (is (str/includes? (:message body) "sl-1"))
+      (testing "the running model is left untouched (nothing was installed)"
+        (is (= before after))
+        (is (= 1 (count (get-in after [:model :timelines]))) "the app's timeline survived")
+        (is (= ["PlaceOrder"] (snapshot-placement-names after))))))
+  (testing "a document the invariants admit is still imported"
+    (let [resp  (post "/import" (import-doc 1))
+          after (body-json (get* "/snapshot"))]
+      (is (= 200 (:status resp)))
+      (is (= ["PlaceOrder" "OrderPlaced"] (snapshot-placement-names after))))))
+
 (deftest resolve-endpoint
   (testing "POST /resolve batches name lookups without exposing the whole model"
     (let [tl (:result (body-json (post "/authoring/create-timeline" {:title "Checkout"})))

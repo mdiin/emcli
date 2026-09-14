@@ -52,10 +52,18 @@
    :headers {"Content-Type" "application/json"}
    :body (json/generate-string body {:pretty true})})
 
-(defn- read-json-body [req]
+(defn- read-body
+  "Slurp and parse a JSON request body. `keywordize?` picks whose convention the
+  body follows: the authoring commands' arguments and the resolve queries are
+  keyword maps, while an import document is the eventmodeling.schema.json
+  interchange shape, which `schema/import-model` reads by its string keys."
+  [req keywordize?]
   (when-let [b (:body req)]
     (let [s (if (string? b) b (slurp b))]
-      (when (seq s) (json/parse-string s true)))))
+      (when (seq s) (json/parse-string s keywordize?)))))
+
+(defn- read-json-body [req] (read-body req true))
+(defn- read-json-doc  [req] (read-body req false))
 
 (defn- sanitize
   "Strip the heavy/internal bits from a rule result for the wire."
@@ -108,10 +116,16 @@
           (json-response 422 (assoc (ex-data e) :ok false :message (ex-message e)))))
 
       (and (= :post request-method) (= uri "/import"))
-      (let [doc (read-json-body req)
-            [store mid] (schema/import-model doc)]
-        (app/replace-model! app store mid)
-        (json-response 200 {:ok true :model mid}))
+      ;; Import is all-or-nothing (ImportRejectsForbiddenDocument): a document
+      ;; the authoring invariants reject is refused and the running model is
+      ;; left untouched - replace-model! is only reached on success.
+      (try
+        (let [doc (read-json-doc req)
+              [store mid] (schema/import-model doc)]
+          (app/replace-model! app store mid)
+          (json-response 200 {:ok true :model mid}))
+        (catch clojure.lang.ExceptionInfo e
+          (json-response 422 (assoc (ex-data e) :ok false :message (ex-message e)))))
 
       ;; POST /authoring/<command>
       (and (= :post request-method) (= "authoring" (first segments)) (= 2 (count segments)))

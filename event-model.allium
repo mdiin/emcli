@@ -955,6 +955,13 @@ contract SchemaCodec {
         -- copy of its 'to' element. On import, dependencies are deduplicated by
         -- (from groupId, to groupId) back into a single Connection.
 
+    @invariant ImportRejectsForbiddenDocument
+        -- import applies the same authoring operations an operator uses, so the
+        -- always-on authoring invariants hold over an imported document too. A
+        -- document those invariants reject is rejected as a whole, naming the
+        -- offending slices, and nothing is installed: import is all-or-nothing,
+        -- and the running model is left unchanged.
+
     @guidance
         -- Dropped fields (deliberate, documented loss in favour of a clean
         -- model): they have no canonical representation, are emitted empty/
@@ -1002,9 +1009,9 @@ contract SchemaCodec {
 --
 -- @note Import applies a document through the same operations an operator uses,
 -- so the always-on authoring invariants hold while importing too: a document
--- those invariants admit imports cleanly, while a document they reject has no
--- representation in the canonical model at all. When that applies is an open
--- question below.
+-- those invariants admit imports cleanly, while a document they reject is
+-- rejected as a whole - naming the offending slices - and nothing is installed
+-- (ImportRejectsForbiddenDocument).
 
 -- The live change stream a frontend consumes to visualise a model as it is
 -- edited. Outbound only: the frontend receives changes, never issues edits over
@@ -1402,8 +1409,6 @@ surface ModelChangeStream {
 -- SchemaCodec contract above.
 
 open question "NameResolution.NameQuery.kind_hint currently records only the resolvable entity kind (Timeline/Swimlane/Slice/Element/Specification). Should it also carry a finer sub-kind hint (Element.kind: command/event/read_model/screen/automation, or Slice.kind: state_change/state_view/automation) to further rank candidates? Those are inline enums on Element/Slice today; supporting them as hint fields requires promoting them to named enums (a change to existing entities) or a parallel named enum duplicating their literals. Deferred pending a decision on whether the extra ranking signal is worth that."
-
-open question "SchemaCodec import reuses the authoring operations, so the always-on authoring invariants hold during import as well. A document those invariants reject - a state_change slice carrying two commands, say, which the interchange format's per-slice arrays happily allow - therefore has no representation in the canonical model, and PlacementMatchesSliceKind makes it unimportable. Today such a document is neither imported nor cleanly rejected: the offending placement is refused mid-import and the import returns having lost the document's entities entirely (in the running process, a model with nothing left in it). Should import reject a document the invariants forbid, naming the offending slices, or should it admit a canonical model that is simply not is_complete?"
 
 open question "AddWireframeNode treats a parent node id that does not exist as 'append at the root' rather than as an error, unlike AddWireframeNodeBefore, SetWireframeAttr, SetWireframeText and DeleteWireframeNode, which all reject an unknown node id. A mistyped parent id therefore places a node somewhere other than intended instead of failing. Should an unknown parent be rejected like an unknown sibling?"
 

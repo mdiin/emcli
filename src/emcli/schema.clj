@@ -14,6 +14,9 @@
       embedded copy of its `to`; import dedups by (from groupId, to groupId).
     * ExportRequiresComplete    — export is rejected unless every
       non-informational slice and every specification is complete.
+    * ImportRejectsForbiddenDocument — import is all-or-nothing: a document the
+      always-on authoring invariants reject is rejected as a whole, naming the
+      offending slices, and nothing is installed.
   Informational slices and the documented technical/visual fields are dropped.
   So is the information-completeness provenance (Connection.derivations and
   Element.field_origins): the interchange format has no field-level derivation or
@@ -21,6 +24,7 @@
   reconstructed on import (a documented exclusion from ModelRoundtrip)."
   (:require [cheshire.core :as json]
             [clojure.set :as set]
+            [clojure.string :as str]
             [emcli.model :as m]
             [emcli.rules :as r]))
 
@@ -184,6 +188,29 @@
 ;; Import
 ;; ---------------------------------------------------------------------------
 
+(defn- check-step
+  "Unwrap one authoring-rule application during import, or abort the whole
+  import (ImportRejectsForbiddenDocument).
+
+  A rejected rule result carries no :store, so it must never be carried onward
+  as the accumulated store: a document the always-on invariants reject is
+  rejected as a whole and nothing is installed. `subject` names what the step
+  concerned - {:step :place-element :slices [\"sl-1\"]}, say - and is merged into
+  the thrown ex-data, so a caller can report the offending slice(s)/spec(s)."
+  [subject res]
+  (if-not (r/error? res)
+    res
+    (let [ids (->> (vals (dissoc subject :step))
+                   (mapcat #(if (coll? %) % [%]))
+                   (remove nil?))
+          msg (str "Import rejected at " (name (:step subject))
+                   (when (seq ids) (str " " (str/join ", " (map str ids))))
+                   ": " (or (:message res) (pr-str res)))]
+      (throw (ex-info msg (merge {:error :import-rejected
+                                  :rule-error res
+                                  :message msg}
+                                 subject))))))
+
 (defn- embedded-elements-of [schema-slice]
   (mapcat (fn [arr] (map (fn [e] (assoc e ::kind (array->kind arr)))
                          (get schema-slice arr [])))
@@ -199,7 +226,8 @@
     (if-let [lane (first (m/by-field store :swimlane :name name))]
       [store (:id lane)]
       (let [idx (count (m/swimlanes store model-id))
-            {:keys [store result]} (r/create-swimlane store {:model model-id :name name :index idx})]
+            {:keys [store result]} (check-step {:step :create-swimlane :swimlanes [name]}
+                                               (r/create-swimlane store {:model model-id :name name :index idx}))]
         [store (:id result)]))))
 
 (defn- resolve-far
@@ -213,14 +241,17 @@
 (defn- apply-step-extras
   "Re-attach a step's expectEmptyList and examples after creation, so both
   round-trip (SpecStep.expect_empty and SpecStep.examples are canonical)."
-  [store step st]
-  (let [store    (if (get st "expectEmptyList")
-                   (:store (r/set-step-expect-empty store {:step (:id step) :value true}))
+  [store step st spec-id]
+  (let [subject  {:specifications [spec-id]}
+        store    (if (get st "expectEmptyList")
+                   (:store (check-step (assoc subject :step :set-step-expect-empty)
+                                       (r/set-step-expect-empty store {:step (:id step) :value true})))
                    store)
         examples (mapv (fn [e] {:field_name (get e "name") :field_value (get e "value")})
                        (get st "examples" []))]
     (if (seq examples)
-      (:store (r/set-step-examples store {:step (:id step) :examples examples}))
+      (:store (check-step (assoc subject :step :set-step-examples)
+                          (r/set-step-examples store {:step (:id step) :examples examples})))
       store)))
 
 (defn import-model
@@ -229,13 +260,15 @@
   (let [model-name (get document "name" "imported")
         slices     (get document "slices" [])
         store0     (m/empty-store)
-        {store :store mid :result} (r/create-model store0 {:name model-name})
+        {store :store mid :result} (check-step {:step :create-model}
+                                               (r/create-model store0 {:name model-name}))
         mid        (:id mid)
         ;; --- timelines (grouped by slice context, in first-seen order) ------
         contexts   (distinct (map #(get % "context" "") slices))
         [store ctx->tl]
         (reduce (fn [[s acc] ctx]
-                  (let [{s2 :store tl :result} (r/create-timeline s {:model mid :title ctx})]
+                  (let [{s2 :store tl :result} (check-step {:step :create-timeline :contexts [ctx]}
+                                                           (r/create-timeline s {:model mid :title ctx}))]
                     [s2 (assoc acc ctx (:id tl))]))
                 [store {}] contexts)
         ;; --- collapse embedded elements by groupId into canonical Elements --
@@ -248,9 +281,10 @@
         (reduce (fn [[s acc] [g e]]
                   (let [[s lane] (ensure-swimlane s mid (get e "aggregate"))
                         {s2 :store el :result}
-                        (r/create-element s {:model mid
-                                             :name (get e "title")
-                                             :kind (or (::kind e) (type->elkind (get e "type")))})
+                        (check-step {:step :create-element :elements [(get e "title")]}
+                                    (r/create-element s {:model mid
+                                                         :name (get e "title")
+                                                         :kind (or (::kind e) (type->elkind (get e "type")))}))
                         eid (:id el)
                         s2  (-> s2
                                 (m/set-field :element eid :context (schema->ctx (get e "context") :internal))
@@ -266,9 +300,10 @@
          (fn [[s pmap smap] ss]
            (let [tl   (ctx->tl (get ss "context" ""))
                  {s2 :store sl :result}
-                 (r/add-slice s {:timeline tl :title (get ss "title")
-                                 :kind (slicetype->kind (get ss "sliceType") :state_change)
-                                 :index (get ss "index" 0)})
+                 (check-step {:step :add-slice :slices [(get ss "id")]}
+                             (r/add-slice s {:timeline tl :title (get ss "title")
+                                             :kind (slicetype->kind (get ss "sliceType") :state_change)
+                                             :index (get ss "index" 0)}))
                  slid (:id sl)
                  s2   (m/set-field s2 :slice slid :status (schema->status (get ss "status") :created))
                  ;; placements (one per embedded element)
@@ -276,7 +311,9 @@
                  (reduce (fn [[s pm] e]
                            (let [g   (get e "groupId" (str "anon-" (get e "id")))
                                  eid (group->el g)
-                                 {s' :store p :result} (r/place-element s {:slice slid :element eid})]
+                                 {s' :store p :result}
+                                 (check-step {:step :place-element :slices [(get ss "id")]}
+                                             (r/place-element s {:slice slid :element eid}))]
                              [s' (assoc pm (get e "id") (:id p))]))
                          [s2 pmap] (embedded-elements-of ss))
                  ;; screenImages -> element.image_url
@@ -302,7 +339,9 @@
                                  :else a)))
                            acc (get e "dependencies" []))))
                #{} all-embedded)
-        store (reduce (fn [s [from to]] (:store (r/connect s {:from from :to to})))
+        store (reduce (fn [s [from to]]
+                        (:store (check-step {:step :connect}
+                                            (r/connect s {:from from :to to}))))
                       store edges)
         ;; --- specifications + steps ----------------------------------------
         store (reduce
@@ -310,7 +349,9 @@
                  (let [slid (slice-id-map (get ss "id"))]
                    (reduce
                     (fn [s spec]
-                      (let [{s2 :store sp :result} (r/add-specification s {:slice slid :title (get spec "title")})
+                      (let [{s2 :store sp :result}
+                            (check-step {:step :add-specification :slices [(get ss "id")]}
+                                        (r/add-specification s {:slice slid :title (get spec "title")}))
                             spid (:id sp)]
                         (reduce
                          (fn [s [clause steps]]
@@ -319,13 +360,13 @@
                               (if (= "SPEC_ERROR" (get st "type"))
                                 (let [res (r/add-error-step s {:spec spid :error-name (get st "title")
                                                                :index (get st "index" 0)})]
-                                  (if (r/error? res) s (apply-step-extras (:store res) (:result res) st)))
+                                  (if (r/error? res) s (apply-step-extras (:store res) (:result res) st spid)))
                                 (let [kind (spectype->elkind (get st "type"))
                                       el   (name->el [kind (get st "title")])
                                       res  (when el (r/add-spec-step s {:spec spid :clause clause
                                                                         :element el :index (get st "index" 0)}))]
                                   (if (and res (not (r/error? res)))
-                                    (apply-step-extras (:store res) (:result res) st)
+                                    (apply-step-extras (:store res) (:result res) st spid)
                                     s))))
                             s steps))
                          s2 [[:given_step (get spec "given" [])]
