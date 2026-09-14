@@ -73,7 +73,7 @@ This distinction is important! USER may use the word "place" for both; disambigu
 
 - All integer id arguments come from `emcli_resolve` (for existing entities) or from the result of a prior authoring call. Every authoring command returns the created/modified entity as JSON, so you can read the `id` directly from that result — no need to call `emcli_resolve` immediately after creating something.
 - The optional `--id` arg on create commands lets you pre-assign a stable id; it must not already be in use.
-- `--index` in slice/placement/swimlane is zero-based and denotes position within the parent's ordered list.
+- `--index` in slice/swimlane is zero-based and denotes position within the parent's ordered list. Placement order is set via `emcli_placement` `reorder` (`--position front|back`, or `--before`/`--after <element>`).
 - A per-group tool result on success is the created/modified entity as JSON. On error it returns an `Error:` prefixed string with the server's message.
 - Element and timeline names may contain spaces (e.g. `"User created"`, `"Order Flow"`).
 
