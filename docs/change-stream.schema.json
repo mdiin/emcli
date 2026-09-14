@@ -321,7 +321,7 @@
         },
         "is_information_complete": {
           "type": "boolean",
-          "description": "True iff every field on the element is sourced (carried, derived or introduced). Present on updated element changes; ABSENT on a created one, where the entity is sent as stored."
+          "description": "True iff every field on the element is sourced (carried, derived or introduced). Always present on an element change, whether created or updated: the verdict is derived from the store, not carried in the stored entity."
         },
         "wireframe": {
           "oneOf": [
