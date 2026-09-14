@@ -116,6 +116,9 @@ entity ElementPlacement {
     -- Author-controlled display order of this placement within its slice, so a
     -- frontend renders placements in the order the author arranged them. A sort
     -- key only: non-unique and non-contiguous, ties broken by creation order.
+    -- Reorder (ReorderPlacement) renormalizes a whole slice to 0..n-1, while
+    -- removing a placement (RemovePlacement) leaves the survivors' indices as
+    -- they were, so they may stay non-contiguous.
     index: Integer
 }
 
@@ -422,9 +425,28 @@ rule ReorderSlice {
     ensures: slice.index = new_index
 }
 
+-- Reorder the placement of `element` within `slice` with a single relative move.
+-- `move` carries exactly one selector:
+--   position: front   - move to the head of the slice's placements
+--   position: back    - move to the tail
+--   before: <element> - move immediately before that element's placement
+--   after:  <element> - move immediately after it
+-- `before`/`after` must name an element placed in the same slice. Two black-box
+-- collection helpers express the reindexing:
+--   reposition(list, element, move): returns `list` ordered with `element`'s
+--     placement at the head, at the tail, or immediately before/after the anchor
+--     placement; every other placement keeps its relative order.
+--   index_in(list, placement): the 0-based index of `placement` in `list`.
+-- An index is a sort key only - non-unique, and non-contiguous once placements
+-- have been removed - so a relative move cannot be expressed by nudging a single
+-- integer. EVERY placement in the slice is renumbered instead: after the move the
+-- slice's placements carry 0..n-1, their new display order.
 rule ReorderPlacement {
-    when: ReorderPlacement(placement, new_index)
-    ensures: placement.index = new_index
+    when: ReorderPlacement(slice, element, move)
+    let order = reposition(slice.placements, element, move)
+    ensures:
+        for p in order:
+            p.index = index_in(order, p)
 }
 
 rule SetSliceStatus {
@@ -534,8 +556,8 @@ rule PlaceElement {
 }
 
 rule RemovePlacement {
-    when: RemovePlacement(placement)
-    ensures: not exists placement
+    when: RemovePlacement(slice, element)
+    ensures: not exists ElementPlacement{slice, element}
 }
 
 -- Connections ---------------------------------------------------------------
@@ -1303,8 +1325,8 @@ surface ModelAuthoring {
 
         -- Placements
         PlaceElement(slice, element, id?)
-        ReorderPlacement(placement, new_index)
-        RemovePlacement(placement)
+        ReorderPlacement(slice, element, move)
+        RemovePlacement(slice, element)
 
         -- Connections (a command is triggered only via a screen -> command or
         -- automation -> command connection)

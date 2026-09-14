@@ -201,6 +201,129 @@
       (is (>= (count (:changes delta)) 4)))))
 
 ;; ---------------------------------------------------------------------------
+;; Placements: relative reorder and removal, keyed on (slice, element)
+;; ---------------------------------------------------------------------------
+
+(defn- slice-with-elements
+  "A store with one slice holding one placement per named element, in the given
+  order. Returns {:store :mid :slid :elements} with :elements a name -> id map."
+  [names]
+  (let [[store mid]    (s/with-model)
+        store          (:store (s/ok store r/create-timeline {:model mid :title "T"}))
+        tlid           (:id (first (m/timelines store mid)))
+        store          (:store (s/ok store r/add-slice {:timeline tlid :title "S"
+                                                        :kind :state_change :index 0}))
+        slid           (:id (first (m/slices store tlid)))
+        [store elements] (reduce (fn [[st acc] nm]
+                                   (let [res (s/ok st r/create-element {:model mid :name nm :kind :event})]
+                                     [(:store res) (assoc acc nm (:id (:result res)))]))
+                                 [store {}] names)
+        store          (reduce (fn [st nm]
+                                 (:store (s/ok st r/place-element
+                                               {:slice slid :element (get elements nm)})))
+                               store names)]
+    {:store store :mid mid :slid slid :elements elements}))
+
+(defn- slice-order
+  "The element names of a slice's placements, in display order."
+  [store slid]
+  (mapv #(:name (m/placement-element store %)) (m/placements store slid)))
+
+(deftest reorder-placement-front-and-back
+  (let [{:keys [store slid elements]} (slice-with-elements ["A" "B" "C"])]
+    (testing ":front moves the target to the head and renumbers 0..n-1"
+      (let [res    (s/ok store r/reorder-placement {:slice slid :element (elements "C") :position :front})
+            store' (:store res)]
+        (is (= ["C" "A" "B"] (slice-order store' slid)))
+        (is (= [0 1 2] (map :index (m/placements store' slid))))
+        (is (= (elements "C") (:element (:result res))))
+        (is (= :ReorderPlacement (:op (:delta res))))
+        (is (= 3 (count (:changes (:delta res))))
+            "every placement is restated, not just the moved one")))
+    (testing ":back moves the target to the tail"
+      (let [store' (:store (s/ok store r/reorder-placement {:slice slid :element (elements "A") :position :back}))]
+        (is (= ["B" "C" "A"] (slice-order store' slid)))
+        (is (= [0 1 2] (map :index (m/placements store' slid))))))))
+
+(deftest reorder-placement-before-and-after
+  (let [{:keys [store slid elements]} (slice-with-elements ["A" "B" "C"])]
+    (testing ":before inserts immediately before the anchor's placement"
+      (let [store' (:store (s/ok store r/reorder-placement {:slice slid :element (elements "C") :before (elements "A")}))]
+        (is (= ["C" "A" "B"] (slice-order store' slid)))
+        (is (= [0 1 2] (map :index (m/placements store' slid))))))
+    (testing ":after inserts immediately after the anchor's placement"
+      (let [store' (:store (s/ok store r/reorder-placement {:slice slid :element (elements "A") :after (elements "C")}))]
+        (is (= ["B" "C" "A"] (slice-order store' slid)))
+        (is (= [0 1 2] (map :index (m/placements store' slid))))))
+    (testing "every other placement keeps its relative order"
+      (let [store' (:store (s/ok store r/reorder-placement {:slice slid :element (elements "A") :after (elements "B")}))]
+        (is (= ["B" "A" "C"] (slice-order store' slid)))))
+    (testing "a move that changes nothing still succeeds, with no changes restated"
+      (let [res (s/ok store r/reorder-placement {:slice slid :element (elements "B") :before (elements "C")})]
+        (is (= ["A" "B" "C"] (slice-order (:store res) slid)))
+        (is (empty? (:changes (:delta res))))))))
+
+(deftest reorder-placement-renormalizes-indices
+  (let [{:keys [store slid elements]} (slice-with-elements ["A" "B" "C"])
+        store  (:store (s/ok store r/remove-placement {:slice slid :element (elements "B")}))
+        store' (:store (s/ok store r/reorder-placement {:slice slid :element (elements "C") :position :front}))]
+    (testing "removal leaves the survivors' indices non-contiguous"
+      (is (= [0 2] (map :index (m/placements store slid)))))
+    (testing "a reorder renormalizes the whole slice to 0..n-1"
+      (is (= ["C" "A"] (slice-order store' slid)))
+      (is (= [0 1] (map :index (m/placements store' slid)))))))
+
+(deftest remove-placement-by-slice-and-element
+  (let [{:keys [store slid elements]} (slice-with-elements ["A" "B"])
+        res    (s/ok store r/remove-placement {:slice slid :element (elements "A")})
+        store' (:store res)]
+    (is (= ["B"] (slice-order store' slid)))
+    (is (= (elements "A") (:element (:result res))) "the removed placement is returned")
+    (is (= :RemovePlacement (:op (:delta res))))
+    (is (= [{:action :deleted :type :placement :id (:id (:result res))}]
+           (:changes (:delta res))))))
+
+(deftest placement-rules-reject-an-element-not-placed
+  (let [{:keys [store mid slid elements]} (slice-with-elements ["A"])
+        store (:store (s/ok store r/create-element {:model mid :name "Z" :kind :event}))
+        zid   (:id (first (filter #(= "Z" (:name %)) (m/elements store mid))))]
+    (testing "remove"
+      (let [err (s/err store r/remove-placement {:slice slid :element zid})]
+        (is (= :not-found (:error err)))
+        (is (= :placement (:type err)))
+        (is (= zid (:element err)))
+        (is (re-find #"no placement of element" (:message err)))))
+    (testing "reorder of an unplaced target"
+      (let [err (s/err store r/reorder-placement {:slice slid :element zid :position :front})]
+        (is (= :not-found (:error err)))
+        (is (re-find #"no placement of element" (:message err)))))
+    (testing "reorder against an unplaced before/after anchor"
+      (let [err (s/err store r/reorder-placement {:slice slid :element (elements "A") :before zid})]
+        (is (= :not-found (:error err)))
+        (is (= zid (:element err)))
+        (is (re-find #"no placement of element" (:message err)))))
+    (testing "a genuinely unknown element is the usual not-found"
+      (let [err (s/err store r/remove-placement {:slice slid :element 99999})]
+        (is (= :not-found (:error err)))
+        (is (= :element (:type err)))))))
+
+(deftest reorder-placement-requires-exactly-one-move-selector
+  (let [{:keys [store slid elements]} (slice-with-elements ["A" "B"])]
+    (testing "no selector"
+      (let [err (s/err store r/reorder-placement {:slice slid :element (elements "A")})]
+        (is (= :invalid-value (:error err)))
+        (is (re-find #"exactly one" (:message err)))))
+    (testing "more than one selector"
+      (let [err (s/err store r/reorder-placement {:slice slid :element (elements "A")
+                                                  :position :front :before (elements "B")})]
+        (is (= :invalid-value (:error err)))
+        (is (re-find #"exactly one" (:message err)))))
+    (testing "a position outside front/back"
+      (let [err (s/err store r/reorder-placement {:slice slid :element (elements "A") :position :middle})]
+        (is (= :invalid-value (:error err)))
+        (is (= :middle (:value err)))))))
+
+;; ---------------------------------------------------------------------------
 ;; Wireframe rules
 ;; ---------------------------------------------------------------------------
 

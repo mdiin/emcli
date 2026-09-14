@@ -343,16 +343,100 @@
             [store p] (m/create store :placement (with-id {:slice slice :element element :index next-idx} id))]
         (commit store :PlaceElement [(created :placement p)] p))))
 
-(defn reorder-placement [store {:keys [placement new-index]}]
-  (or (require-entity store :placement placement)
-      (let [store (m/set-field store :placement placement :index new-index)]
-        (commit store :ReorderPlacement [(updated store :placement placement)]
-                (m/fetch store :placement placement)))))
+;; A reorder moves a placement by one relative selector: --position front|back
+;; takes it to an end, --before <element> / --after <element> take it next to a
+;; sibling. Exactly one selector is required, and :position admits only the two
+;; bounded values.
+(def ^:private placement-positions #{:front :back})
 
-(defn remove-placement [store {:keys [placement]}]
-  (or (require-entity store :placement placement)
-      (let [store (m/delete store :placement placement)]
-        (commit store :RemovePlacement [(deleted :placement placement)] placement))))
+(defn- require-valid-move
+  "Exactly one of position/before/after selects the move; position is :front or
+  :back. Same :invalid-value shape as require-valid-value."
+  [{:keys [position before after]}]
+  (let [selectors (cond-> []
+                    (some? position) (conj :position)
+                    (some? before)   (conj :before)
+                    (some? after)    (conj :after))]
+    (cond
+      (empty? selectors)
+      {:error :invalid-value
+       :message "reorder requires exactly one of --position, --before or --after"}
+      (next selectors)
+      {:error :invalid-value
+       :message (str "reorder accepts exactly one of --position, --before or --after, got "
+                     (str/join " and " (map #(str "--" (name %)) selectors)))}
+      (some? position) (require-valid-value placement-positions position))))
+
+(defn- no-placement [slice element]
+  {:error :not-found :type :placement :slice slice :element element
+   :message (str "no placement of element " element " in slice " slice)})
+
+(defn- normalize-move
+  "The move selectors as a single {:position kw :anchor element-or-nil}."
+  [{:keys [position before after]}]
+  (cond
+    position {:position position}
+    before   {:position :before :anchor before}
+    :else    {:position :after :anchor after}))
+
+(defn- insert-next-to
+  "`others` (a slice's placements minus the one being moved) with `target`
+  inserted immediately before the placement of element `anchor` — or immediately
+  after it when `after?`. `anchor` is known to be placed in the slice."
+  [others target anchor after?]
+  (let [[head tail] (split-with #(not= anchor (:element %)) others)]
+    (if after?
+      (vec (concat head [(first tail) target] (rest tail)))
+      (vec (concat head [target] tail)))))
+
+(defn- reposition
+  "The slice's placements `ps` reordered by `move`, preserving the relative order
+  of every other placement. `move` is {:position :front}, {:position :back},
+  {:position :before :anchor element} or {:position :after :anchor element}."
+  [ps target {:keys [position anchor]}]
+  (let [others (into [] (remove #(= (:id target) (:id %))) ps)]
+    (case position
+      :front  (into [target] others)
+      :back   (conj others target)
+      :before (insert-next-to others target anchor false)
+      :after  (insert-next-to others target anchor true))))
+
+(defn- renumber
+  "Assign index = 0-based rank to every placement in `order` (a slice's placements
+  after a move), returning [store' changes] where changes restates each placement
+  whose index actually moved. Renormalizing the whole slice is intentional:
+  indices are a sort key only (non-unique, non-contiguous after removals) and
+  ties break by creation order, so a relative before/after move cannot be
+  expressed by nudging a single integer."
+  [store order]
+  (reduce (fn [[s changes] [i p]]
+            (if (= i (:index p))
+              [s changes]
+              (let [s (m/set-field s :placement (:id p) :index i)]
+                [s (conj changes (updated s :placement (:id p)))])))
+          [store []]
+          (map-indexed vector order)))
+
+(defn reorder-placement [store {:keys [slice element before after] :as args}]
+  (or (require-valid-move args)
+      (require-entity store :slice slice)
+      (require-entity store :element element)
+      (let [target (m/placement-of store slice element)
+            move   (normalize-move args)
+            anchor (m/placement-of store slice (:anchor move))]
+        (or (when-not target (no-placement slice element))
+            (when (and (:anchor move) (nil? anchor)) (no-placement slice (:anchor move)))
+            (let [[store changes] (renumber store (reposition (m/placements store slice) target move))]
+              (commit store :ReorderPlacement changes
+                      (m/fetch store :placement (:id target))))))))
+
+(defn remove-placement [store {:keys [slice element]}]
+  (or (require-entity store :slice slice)
+      (require-entity store :element element)
+      (or (when-let [target (m/placement-of store slice element)]
+            (let [store (m/delete store :placement (:id target))]
+              (commit store :RemovePlacement [(deleted :placement (:id target))] target)))
+          (no-placement slice element))))
 
 ;; ---------------------------------------------------------------------------
 ;; Connections

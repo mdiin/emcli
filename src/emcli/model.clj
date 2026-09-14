@@ -133,6 +133,14 @@
   [store slice-id]
   (->> (by-field store :placement :slice slice-id)
        (sort-by (juxt :index :id))))
+
+(defn placement-of
+  "The first placement of `element-id` within `placements [store slice-id]`
+  (ordered by [:index :id]), or nil. An element is placed in a slice at most
+  once (invariant PlacementElementUnique), so this is that placement."
+  [store slice-id element-id]
+  (first (filter #(= element-id (:element %)) (placements store slice-id))))
+
 (defn specs        [store slice-id] (by-field store :specification :slice slice-id))
 
 (defn model-slices

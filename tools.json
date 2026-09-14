@@ -34,7 +34,7 @@
     }
   },
   "emcli_placement" : {
-    "description" : "Manage element placements within timeline slices.\nVerbs: add (--slice --element [--id]), remove (--placement), reorder (--placement --new-index)",
+    "description" : "Manage element placements within timeline slices.\nVerbs: add (--slice --element [--id]), remove (--slice --element), reorder (--slice --element [--position] [--before] [--after])",
     "command" : "emcli placement {{verb}} {{args}}",
     "schema" : {
       "properties" : {

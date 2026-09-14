@@ -341,3 +341,52 @@
 
     (testing "zero queries is a no-op, not an error"
       (is (= [] (cmd/resolve-names a []))))))
+
+;; --- placement reorder/remove keyed on (slice, element) ---------------------
+;; ReorderPlacement/RemovePlacement address a placement by the (slice, element)
+;; pair, so the CLI takes --slice/--element, and reorder takes a single relative
+;; mover: --position front|back, or --before/--after naming a sibling element.
+
+(defn- placed-app
+  "An app with one slice holding placements of two events; returns
+  [app slice-id {name -> element-id}]."
+  []
+  (let [a  (app/new-app "M")
+        sl (:id (:result (cmd/run a "add-slice"
+                                  {:timeline (:id (:result (cmd/run a "create-timeline" {:title "T"})))
+                                   :title "S" :kind "state_change" :index 0})))
+        a1 (:id (:result (cmd/run a "create-element" {:name "A" :kind "event"})))
+        a2 (:id (:result (cmd/run a "create-element" {:name "B" :kind "event"})))]
+    (cmd/run a "place-element" {:slice sl :element a1})
+    (cmd/run a "place-element" {:slice sl :element a2})
+    [a sl {"A" a1 "B" a2}]))
+
+(defn- placement-order
+  "The element names of a slice's placements, in display order, in `a`."
+  [a sl]
+  (mapv #(:name (m/placement-element (app/store a) %)) (m/placements (app/store a) sl)))
+
+(deftest placement-reorder-and-remove-are-keyed-on-slice-and-element
+  (let [[a sl ids] (placed-app)]
+    (testing "reorder takes --slice/--element plus one move selector"
+      (let [res (cmd/run a "reorder-placement" {:slice sl :element (ids "B") :position "front"})]
+        (is (not (r/error? res)))
+        (is (= (ids "B") (:element (:result res))))
+        (is (= ["B" "A"] (placement-order a sl)))))
+    (testing "--before names an element to sit before"
+      (let [res (cmd/run a "reorder-placement" {:slice sl :element (ids "A") :before (ids "B")})]
+        (is (not (r/error? res)))
+        (is (= ["A" "B"] (placement-order a sl)))))
+    (testing "an out-of-range --position is rejected by the rule"
+      (is (= :invalid-value (:error (cmd/run a "reorder-placement"
+                                             {:slice sl :element (ids "A") :position "middle"})))))
+    (testing "exactly one move selector is required"
+      (is (= :invalid-value (:error (cmd/run a "reorder-placement"
+                                             {:slice sl :element (ids "A")})))))
+    (testing "remove addresses the placement by slice+element"
+      (let [res (cmd/run a "remove-placement" {:slice sl :element (ids "A")})]
+        (is (not (r/error? res)))
+        (is (= ["B"] (placement-order a sl)))))
+    (testing "a non-integer --slice is a bad-argument, like any other int param"
+      (is (= :bad-argument (:error (cmd/run a "reorder-placement"
+                                            {:slice "x" :element (ids "B") :position "front"})))))))
