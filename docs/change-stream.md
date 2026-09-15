@@ -34,10 +34,14 @@ data: <one line of JSON>
 ```
 
 - The `event:` name equals the payload's `op` field.
-- The **first** event is always `event: snapshot` (exactly one).
-- Every **subsequent** event is a delta; its `event:` name is the authoring
-  operation (e.g. `CreateTimeline`). There is no gap: no mutation committed
-  after the snapshot is taken is lost or duplicated.
+- The **first** event is always `event: snapshot`: a stream opens with exactly
+  one. A further snapshot is sent only when the model is replaced — an import
+  re-snapshots every connected client instead of sending a delta (see
+  `Endpoints`) — so over a client's lifetime there is one snapshot per
+  (re)connection and one per import.
+- Between snapshots every other event is a delta; its `event:` name is the
+  authoring operation (e.g. `CreateTimeline`). There is no gap: no mutation
+  committed after a snapshot is taken is lost or duplicated.
 
 ## 1. Snapshot event (first message)
 
@@ -79,6 +83,7 @@ Populated:
               { "id": 9, "title": "Happy path", "is_complete": true,
                 "steps": [
                   { "id": 10, "clause": "when_step", "index": 0, "is_error": false, "error_name": null,
+                    "element": { "id": 2, "name": "PlaceOrder" },
                     "examples": [ { "field_name": "id", "field_value": "1" } ] }
                 ] }
             ] }
@@ -109,8 +114,12 @@ for a `state_change` slice, one read model for a `state_view` slice, one command
 and one automation for an `automation` slice) and its `specifications[]`: each
 one's `is_complete` (one `when_step` naming a command for a
 `state_change`/`automation` slice, or one `then_step` naming a read model for a
-`state_view` slice) and its `steps[]` in order, each step carrying its
-`examples[]` (`field_name`/`field_value` pairs). Neither flag accounts for
+`state_view` slice) and its `steps[]` in order, each step always carrying its
+`element` — a snapshot never omits the key: a nested `{id, name}` ref on a
+normal step, or an explicit `null` on an error step (a delta spec-step differs:
+there `element` is the element's bare integer id, and an error step omits the
+key entirely — see `Delta events`) — and its `examples[]` (`field_name`/
+`field_value` pairs). Neither flag accounts for
 `status`: a slice tagged `informational` still reports `is_complete`
 independently, and it is export (not the stream) that excludes such slices.
 
@@ -231,14 +240,17 @@ fields):
 - `image_url` is absent until `SetImageUrl` is invoked, then always a string.
 - `wireframe` is absent until the screen's first layout node is added; it carries
   the tree while one exists, and becomes `null` when the root node is deleted.
-- `element` is absent on an error step, and `error_name` is present only on one.
+- `element` holds the element's bare integer id on a normal step (not the nested
+  `{id, name}` ref a snapshot carries) and is omitted entirely on an error step,
+  never set to `null`; the snapshot by contrast always carries the key and uses
+  an explicit `null` there. `error_name` is present only on one.
 
 Embedded value objects:
 - **Field**: `{ name, type }` plus `optional`, `cardinality` and `subfields[]` when the field carries them — authoring may omit all three, and the interchange export defaults them to `false`, `single` and `[]`
 - **Example**: `{ field_name, field_value }`
 - **FieldDerivation** (on `connection.derivations`): `{ target_field, source_fields[] }` — a target field derived from one or more source fields (one with a different name = rename; many = aggregation)
 - **FieldOrigin** (on `element.field_origins`): `{ field, origin }` — a field legitimately introduced rather than sourced upstream
-- **WireframeNode** (on `element.wireframe`, recursive): a hiccup-like JSON array `[tag, attrs, ...children]`. Clojure keywords are serialised as strings, so `[:button {:-id "n2" :label "OK"}]` arrives as `["button", {"-id": "n2", "label": "OK"}]`, and a vector-valued attribute such as a dropdown's `:options` arrives as a JSON array. The root node's tag is always `"canvas"` (the whole tree *is* the wireframe; there is no wrapper object). Every attrs object carries `"-id"`, a stable string address for incremental edits, allocated one past the highest id in the tree and never reused — deleting a node neither shifts nor recycles any other node's id. Children are either nested WireframeNodes or plain strings (text-children tags: `h1`, `h2`, `h3`, `text`, `span`). `DeleteWireframeNode` on the root node sets `wireframe` to `null` on the next delta: the root is the tree's top, so the whole layout goes with it. The tag and attribute vocabulary is in [`wireframe-dsl.md`](../doc/wireframe-dsl.md).
+- **WireframeNode** (on `element.wireframe`, recursive): a hiccup-like JSON array `[tag, id-map, attrs?, ...children]`. Clojure keywords are serialised as strings, so `[:button {:-id "n2"} {:label "OK" :variant :primary}]` arrives as `["button", {"-id": "n2"}, {"label": "OK", "variant": "primary"}]`, and a vector-valued attribute such as a dropdown's `:options` arrives as a JSON array. The root node's tag is always `"canvas"` (the whole tree *is* the wireframe; there is no wrapper object). The node's id is its own map — the second element, always carrying `"-id"`, a stable string address for incremental edits, allocated one past the highest id in the tree and never reused, so deleting a node neither shifts nor recycles any other node's id — and the node's content attributes, when it has any, follow in an object of their own rather than being merged into that id map. Children are either nested WireframeNodes or plain strings (text-children tags: `h1`, `h2`, `h3`, `text`, `span`). `DeleteWireframeNode` on the root node sets `wireframe` to `null` on the next delta: the root is the tree's top, so the whole layout goes with it. The tag and attribute vocabulary is in [`wireframe-dsl.md`](../doc/wireframe-dsl.md).
 
 ### Enum values
 
@@ -267,7 +279,7 @@ single normalised store works end to end:
    `(type, id)`. A cascading delete arrives as one delta listing every removed
    entity, so apply all of its `changes` atomically.
 
-Two shape differences to keep in mind:
+Three shape differences to keep in mind:
 
 - The snapshot is a **nested projection** (slices under timelines, element name/
   kind under placements), whereas a delta `entity` is the **flat canonical
@@ -277,6 +289,14 @@ Two shape differences to keep in mind:
   `context` and `field_origins` appear in a delta `entity` but nowhere in the
   snapshot — and the snapshot's `fields` are a reduced shape. Treat the delta
   `entity` as the authoritative latest state for that id.
+- A spec-step's `element` is the same name carrying a different shape in each
+  encoding, and neither statement about it is wrong for the other side. The
+  snapshot always carries the key: a nested `{id, name}` ref on a normal step,
+  an explicit `null` on an error step. A delta holds the element's bare integer
+  id on a normal step and omits the key entirely on an error step, rather than
+  setting it to `null`. So "always present" describes a snapshot step and
+  "absent on an error step" describes a delta step; do not apply one rule to
+  both encodings.
 
 ## Reconnection
 

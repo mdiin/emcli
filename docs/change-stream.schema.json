@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/emcli/event-model/docs/change-stream.schema.json",
+  "$id": "https://github.com/mdiin/emcli/docs/change-stream.schema.json",
   "title": "emcli ModelChangeStream SSE event",
-  "description": "Schema for the JSON carried in the `data:` field of each Server-Sent Event on GET /stream. The first event is always a Snapshot; every subsequent event is a Delta. The SSE `event:` line equals the payload's `op` field (\"snapshot\" for the snapshot, the rule name for deltas). GET /snapshot returns a bare SnapshotEvent (same payload, no SSE framing).",
+  "description": "Schema for the JSON carried in the `data:` field of each Server-Sent Event on GET /stream. The stream opens with a Snapshot; every following event is a Delta, except that an import re-snapshots every connected client instead of emitting a delta (and a reconnect opens a fresh stream with its own snapshot). The SSE `event:` line equals the payload's `op` field (\"snapshot\" for a snapshot, the rule name for deltas). GET /snapshot returns a bare SnapshotEvent (same payload, no SSE framing).",
   "oneOf": [
     { "$ref": "#/$defs/SnapshotEvent" },
     { "$ref": "#/$defs/DeltaEvent" }
@@ -295,7 +295,7 @@
     },
     "Element": {
       "type": "object",
-      "required": ["id", "type", "model", "name", "kind", "context", "fields"],
+      "required": ["id", "type", "model", "name", "kind", "context", "fields", "field_origins", "is_information_complete"],
       "additionalProperties": false,
       "properties": {
         "id": { "type": "integer" },
@@ -310,7 +310,7 @@
           "description": "assigned Swimlane id; absent until AssignSwimlane is invoked"
         },
         "image_url": {
-          "type": "string",
+          "type": ["string", "null"],
           "description": "wireframe URL for screen elements; absent until SetImageUrl is invoked"
         },
         "field_origins": {
@@ -345,7 +345,7 @@
     },
     "Connection": {
       "type": "object",
-      "required": ["id", "type", "model", "from", "to"],
+      "required": ["id", "type", "model", "from", "to", "derivations"],
       "additionalProperties": false,
       "properties": {
         "id": { "type": "integer" },
