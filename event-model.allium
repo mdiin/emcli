@@ -306,7 +306,7 @@ entity Specification {
 }
 
 -- A single Given/When/Then step. References the model Element it asserts about
--- (single-source link; none for an error outcome). The element's kind gives the
+-- (single-source link; an error step refers to no element). The element's kind gives the
 -- schema step type (event -> SPEC_EVENT, command -> SPEC_COMMAND,
 -- read_model -> SPEC_READMODEL); an error step maps to SPEC_ERROR.
 entity SpecStep {
@@ -633,7 +633,7 @@ rule AddSpecStep {
     )
 }
 
--- Add an error outcome (a then-step with no element).
+-- Add an error outcome (a then-step that refers to no element).
 rule AddErrorStep {
     when: AddErrorStep(spec, error_name, index, id?)
     requires: non_blank(error_name)
@@ -1281,7 +1281,7 @@ surface ModelAuthoring {
                         st.index
                         st.is_error
                         st.error_name
-                        -- Which element this step is about (absent for an error step).
+                        -- Which element this step is about; an error step refers to no element.
                         st.element.name
                         st.spec.title
                         for ex in st.examples:
@@ -1454,7 +1454,7 @@ surface ModelChangeStream {
                         st.index
                         st.is_error
                         st.error_name
-                        -- Which element this step is about (absent for an error step).
+                        -- Which element this step is about; an error step refers to no element.
                         st.element.name
                         for ex in st.examples:
                             ex.field_name
