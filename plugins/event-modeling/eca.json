@@ -1,4 +1,5 @@
 {
+    "defaultAgent": "event-modeler",
     "agent": {
         "event-modeler": {
             "description": "Event Modeling facilitator",
