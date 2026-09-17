@@ -165,6 +165,27 @@
       (is (every? #(= :near_miss (keyword (:match_type %))) (get-in (nth results 2) [:candidates]))
           "an unmatched name falls back to near-miss suggestions, not an empty model dump"))))
 
+(deftest query-endpoint
+  (testing "POST /query follows relations from a root without dumping the model"
+    (let [tl  (:result (body-json (post "/authoring/create-timeline" {:title "Checkout"})))
+          sl  (:result (body-json (post "/authoring/add-slice"
+                                        {:timeline (:id tl) :title "Ordering" :kind "state_change" :index 0})))
+          e1  (:result (body-json (post "/authoring/create-element" {:name "PlaceOrder" :kind "command"})))
+          e2  (:result (body-json (post "/authoring/create-element" {:name "OrderPlaced" :kind "event"})))
+          _   (post "/authoring/place-element" {:slice (:id sl) :element (:id e1)})
+          _   (post "/authoring/place-element" {:slice (:id sl) :element (:id e2)})
+          resp (post "/query" {:query (str "slice:" (:id sl) " | elements {index}")})
+          rows (:results (body-json resp))]
+      (is (= 200 (:status resp)))
+      (is (= #{"PlaceOrder" "OrderPlaced"} (set (map :name rows))))
+      (is (every? #(contains? (:placement %) :index) rows) "the projection attaches the placement edge")))
+  (testing "an invalid query is a 422 naming the valid alternatives"
+    (let [resp (post "/query" {:query "element:1 | element"})
+          body (body-json resp)]
+      (is (= 422 (:status resp)))
+      (is (false? (:ok body)))
+      (is (str/includes? (:message body) "outgoing")))))
+
 (deftest sse-stream-delivers-snapshot-then-delta
   (testing "GET /stream sends a snapshot, then one delta per mutation"
     (let [resp   (http/get (str *base* "/stream") {:as :stream :throw false
