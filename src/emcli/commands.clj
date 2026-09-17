@@ -7,6 +7,7 @@
   (:require [clojure.string :as str]
             [emcli.app :as app]
             [emcli.model :as m]
+            [emcli.query :as q]
             [emcli.rules :as r]
             [emcli.wireframe :as wf]))
 
@@ -415,6 +416,19 @@
   [app queries]
   (let [entities (resolvable-entities (app/store app) (app/model-id app))]
     (mapv #(resolve-one entities %) queries)))
+
+;; ModelQuery.query (event-model.allium): a read-only structural query over the
+;; model. Name-based roots delegate to the same resolve ladder (NameResolution)
+;; rather than matching names here; the engine itself only follows relations.
+(defn query-model
+  [app query-string]
+  (let [expr     (q/parse-query query-string)
+        store    (app/store app)
+        mid      (app/model-id app)
+        resolver (fn [kind name]
+                   (first (:candidates (resolve-one (resolvable-entities store mid)
+                                                    {:name name :kind_hint kind}))))]
+    (q/run-query store mid expr {:resolve-name resolver})))
 
 ;; ValidateModel (the surface @guidance operation): report slices/specs that are
 ;; not is_complete, elements that are not is_information_complete, and orphaned

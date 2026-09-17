@@ -109,6 +109,16 @@
       (let [queries (:queries (or (read-json-body req) {}))]
         (json-response 200 {:results (cmd/resolve-names app queries)}))
 
+      ;; ModelQuery.query (event-model.allium) - read-only structural query:
+      ;; follow relations outward from a root, without dumping the model. An
+      ;; invalid query (unknown root/relation) is a 422 naming the alternatives,
+      ;; so a caller can correct itself.
+      (and (= :post request-method) (= uri "/query"))
+      (try
+        (json-response 200 {:results (cmd/query-model app (:query (or (read-json-body req) {})))})
+        (catch clojure.lang.ExceptionInfo e
+          (json-response 422 (assoc (ex-data e) :ok false :message (ex-message e)))))
+
       (and (= :get request-method) (= uri "/export"))
       (try
         (json-response 200 (schema/export (app/store app) (app/model-id app)))
