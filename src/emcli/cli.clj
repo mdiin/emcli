@@ -9,6 +9,7 @@
             [cheshire.core :as json]
             [clojure.string :as str]
             [emcli.commands :as cmd]
+            [emcli.query :as q]
             [emcli.server :as server]
             [emcli.wireframe :as wf]))
 
@@ -161,6 +162,20 @@
     (if (= 200 (:status resp))
       (emit (:results body))
       (die (str "✗ resolve: " (:message body))))))
+
+;; --query "<pipeline>" — a read-only structural query (ModelQuery.query).
+;; --relations prints the vocabulary locally, with no server round trip, so it
+;; works with the server down (like --manifest/--export-tools).
+(defn- do-query [opts]
+  (if (:relations opts)
+    (emit (q/relations-doc))
+    (let [query (or (:query opts)
+                    (die "query requires --query \"<pipeline>\" (or --relations for the vocabulary)"))
+          resp  (request :post (str (server-url opts) "/query") {:query query})
+          body  (parse-body resp)]
+      (if (= 200 (:status resp))
+        (emit (:results body))
+        (die (str "✗ query: " (:message body)))))))
 
 (defn- do-export [opts]
   (let [resp (request :get (str (server-url opts) "/export"))
@@ -385,6 +400,14 @@
              {"queries" {"type"        "string"
                          "description" (-> structured-manifest-params (get "resolve") first :note)}}
              "required" ["queries"]}}]
+          ["emcli_query"
+           {:description (q/tool-description)
+            :command     "emcli query {{query}}"
+            :schema
+            {"properties"
+             {"query" {"type"        "string"
+                       "description" "A pipeline, e.g. `element:42 | slice` or `slice:7 | elements {index}`. Root first, then `|`-separated stages; see the tool description for the grammar and relation vocabulary."}}
+             "required" ["query"]}}]
           ["emcli_validate"
            {:description "Run Event Model validation and return all warnings and errors."
             :command     "emcli validate"
@@ -456,6 +479,9 @@
   (println "  validate                                report slices/specs/elements not yet complete")
   (println "  resolve   --queries \"name[:kind],...\"    resolve human-readable names to candidate entity ids")
   (println "                                          kind is one of timeline|swimlane|slice|element|specification")
+  (println "  query     --query \"<pipeline>\"            follow relations outward from a root, returning matching entities")
+  (println "                                          stages: where, order, select, count, limit, distinct")
+  (println "            --relations                   print the query vocabulary (roots, relations, stages)")
   (println "  export    [--out FILE]                  export the eventmodeling.schema.json")
   (println "  import    --in FILE                     import an eventmodeling.schema.json\n")
   (println "Authoring (grouped by entity — `emcli <entity>` lists an entity's verbs):")
@@ -474,7 +500,7 @@
                       (when (seq suffix) (str "  " suffix))
                       (when (= v "show") "  --element <int>")))))))
 
-(def ^:private meta-commands #{"serve" "show" "validate" "resolve" "export" "import" "help"})
+(def ^:private meta-commands #{"serve" "show" "validate" "resolve" "query" "export" "import" "help"})
 
 (defn -main [& argv]
   (let [argv (vec (or (seq argv) *command-line-args*))
@@ -487,6 +513,7 @@
       (= "show" head)     (do-show (cli/parse-opts (rest argv)))
       (= "validate" head) (do-validate (cli/parse-opts (rest argv)))
       (= "resolve" head)  (do-resolve (cli/parse-opts (rest argv)))
+      (= "query" head)    (do-query (cli/parse-opts (rest argv)))
       (= "export" head)   (do-export (cli/parse-opts (rest argv)))
       (= "import" head)   (do-import (cli/parse-opts (rest argv)))
 
