@@ -1124,6 +1124,11 @@ contract SchemaCodec {
 -- this boundary (authoring happens through ModelAuthoring).
 contract ChangeStream {
     -- A full snapshot of the canonical model, sent once when a client connects.
+    -- Complete on its own for the state it captures: it carries the model's whole
+    -- element registry, so every element id a later delta refers to resolves for a
+    -- consumer that holds this snapshot plus the deltas delivered after it -- the
+    -- elements that existed when it was taken come from the snapshot, and an
+    -- element created later comes from the delta that created it.
     snapshot: (model: EventModel) -> Any
     -- A single incremental change, sent for each subsequent mutation.
     delta: (change: Any) -> Any
@@ -1150,7 +1155,14 @@ contract ChangeStream {
         -- swimlanes, single-source elements, connections, slices and specs -
         -- NOT the eventmodeling.schema.json projection. The stream is for
         -- visualisation, so timelines and swimlanes (absent from the schema)
-        -- are present.
+        -- are present. Because entities are referenced by id, a snapshot must
+        -- also be enough to resolve every reference it makes and every
+        -- reference a later delta makes to an entity it created: it therefore
+        -- carries the model's whole element registry, each element in the same
+        -- canonical record shape a delta carries, rather than only the elements
+        -- its placement and connection entries reach. (The schema projection,
+        -- by contrast, embeds elements only inside slices, so it stays
+        -- placement-bound - see SchemaCodec.GroupIdIsElementIdentity.)
 }
 
 -- ---------------------------------------------------------------------------
@@ -1601,6 +1613,27 @@ surface ModelChangeStream {
     exposes:
         -- The canonical model the client visualises, streamed as snapshot+deltas.
         subscription.model.name
+        -- The model's whole element registry, which a snapshot carries so that
+        -- every element id a later delta names is resolved by the seed or by an
+        -- earlier delta (see the @guidance below). Each entry is the canonical
+        -- element record a delta `entity` carries -- identity, ownership and
+        -- provenance included; the fields listed here are the ones a consumer
+        -- displays.
+        for el in subscription.model.elements:
+            el.name
+            el.kind
+            el.context
+            el.swimlane
+            el.is_information_complete
+            el.image_url
+            el.wireframe
+            -- The element's own field shapes. Each field's `subfields` nest the
+            -- same shape at every depth, so this list states one level of it.
+            for f in el.fields:
+                f.name
+                f.type
+                f.optional
+                f.cardinality
         for t in subscription.model.timelines:
             t.title
             for s in t.slices:
@@ -1626,12 +1659,12 @@ surface ModelChangeStream {
                     -- A screen's layout tree (absent until it has one), so the
                     -- frontend can draw the screen as the author described it.
                     p.element.wireframe
-                    -- Field shape only (name/type/optional/cardinality), so the
-                    -- frontend can render an element's fields directly on the
-                    -- canvas. Nested subfields are not streamed here: the full
-                    -- recursive Field shape is readable only through the
-                    -- SchemaCodec export, and this live stream carries just the
-                    -- flat per-field shape.
+                    -- Field shape only (name/type/optional/cardinality) in this
+                    -- nested projection, so the frontend can render an element's
+                    -- fields directly on the canvas. The recursive shape
+                    -- (subfields included) travels in the element's canonical
+                    -- record -- the model's `elements` registry entry, or a delta
+                    -- `entity` -- not here.
                     for f in p.element.fields:
                         f.name
                         f.type
@@ -1679,14 +1712,26 @@ surface ModelChangeStream {
         -- Identity is what ties the two messages together: every entity in a
         -- snapshot and every entity in a delta carries the same identity, so a
         -- consumer seeds its state from the snapshot and patches it by identity
-        -- as deltas arrive - element identity being reachable through the
-        -- placement and connection entries, which nest the element they refer
-        -- to. A snapshot also carries the same identity for entities the
-        -- interchange format has no place for (timelines, swimlanes), which is
-        -- why the stream, not the export, is what a live visualiser consumes.
-        -- An entity that is never placed or wired appears in no snapshot (the
-        -- projection is placement-bound) even though the delta that created it
-        -- still arrives here.
+        -- as deltas arrive. The snapshot carries the model's whole element
+        -- registry, each element in the canonical record shape the deltas use,
+        -- so element identity is reachable from the seed alone: a delta that
+        -- names an element which existed when the snapshot was taken resolves
+        -- for a consumer that has seen nothing but its snapshot, and one that
+        -- names an element created afterwards resolves through the delta that
+        -- created it, delivered in commit order before the reference. A
+        -- placement, a connection and a specification step nest a reduced
+        -- display projection of the element they refer to -- a placement the
+        -- element's name, kind, swimlane, is_information_complete, image_url,
+        -- wireframe and its field shapes; a connection end and a specification
+        -- step its name alone (the exposes list above is the detailed statement)
+        -- -- which is not a substitute for the registry: an element that is
+        -- neither placed nor wired is in no nested entry at all, and a consumer
+        -- subscribing after that element was created never receives the delta
+        -- that created it either, because that delta was emitted before the
+        -- subscription opened and nothing is replayed. A snapshot also carries
+        -- the same identity for entities the interchange format has no place for
+        -- (timelines, swimlanes), which is why the stream, not the export, is
+        -- what a live visualiser consumes.
         --
         -- The same snapshot shape is also served on a one-shot read, for a client
         -- that wants the current model without holding a stream open, with a
