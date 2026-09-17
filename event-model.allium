@@ -19,6 +19,11 @@
 --     round-tripped at the semantic level
 --   - A live, read-only change stream a frontend subscribes to in order to
 --     visualise the model as it is edited (snapshot on connect, then deltas)
+--   - A read-only structural query language over the model: follow relations
+--     from a root entity kind and return the reachable entities (optionally
+--     carrying the association traversed), so the model's structure can be
+--     explored in text without dumping it. The relational counterpart to name
+--     resolution.
 -- Excludes:
 --   - Canvas / whiteboard format (an external LLM agent drives this CLI to
 --     recreate canvas models; no native canvas parser)
@@ -28,7 +33,9 @@
 --     existence is given to this specification, not authored by it
 --   - LLM tool manifests derived from this surface, and the harnesses that
 --     consume them (delivery mechanism, not domain)
---   - CLI argument parsing & terminal output (delivery mechanism, not domain)
+--   - Terminal output rendering, and the mechanical parsing of command-line
+--     text (delivery mechanism, not domain). The query language's own surface
+--     (its roots, relations, stages and projection) is in scope; see ModelQuery.
 -- Interchange format:
 --   github.com/dilgerma/event-modeling-spec  eventmodeling.schema.json
 
@@ -1242,6 +1249,188 @@ contract NameResolution {
 }
 
 -- ---------------------------------------------------------------------------
+-- Structural query (read-only exploration of the model)
+-- ---------------------------------------------------------------------------
+
+-- The entity kinds a query can root on or step to. The model is deliberately
+-- absent: it is the implicit context a query runs against (exactly one exists),
+-- never a root and never a row. ElementPlacement and Connection are also
+-- absent: they are associations (edges between entities), reachable only
+-- through a relation and never rootable. See ModelQuery.
+enum QueryKind { timeline | swimlane | slice | element | specification | step }
+
+-- The two directional element -> element relations. Both endpoints are the same
+-- kind, so the direction cannot be inferred and must be named; every other
+-- relation is kind-directed.
+enum QueryDirection { outgoing | incoming }
+
+-- How a filter compares a field against a value: equality, inequality, regular
+-- expression match, or set membership against a parenthesised list.
+enum QueryComparator { equals | not_equals | matches | in_set }
+
+-- The single operation a pipeline entry performs. `kind` records which; the
+-- operands of that operation are the remaining value fields.
+enum QueryStageKind { follow | where | order | select | count | limit | distinct }
+
+-- Where a query starts: a whole kind ("all slices in the model"), or a single
+-- entity named by identity or by name. A named root is resolved through
+-- NameResolution, never re-matched here.
+value QueryRoot {
+    kind: QueryKind
+    id: Integer?      -- when present, the single entity with this identity
+    name: String?     -- when present, the single entity with this name (via NameResolution)
+}
+
+-- One stage of a query pipeline. `kind` selects the stage; the remaining fields
+-- are that stage's operands and are absent for the other stages.
+value QueryStage {
+    kind: QueryStageKind
+
+    -- follow: the kind to step to. When both the current and the target kind are
+    -- Element, `direction` names which way along the connection to travel
+    -- (outgoing = forward from this element, incoming = back to it); every other
+    -- follow is kind-directed and leaves it absent.
+    target: QueryKind?
+    direction: QueryDirection?
+
+    -- follow: an explicit edge projection `{...}` - the association fields to
+    -- attach to each row under the edge's kind key. An empty list (written `{}`
+    -- or `{*}`) attaches the whole association. Only valid on a follow whose
+    -- relation traverses an association.
+    projection: List<String>?
+
+    -- filter: compare `field` on the current kind against `operand` using
+    -- `comparator`. order: sort by `field`, descending when `descending`.
+    field: String?
+    comparator: QueryComparator?
+    operand: String?
+    descending: Boolean?
+
+    -- select: the fields to project onto each row. An absent list selects the
+    -- default identity + breadcrumb shape (see
+    -- ModelQuery.ResultsAreBoundedByQuestion).
+    fields: List<String>?
+
+    -- limit: the maximum number of rows to return.
+    limit: Integer?
+}
+
+-- A complete structural query: a root and an ordered pipeline of stages,
+-- applied left to right.
+value QueryExpression {
+    root: QueryRoot
+    stages: List<QueryStage>
+}
+
+-- A read-only, non-mutating structural query over one model: follow relations
+-- outward from a root and return the bounded set of entities the question
+-- reaches, optionally carrying the association that was traversed. This is the
+-- relational counterpart to NameResolution - where resolve turns names into
+-- identities, this explores structure without dumping the model. Fulfilled by
+-- the ModelAuthoring surface, alongside NameResolution and SchemaCodec.
+contract ModelQuery {
+    -- Evaluate `expression` against one model and return the matching rows. The
+    -- result shape is opaque here (as with the SchemaCodec, ChangeStream and
+    -- NameResolution payloads); its semantics are pinned by the invariants below.
+    query: (model: EventModel, expression: QueryExpression) -> Any
+
+    @invariant ModelIsImplicitContext
+        -- The model is the query's context, not a node in the graph. Exactly one
+        -- model exists per spec instance; any multi-model representation
+        -- elsewhere is incidental and never surfaces here. A query can neither
+        -- root on, step to, nor return the model.
+
+    @invariant RootsAreEntityKinds
+        -- A query roots on one of the six entity kinds - meaning every entity of
+        -- that kind in the model - or on a single entity by identity (id) or by
+        -- name. Name-based roots are resolved through NameResolution; this
+        -- contract performs no name matching of its own.
+
+    @invariant AssociationsAreNeverRoots
+        -- ElementPlacement and Connection are associations (edges between
+        -- entities), not entities in their own right, and are never named as
+        -- roots. They are reached only by traversing the relation between the
+        -- entities they join, and never appear as bare rows.
+
+    @invariant RelationVocabulary
+        -- The relations a follow stage may name, and the kind each lands on (a
+        -- relation is named by its target kind; singular and plural spellings of
+        -- a kind are equivalent, e.g. slice = slices):
+        --   timeline      -> slice
+        --   slice         -> timeline
+        --   slice         -> element            (via placement)
+        --   element       -> slice              (via placement)
+        --   slice         -> specification
+        --   specification -> slice
+        --   specification -> step
+        --   step          -> specification
+        --   step          -> element            (absent for an error step)
+        --   element       -> step
+        --   element       -> swimlane           (absent if the element is unassigned)
+        --   swimlane      -> element
+        --   element       -> element            (via connection; direction = outgoing | incoming)
+        -- Every containment foreign key is traversable in both directions (each
+        -- forward row above has its reverse), so the rule is "reverse foreign
+        -- keys are traversable" rather than a hand-picked list. Only
+        -- model-scoped foreign keys are excluded, because the model is the
+        -- implicit context (ModelIsImplicitContext). element -> element is the
+        -- sole relation whose two endpoints are the same kind, so it alone
+        -- requires a direction; all others are unambiguous.
+
+    @invariant EdgeAttributesAreProjected
+        -- An association's own attributes (placement.index, connection.derivations)
+        -- are reachable only by explicitly projecting the edge on the relation
+        -- that traverses it. Projection attaches the association to each row
+        -- under its kind key (placement or connection); the association is never
+        -- returned as a bare row, and without projection a row carries only the
+        -- landed entity.
+
+    @invariant StagesAreClosed
+        -- A query is a root followed by a pipeline of stages applied left to
+        -- right over a collection. The stages are exactly: follow (a relation
+        -- step, named by its target kind - see RelationVocabulary), where (a
+        -- filter, with comparator = as equals, != as not_equals, ~ as matches,
+        -- in as in_set), order (by a field, ascending, or descending when the
+        -- field is named as descending), select (a field list), count, limit N,
+        -- and distinct. No other stage exists. This contract fixes the textual
+        -- surface (how stages, fields, comparators, projections and the pipeline
+        -- separator are written) so it cannot drift from the specification.
+
+    @invariant ResultsAreBoundedByQuestion
+        -- What comes back scales with the question asked, not the size of the
+        -- model. Each row carries the landed entity's identity (id and kind), its
+        -- name or title, and enough location breadcrumb to distinguish
+        -- same-named siblings, plus the projected edge when one was requested.
+        -- select narrows a row to the named fields; count collapses the whole
+        -- result to a scalar. Exploring a model of thousands of entities with a
+        -- handful of stages returns a handful of rows.
+
+    @invariant ReadOnly
+        -- A query never mutates the model: no rule fires, nothing is created,
+        -- renamed, reordered or deleted, and no change-stream delta is emitted.
+
+    @invariant UnknownStepRejected
+        -- A root or follow stage that names no valid kind or relation is
+        -- rejected rather than silently ignored. A token that names no relation
+        -- at all is rejected naming the accepted kinds and directions; a
+        -- relation that exists but is not reachable from the current kind is
+        -- rejected naming the alternatives available from that kind. Either way
+        -- a caller (human or LLM) can correct itself from the error.
+
+    @invariant NameRootsDelegateToNameResolution
+        -- A name-based root is resolved by NameResolution; this contract adds no
+        -- name matching of its own, so resolve's tiers, candidate cap and
+        -- tie-breaking remain the single source of name behaviour.
+
+    @guidance
+        -- The query language is the relational counterpart to NameResolution:
+        -- resolve answers "which entity is this name?", query answers "what is
+        -- related to this / what does this reach?". Neither operation dumps the
+        -- model. Free-text / semantic questions ("the event that fires when
+        -- checkout completes") remain the caller's job, exactly as for resolve.
+}
+
+-- ---------------------------------------------------------------------------
 -- Authoring surface (the operator's boundary)
 -- ---------------------------------------------------------------------------
 
@@ -1372,6 +1561,7 @@ surface ModelAuthoring {
     contracts:
         fulfils SchemaCodec
         fulfils NameResolution
+        fulfils ModelQuery
 
     @guidance
         -- A ValidateModel operation (report slices that are not is_complete,
@@ -1381,8 +1571,9 @@ surface ModelAuthoring {
         -- fails to source its target), the SchemaCodec import/export operations,
         -- and the NameResolution.resolve query are also invoked through this
         -- surface (none of them being plain mutating provides: rules):
-        -- import/export are governed by the SchemaCodec contract, and name
-        -- resolution by the NameResolution contract. Reading a screen's layout as
+        -- import/export are governed by the SchemaCodec contract, name
+        -- resolution by the NameResolution contract, and structural exploration
+        -- (following relations outward from a root) by the ModelQuery contract. Reading a screen's layout as
         -- an addressed tree - so an operator can see which node ids exist before
         -- editing one - is a read of the exposes projection above, not an
         -- operation.
