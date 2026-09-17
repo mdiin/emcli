@@ -27,10 +27,7 @@
 
 (defn- created [type entity] {:action :created :type type :id (:id entity) :entity entity})
 (defn- updated [store type id]
-  (let [entity (m/fetch store type id)]
-    (cond-> {:action :updated :type type :id id :entity entity}
-      (= :element type) (assoc-in [:entity :is_information_complete]
-                                   (m/information-complete? store entity)))))
+  {:action :updated :type type :id id :entity (m/canonical-entity store type id)})
 (defn- deleted [type id]      {:action :deleted :type type :id id})
 
 ;; --id (a CLI/scripting affordance): every create-* rule accepts an optional
@@ -221,11 +218,9 @@
                                                            :field_origins []} id))
             ;; DeltaPerMutation: every entity carries its full new state, so the
             ;; `created` element delta carries the derived verdict too — a fresh
-            ;; element declares no fields, so it is complete. Computed from the
-            ;; post-insert store, exactly as `updated` computes from the current.
-            change     (assoc-in (created :element el)
-                                 [:entity :is_information_complete]
-                                 (m/information-complete? store el))]
+            ;; element declares no fields, so it is complete. Built from the
+            ;; post-insert store, exactly as `updated` builds from the current.
+            change     (created :element (m/canonical-entity store :element (:id el)))]
         (commit store :CreateElement [change] el))))
 
 (defn- stranding-removal

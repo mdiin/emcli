@@ -53,9 +53,18 @@ sub-entity, which also carries its id. It contains timelines and swimlanes
 (which the `eventmodeling.schema.json` interchange format does not) because the
 stream is for visualisation.
 
+It carries the model's **whole element registry** as well, flat under
+`elements`: the nested placements and connections reach only the elements they
+place or wire, so an element that exists in the model but is placed nowhere and
+wired to nothing would otherwise appear in no snapshot in full (a
+specification's step can still name it). That element is
+exactly the one a later `PlaceElement` delta references by bare id, so the seed
+would leave its consumer unable to resolve the reference — see
+[Consuming the stream](#consuming-the-stream).
+
 ```
 event: snapshot
-data: {"op":"snapshot","model":{"id":1,"name":"Orders","timelines":[],"swimlanes":[],"connections":[]}}
+data: {"op":"snapshot","model":{"id":1,"name":"Orders","elements":[],"timelines":[],"swimlanes":[],"connections":[]}}
 ```
 
 Populated:
@@ -66,6 +75,17 @@ Populated:
   "model": {
     "id": 1,
     "name": "Orders",
+    "elements": [
+      { "id": 2, "type": "element", "model": 1, "name": "PlaceOrder", "kind": "command",
+        "context": "internal",
+        "fields": [ { "name": "id", "type": "uuid", "optional": false, "cardinality": "single" } ],
+        "field_origins": [ { "field": "id", "origin": "user_input" } ],
+        "is_information_complete": true },
+      { "id": 3, "type": "element", "model": 1, "name": "OrderPlaced", "kind": "event",
+        "context": "internal",
+        "fields": [ { "name": "id", "type": "uuid", "optional": false, "cardinality": "single" } ],
+        "field_origins": [], "is_information_complete": true }
+    ],
     "timelines": [
       { "id": 5, "title": "Order flow",
         "slices": [
@@ -100,6 +120,13 @@ Populated:
 }
 ```
 
+Each entry of `elements` is the same canonical record a delta's element `entity`
+carries — `type`, `model`, `context`, `field_origins` and the derived
+`is_information_complete` included — so a consumer can upsert one into its
+element index without caring which message it came from. The nested elements
+(under a placement, and the `{id, name}` refs a connection and a spec step
+carry) stay the reduced display projections they were.
+
 Each placed element carries `swimlane` (integer id or null — null when the
 element is unassigned, including after the swimlane it pointed at is deleted),
 `is_information_complete` (true iff every field on it is sourced — carried,
@@ -127,18 +154,22 @@ Each placed element's `fields` gives the shape only — `name`, `type`,
 `optional`, `cardinality`. A field is as the author left it, so `optional` and
 `cardinality` are absent from a field that was authored without them (the
 interchange export applies `false`/`single` as defaults there). Nested
-`subfields` are NOT streamed here: the full recursive Field shape travels only
-in a canonical delta `entity.fields` (or in the SchemaCodec export). `GET /model`
-does not expose element fields at all.
+`subfields` are NOT streamed in that projection: the full recursive Field shape
+travels in a canonical record instead — a delta `entity.fields`, or the
+corresponding `model.elements` entry — and in the SchemaCodec export.
+`GET /model` does not expose element fields at all.
 
 The ids correlate directly with deltas: the placement `id` matches a
 `PlaceElement` delta's entity id, `element.id` matches `CreateElement`,
-`connections[].id` matches `Connect`, and so on. Note that an element appears in
-the snapshot *as an element* only where it is placed (the stream is
-placement-bound): a standalone element with no placement is not in the snapshot
-at all, though its `CreateElement` delta still arrives on the stream. Elements
-that are wired but never placed appear only as the `{id, name}` ends of a
-connection, without their fields or kind.
+`connections[].id` matches `Connect`, and so on. The nested projections are
+placement-bound: an element appears *as an element* under a placement only where
+it is placed, and an element that is wired but never placed appears in the
+nested projections only as the `{id, name}` end of a connection, without its
+fields or kind. That is precisely why the snapshot carries `elements`: every
+element of the model is there in full, so a consumer never has to reconstruct
+one from a placement or a connection reference — and so an element created
+before it subscribed, whose `CreateElement` delta was sent before the
+subscription opened, is still seeded.
 
 ## 2. Delta events (one per mutation)
 
@@ -272,8 +303,12 @@ Both the snapshot and the deltas are keyed by the same integer entity `id`, so a
 single normalised store works end to end:
 
 1. **Seed** your store from the snapshot: index timelines, slices, placements,
-   swimlanes and connections by their `id`. Element identity is available via
-   `placements[].element.id` and `connections[].from/to.id`.
+   swimlanes and connections by their `id` — and take your element index from
+   `model.elements`, which is the model's whole registry in the canonical record
+   shape. Do not seed elements from `placements[].element` or
+   `connections[].from/to` alone: those reach only the elements this snapshot
+   places or wires, and an element outside that reach is exactly the one a later
+   `PlaceElement` delta will reference.
 2. **Patch** by id as deltas arrive: on a `created`/`updated` change, upsert
    `entity` into the collection for its `type`; on a `deleted` change, drop the
    `(type, id)`. A cascading delete arrives as one delta listing every removed
@@ -284,11 +319,15 @@ Three shape differences to keep in mind:
 - The snapshot is a **nested projection** (slices under timelines, element name/
   kind under placements), whereas a delta `entity` is the **flat canonical
   record** with foreign-key ids (e.g. a slice entity has `timeline`; a placement
-  has `slice` and `element`). Index by id and the two line up.
-- Deltas carry canonical fields the snapshot projection omits — an element's
-  `context` and `field_origins` appear in a delta `entity` but nowhere in the
-  snapshot — and the snapshot's `fields` are a reduced shape. Treat the delta
-  `entity` as the authoritative latest state for that id.
+  has `slice` and `element`). Index by id and the two line up. `model.elements`
+  is the one place the snapshot already uses the flat canonical record.
+- The reduced projections are lossy: an element's `context` and `field_origins`,
+  and the recursive part of a `fields` entry, appear in the canonical record (a
+  delta `entity`, or a `model.elements` entry) but not in a placement's nested
+  element. Treat the canonical record as the authoritative latest state for that
+  id — including inside a single snapshot: a placement's nested element is a
+  display projection that no delta ever patches, while its `model.elements` entry
+  is the record deltas do patch.
 - A spec-step's `element` is the same name carrying a different shape in each
   encoding, and neither statement about it is wrong for the other side. The
   snapshot always carries the key: a nested `{id, name}` ref on a normal step,

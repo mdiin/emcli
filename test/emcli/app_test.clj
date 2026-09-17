@@ -89,6 +89,38 @@
       (is (= [{:name "id" :type :uuid :cardinality :single}]
              (:fields (:element p1)))))))
 
+(deftest snapshot-carries-the-whole-element-registry
+  (testing "the snapshot carries every element of the model, each in the canonical
+            record shape a delta uses -- including an element no placement or
+            connection reaches, which is the one a later PlaceElement delta names
+            by id alone"
+    (let [a        (app/new-app "Orders")
+          tl       (:result (cmd/run a "create-timeline" {:title "Ordering"}))
+          sl       (:result (cmd/run a "add-slice" {:timeline (:id tl) :title "Place"
+                                                    :kind "state_change" :index 0}))
+          placed   (:result (cmd/run a "create-element" {:name "PlaceOrder" :kind "command"}))
+          _        (cmd/run a "add-field" {:element (:id placed) :name "id" :type "uuid"})
+          unplaced (:result (cmd/run a "create-element" {:name "OrderCancelled" :kind "event"}))
+          _        (cmd/run a "place-element" {:slice (:id sl) :element (:id placed)})
+          [_ msgs] (recording-sub a)
+          model    (:model (first @msgs))
+          elements (into {} (map (juxt :id identity)) (:elements model))
+          nested   (-> model :timelines first :slices first :placements first :element)]
+      (is (= #{(:id placed) (:id unplaced)} (set (keys elements)))
+          "placed and unplaced alike: the registry is the model's, not the projection's")
+      (is (= {:id (:id unplaced) :type :element :model (app/model-id a)
+              :name "OrderCancelled" :kind :event :context :internal
+              :fields [] :field_origins [] :is_information_complete true}
+             (elements (:id unplaced)))
+          "a fresh element is complete, and that derived verdict is on the snapshot record")
+      (is (= #{:id :type :model :name :kind :context :fields :field_origins :is_information_complete}
+             (set (keys (elements (:id placed)))))
+          "the full canonical element shape, not the reduced display projection")
+      (is (false? (:is_information_complete (elements (:id placed))))
+          "its `id` field is introduced nowhere and carried by no incoming connection")
+      (is (nil? (:context nested))
+          "the placement's nested element stays the reduced display projection it was"))))
+
 (deftest snapshot-carries-specifications-with-examples
   (testing "a slice's specifications, steps and their examples are streamed in the snapshot"
     (let [a    (app/new-app "Orders")

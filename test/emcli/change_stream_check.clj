@@ -12,7 +12,10 @@
     * every JSON example embedded in docs/change-stream.md (fenced ```json
       blocks, the `event:`/`data:` SSE walks, and the one inline WireframeNode
       example the prose carries), plus the assertion that each SSE walk's
-      `event:` name equals its payload's `op`.
+      `event:` name equals its payload's `op`;
+    * the two seed-completeness obligations the schema cannot express: the
+      snapshot carries every element id it references, and a placement delta
+      never names an element the subscriber's seed did not carry.
 
   A fenced block that is deliberately not a self-contained payload must be named
   in `fragment-allowlist` with a reason — there is no silent skip. The subset of
@@ -28,7 +31,9 @@
             [clojure.string :as str]
             [emcli.app :as app]
             [emcli.commands :as cmd]
-            [emcli.jsonschema :as js]))
+            [emcli.jsonschema :as js]
+            [emcli.model :as m]
+            [emcli.rules :as r]))
 
 (def ^:private schema-path "docs/change-stream.schema.json")
 (def ^:private doc-path    "docs/change-stream.md")
@@ -73,6 +78,20 @@
     (run! a "add-field"       {:element cmd :name "id" :type "uuid"})
     (run! a "add-field"       {:element cmd :name "amount" :type "decimal"})
     (run! a "add-field"       {:element evt :name "id" :type "uuid"})
+    ;; A nested field, so the snapshot's element registry is validated against the
+    ;; recursive Field shape $defs/Element allows -- the nested placement
+    ;; projection deliberately drops subfields, so a snapshot used to carry only
+    ;; the flat shape. Driven through the rule a `set-fields` command would call:
+    ;; no CLI affordance authors a subfield (add-field takes name and type only),
+    ;; and a schema import is the other route in.
+    (run! a "add-field-origin" {:element rm :field "total" :origin "user_input"})
+    (let [res (app/apply-rule! a r/set-fields
+                               {:element rm
+                                :fields [{:name "total" :type :decimal
+                                          :optional false :cardinality :single
+                                          :subfields [{:name "currency" :type :string}]}]})]
+      (when (r/error? res)
+        (throw (ex-info "scenario rule failed: set-fields" {:res res}))))
     (run! a "assign-swimlane" {:element evt :lane sw2})
     (run! a "place-element"   {:slice sl :element cmd})
     (run! a "place-element"   {:slice sl :element evt})
@@ -208,6 +227,156 @@
 (defn- delta-violations []
   (mapcat delta-for op-cases))
 
+;; ---------------------------------------------------------------------------
+;; Seed completeness
+;;
+;; A consumer seeds its state from the snapshot and patches it by id from the
+;; deltas it receives. Two payload-level obligations follow from that, and
+;; neither is expressible in the schema:
+;;
+;;   * the snapshot must carry the entity a reference it makes points at;
+;;   * a delta must not name, by id alone, an entity the seed did not carry --
+;;     which is what a placement does, and what leaves a consumer holding a
+;;     reference it cannot resolve (the grey-box report upstream in
+;;     em-frontend's session notes).
+;; ---------------------------------------------------------------------------
+
+(defn- snapshot-element-references
+  "Every element id a snapshot mentions: the elements its placements nest, its
+  connections' endpoints, and a normal spec-step's element ref (an error step's
+  is nil and skipped)."
+  [{:keys [model]}]
+  (let [slices (mapcat :slices (:timelines model))
+        steps  (mapcat :steps (mapcat :specifications slices))]
+    (into #{}
+          (concat (keep #(get-in % [:element :id]) (mapcat :placements slices))
+                  (keep #(get-in % [:from :id]) (:connections model))
+                  (keep #(get-in % [:to :id]) (:connections model))
+                  (keep #(get-in % [:element :id]) steps)))))
+
+(defn- snapshot-reference-violations
+  "An element id the snapshot mentions but does not carry in `elements` cannot be
+  resolved by a consumer seeded from that snapshot alone."
+  []
+  (let [{:keys [app]} (scenario)
+        snap          (app/snapshot app)
+        registered    (into #{} (map :id) (get-in snap [:model :elements]))
+        missing       (sort (remove registered (snapshot-element-references snap)))]
+    (for [id missing]
+      {:source "code: snapshot (emcli.app/snapshot)" :pointer "/model/elements"
+       :message "an element id the snapshot references is absent from its element registry"
+       :expected id :found :absent})))
+
+(def ^:private shared-element-facts
+  "The element facts a snapshot carries twice: once in the canonical registry
+  entry and once in the reduced projection nested under a placement. Read through
+  `get` rather than `select-keys` so key *presence* -- which the wire genuinely
+  differs on, the projection always carrying keys the canonical record adds only
+  when an operation sets them -- does not read as disagreement. Only a differing
+  value is a violation."
+  [:id :name :kind :swimlane :is_information_complete :image_url :wireframe])
+
+(defn- element-facts [m]
+  (into {} (map (fn [k] [k (get m k)])) shared-element-facts))
+
+(defn- projected-fields
+  "The fields as the placement projection carries them: name/type/optional/
+  cardinality, subfields dropped (the projection never nests). Stripping the
+  recursive part of the registry entry's fields has to reproduce exactly these,
+  which pins the schema's SnapshotField claim from the other side."
+  [fields]
+  (mapv #(select-keys % [:name :type :optional :cardinality]) fields))
+
+(defn- snapshot-registry-violations
+  "The registry must be the model's own element list, and the nested placements
+  must agree with it -- obligations the schema cannot express:
+
+    * a consumer seeds its element index from `elements`, so an element the model
+      holds but the registry omits is exactly the dangling reference this check
+      exists for;
+    * the nested placement projection duplicates the same element, so where the
+      two carry the same fact they must not disagree, field shapes included (the
+      nested copy is never patched by a delta, which is why the registry is the
+      authoritative one); and
+    * an element's assigned swimlane is a foreign key the registry makes
+      reachable for the first time, so it must resolve in the snapshot too."
+  []
+  (let [{:keys [app]} (scenario)
+        snap          (app/snapshot app)
+        model         (:model snap)
+        registered    (into {} (map (juxt :id identity)) (:elements model))
+        model-ids     (into #{} (map :id) (m/elements (app/store app) (app/model-id app)))
+        swimlane-ids  (into #{} (map :id) (:swimlanes model))
+        nested        (for [p (mapcat :placements (mapcat :slices (:timelines model)))
+                            :let [entry (get registered (get-in p [:element :id]))]]
+                        {:id (get-in p [:element :id])
+                         :nested (element-facts (:element p))
+                         :registry (element-facts entry)
+                         :nested-fields (vec (:fields (:element p)))
+                         :registry-fields (projected-fields (:fields entry))})
+        subfields     (->> (vals registered) (mapcat :fields) (mapcat :subfields))]
+    (concat
+     (for [id (sort (remove (set (keys registered)) model-ids))]
+       {:source "code: snapshot (emcli.app/snapshot)" :pointer "/model/elements"
+        :message "an element of the model is absent from the snapshot's element registry"
+        :expected id :found :absent})
+     (for [{:keys [id nested registry]} nested
+           :when (not= nested registry)]
+       {:source "code: snapshot (emcli.app/snapshot)" :pointer "/model/elements"
+        :message (str "the element nested under element " id "'s placement disagrees with its registry entry")
+        :expected registry :found nested})
+     (for [{:keys [id nested-fields registry-fields]} nested
+           :when (not= nested-fields registry-fields)]
+       {:source "code: snapshot (emcli.app/snapshot)" :pointer "/model/elements"
+        :message (str "the fields nested under element " id "'s placement are not a shape-only projection of its registry entry")
+        :expected registry-fields :found nested-fields})
+     (for [el (vals registered)
+           :let [sw (:swimlane el)]
+           :when (and (some? sw) (not (contains? swimlane-ids sw)))]
+       {:source "code: snapshot (emcli.app/snapshot)" :pointer "/model/elements"
+        :message (str "element " (:id el) " names a swimlane the snapshot does not carry")
+        :expected sw :found :absent})
+     ;; The recursive Field shape the schema allows is only exercised if a
+     ;; scenario element actually carries a nested field: assert it reaches the
+     ;; validated payload rather than trusting the scenario to keep doing so.
+     (when-not (some #(= "currency" (:name %)) subfields)
+       [{:source "check coverage" :pointer "/model/elements"
+         :message "no registry entry carries the scenario's nested field, so the recursive Field shape stays unvalidated"
+         :expected "currency" :found (mapv :name subfields)}]))))
+
+(defn- seed-then-place-violations
+  "The case the registry exists for, driven through the real paths: an element
+  created before a client subscribes, then placed while it is listening. The
+  client holds only the snapshot it was seeded with, and the placement delta
+  names the element by id alone, so the seed has to carry it."
+  []
+  (let [a      (app/new-app "Orders")
+        tl     (id! a "create-timeline" {:title "Order flow"})
+        sl     (id! a "add-slice" {:timeline tl :title "Place order" :kind "state_change" :index 0})
+        el     (id! a "create-element" {:name "OrderCancelled" :kind "event"}) ; unplaced so far
+        msgs   (atom [])
+        _      (app/subscribe! a #(swap! msgs conj %))
+        seed   (first @msgs)
+        _      (run! a "place-element" {:slice sl :element el})
+        delta  (last @msgs)
+        placed (get-in delta [:changes 0 :entity :element])
+        seeded (into #{} (map :id) (get-in seed [:model :elements]))]
+    (cond-> []
+      (not= 2 (count @msgs))
+      (conj {:source "code: seed then place-element" :pointer ""
+             :message "expected the subscription to open with the snapshot and then receive exactly one delta"
+             :expected 2 :found (count @msgs)})
+
+      (not (integer? placed))
+      (conj {:source "code: seed then place-element" :pointer "/changes/0/entity/element"
+             :message "the placement delta does not name its element by integer id"
+             :expected :integer :found placed})
+
+      (and (integer? placed) (not (contains? seeded placed)))
+      (conj {:source "code: seed then place-element" :pointer "/model/elements"
+             :message "a placement delta names an element the subscriber's seed did not carry"
+             :expected placed :found :absent}))))
+
 (defn- op-coverage-violations
   "The check must exercise exactly the operations the schema declares: a new op
   the check never produces, or a produced op the schema does not declare, is
@@ -233,7 +402,12 @@
         :expected 1 :found (get (frequencies produced) op)}))))
 
 (defn- code-violations []
-  (concat (snapshot-violations) (delta-violations) (op-coverage-violations)))
+  (concat (snapshot-violations)
+          (snapshot-reference-violations)
+          (snapshot-registry-violations)
+          (seed-then-place-violations)
+          (delta-violations)
+          (op-coverage-violations)))
 
 ;; ---------------------------------------------------------------------------
 ;; Documented examples

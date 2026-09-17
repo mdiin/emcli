@@ -10,18 +10,23 @@
   "$defs": {
     "SnapshotEvent": {
       "type": "object",
-      "description": "The full canonical model, sent once when a client connects (SnapshotThenDeltas). Every entity carries its integer `id` (the same surrogate identity the deltas use), so a consumer can seed a normalised store from the snapshot and patch it by id from later deltas. Denormalised display fields (element/connection names) are nested under their sub-entity, which also carries its id.",
+      "description": "The full canonical model, sent once when a client connects (SnapshotThenDeltas). Every entity carries its integer `id` (the same surrogate identity the deltas use), so a consumer can seed a normalised store from the snapshot and patch it by id from later deltas. Denormalised display fields (element/connection names) are nested under their sub-entity, which also carries its id; the model's elements are additionally listed flat under `elements`, each in the canonical record shape a delta uses, so that an element no placement or connection reaches is still seeded.",
       "required": ["op", "model"],
       "additionalProperties": false,
       "properties": {
         "op": { "const": "snapshot" },
         "model": {
           "type": "object",
-          "required": ["id", "name", "timelines", "swimlanes", "connections"],
+          "required": ["id", "name", "elements", "timelines", "swimlanes", "connections"],
           "additionalProperties": false,
           "properties": {
             "id": { "type": "integer", "description": "EventModel id" },
             "name": { "type": "string" },
+            "elements": {
+              "type": "array",
+              "description": "Every element of the model, each carrying the full canonical element record — the same shape a delta's element `entity` uses, derived `is_information_complete` included — in creation order. Conditional fields (`swimlane`, `image_url`, `wireframe`) are absent until the operation that sets them, and are explicitly null once set and then cleared (swimlane after the swimlane it pointed at is deleted, wireframe after a screen's root node is deleted) — exactly as on a delta entity, which is what these entries are. This is the model's single-source element registry: an element that is placed nowhere and wired to nothing appears in full only here (it may still be named by a specification step's `{id, name}` ref). A consumer seeds its element index from this list, so that a later placement or connection delta, which references an element by id alone, resolves for an element that existed when the snapshot was taken.",
+              "items": { "$ref": "#/$defs/Element" }
+            },
             "timelines": {
               "type": "array",
               "items": {
@@ -410,7 +415,7 @@
     },
 
     "SnapshotField": {
-      "description": "A field as streamed on a snapshot placement's element: shape only, no subfields. The full recursive Field shape (subfields included) travels only in delta entities. `optional` and `cardinality` are absent when the field was authored without them.",
+      "description": "A field as streamed on a snapshot placement's element: shape only, no subfields. The full recursive Field shape (subfields included) travels in the element's canonical record instead — a delta `entity`, or the matching `model.elements` entry. `optional` and `cardinality` are absent when the field was authored without them.",
       "type": "object",
       "required": ["name", "type"],
       "additionalProperties": false,

@@ -114,21 +114,32 @@
 ;; ---------------------------------------------------------------------------
 
 (defn snapshot
-  "A full canonical snapshot of the model: timelines/slices/placements,
-  swimlanes and connections.
+  "A full canonical snapshot of the model: the model's whole element registry,
+  its timelines/slices/placements, swimlanes and connections.
 
   Every entity carries its integer `id` — the same surrogate identity the deltas
   use — so a consumer can seed a normalised store from the snapshot and then
   patch it by id from subsequent deltas. The denormalised display fields the
   ModelChangeStream surface exposes (element/connection names and kinds) are
   nested under their sub-entity, mirroring the spec's `p.element.name` /
-  `c.from.name` navigation."
+  `c.from.name` navigation.
+
+  `:elements` carries every element of the model, each in the canonical shape
+  the deltas use (`m/canonical-entity`, derived verdict included). The nested
+  placements and connections reach only the elements they place or wire, so
+  without this list a consumer subscribing after an element was created would
+  never learn of it: its CreateElement delta was sent before the subscription,
+  while a later PlaceElement delta references the element by id alone. Seeding
+  from a snapshot therefore has to be enough on its own to resolve every
+  reference the snapshot itself makes."
   [app]
   (let [s   (store app)
         mid (model-id app)]
     {:op    :snapshot
      :model {:id   mid
              :name (:name (m/fetch s :event-model mid))
+             :elements (for [el (m/elements s mid)]
+                         (m/canonical-entity s :element (:id el)))
              :timelines (for [t (m/timelines s mid)]
                           {:id (:id t) :title (:title t)
                            :slices (for [sl (m/slices s (:id t))]

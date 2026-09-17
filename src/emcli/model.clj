@@ -280,3 +280,19 @@
   [store element]
   (empty? (unsourced-fields store element)))
 
+(defn canonical-entity
+  "The entity as the change stream carries it: the stored record plus the derived
+  fields the wire adds — currently Element.is_information_complete, which follows
+  from the connections pointing at the element, so it cannot be stored.
+
+  The snapshot's element registry and every delta entity are built through here,
+  so the two paths cannot disagree about an entity's shape. That matters for a
+  consumer seeding a normalised store from a snapshot and patching it by id: an
+  element it receives in a delta must be the same shape as one it received in
+  the seed, or it has to special-case the two."
+  [store type id]
+  (let [entity (fetch store type id)]
+    (cond-> entity
+      (= :element type)
+      (assoc :is_information_complete (information-complete? store entity)))))
+
