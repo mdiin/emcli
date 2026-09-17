@@ -46,7 +46,7 @@ Then follow these steps:
 
 Follow these steps:
 
-1. Use the names of timelines, slices and swimlanes to infer the domain; confirm with the USER.
+1. Use the names of timelines, slices and swimlanes to infer the domain; confirm with the USER. `emcli_query` can explore structure directly (e.g. `slice:7 | elements`).
 2. Run `emcli_validate` to find spots that need attention
 3. Iterate with USER on the model by following the working rhythm
 
@@ -88,6 +88,19 @@ queries: "Name[:kind_hint],..."
 Returns an array of matches with `id`, `kind`, `swimlane`, and `name`.
 
 Empty name with kind hint finds all entities of that kind. Example for finding all timelines: `queries: ":timeline"`
+
+
+## emcli_query
+
+Read-only structural query over the model: follow relations outward from a root and return the entities the question reaches. Use it when you need structure, not just ids — e.g. which slices an element is placed in, or which elements feed an event.
+
+```
+query: "element:42 | slice"            -- slices this element is placed in
+query: "slice:7 | elements {index}"    -- elements in a slice, with their placement index
+query: "element:42 | outgoing {derivations}"
+```
+
+Roots: `timeline`, `swimlane`, `slice`, `element`, `specification`, `step`. Stages: `where`, `order`, `select`, `count`, `limit`, `distinct`. An invalid stage returns an error naming the valid alternatives; run `emcli query --relations` for the full vocabulary.
 
 
 ## Begin

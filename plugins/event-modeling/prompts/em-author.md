@@ -25,6 +25,8 @@ You have tools at your disposal to solve the Event Modeling task. Follow these r
 
 **Looking up existing entities:** use `emcli_resolve` to find ids by name. Never guess ids.
 
+**Exploring structure:** use `emcli_query` to follow relations from a root when you need more than ids (e.g. `element:42 | slice`, `slice:7 | elements {index}`, `element:42 | outgoing {derivations}`).
+
 ## Task completed?
 
 **Do**: Return the following information for anything created:
