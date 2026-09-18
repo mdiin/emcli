@@ -151,13 +151,13 @@ key entirely — see `Delta events`) — and its `examples[]` (`field_name`/
 independently, and it is export (not the stream) that excludes such slices.
 
 Each placed element's `fields` gives the shape only — `name`, `type`,
-`optional`, `cardinality`. A field is as the author left it, so `optional` and
-`cardinality` are absent from a field that was authored without them (the
-interchange export applies `false`/`single` as defaults there). Nested
-`subfields` are NOT streamed in that projection: the full recursive Field shape
-travels in a canonical record instead — a delta `entity.fields`, or the
-corresponding `model.elements` entry — and in the SchemaCodec export.
-`GET /model` does not expose element fields at all.
+`optional`, `cardinality`. A field is stored in the canonical shape whatever
+route authored it: `optional` is `false`, `cardinality` is `single` and
+`subfields` is `[]` unless the author set otherwise, so the stream never shows a
+half-populated field. Nested `subfields` are NOT streamed in that projection: the
+full recursive Field shape travels in a canonical record instead — a delta
+`entity.fields`, or the corresponding `model.elements` entry — and in the
+SchemaCodec export. `GET /model` does not expose element fields at all.
 
 The ids correlate directly with deltas: the placement `id` matches a
 `PlaceElement` delta's entity id, `element.id` matches `CreateElement`,
@@ -277,11 +277,11 @@ fields):
   an explicit `null` there. `error_name` is present only on one.
 
 Embedded value objects:
-- **Field**: `{ name, type }` plus `optional`, `cardinality` and `subfields[]` when the field carries them — authoring may omit all three, and the interchange export defaults them to `false`, `single` and `[]`
+- **Field**: `{ name, type, optional, cardinality, subfields[] }` — the canonical shape, always fully populated: `optional` is `false`, `cardinality` is `single` and `subfields` is `[]` unless the author set otherwise, whatever route authored the field
 - **Example**: `{ field_name, field_value }`
 - **FieldDerivation** (on `connection.derivations`): `{ target_field, source_fields[] }` — a target field derived from one or more source fields (one with a different name = rename; many = aggregation)
 - **FieldOrigin** (on `element.field_origins`): `{ field, origin }` — a field legitimately introduced rather than sourced upstream
-- **WireframeNode** (on `element.wireframe`, recursive): a hiccup-like JSON array `[tag, id-map, attrs?, ...children]`. Clojure keywords are serialised as strings, so `[:button {:-id "n2"} {:label "OK" :variant :primary}]` arrives as `["button", {"-id": "n2"}, {"label": "OK", "variant": "primary"}]`, and a vector-valued attribute such as a dropdown's `:options` arrives as a JSON array. The root node's tag is always `"canvas"` (the whole tree *is* the wireframe; there is no wrapper object). The node's id is its own map — the second element, always carrying `"-id"`, a stable string address for incremental edits, allocated one past the highest id in the tree and never reused, so deleting a node neither shifts nor recycles any other node's id — and the node's content attributes, when it has any, follow in an object of their own rather than being merged into that id map. Children are either nested WireframeNodes or plain strings (text-children tags: `h1`, `h2`, `h3`, `text`, `span`). `DeleteWireframeNode` on the root node sets `wireframe` to `null` on the next delta: the root is the tree's top, so the whole layout goes with it. The tag and attribute vocabulary is in [`wireframe-dsl.md`](../doc/wireframe-dsl.md).
+- **WireframeNode** (on `element.wireframe`, recursive): a hiccup-like JSON array `[tag, id-map, attrs?, ...children]`. Clojure keywords are serialised as strings, so `[:button {:-id "n2"} {:label "OK" :variant :primary}]` arrives as `["button", {"-id": "n2"}, {"label": "OK", "variant": "primary"}]`, and a vector-valued attribute such as a dropdown's `:options` arrives as a JSON array. The root node's tag is always `"canvas"` (the whole tree *is* the wireframe; there is no wrapper object). The node's id is its own map — the second element, always carrying `"-id"`, a stable string address for incremental edits, allocated one past the highest id in the tree, so deleting a node neither shifts nor changes any other node's id (only the highest-numbered node's own number is freed for reuse) — and the node's content attributes, when it has any, follow in an object of their own rather than being merged into that id map. Children are either nested WireframeNodes or plain strings (text-children tags: `h1`, `h2`, `h3`, `text`, `span`). `DeleteWireframeNode` on the root node sets `wireframe` to `null` on the next delta: the root is the tree's top, so the whole layout goes with it. The tag and attribute vocabulary is in [`wireframe-dsl.md`](../doc/wireframe-dsl.md).
 
 ### Enum values
 

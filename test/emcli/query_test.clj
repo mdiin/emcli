@@ -157,13 +157,44 @@
 ;; --- name roots delegate to NameResolution ---------------------------------
 
 (deftest name-roots-delegate-to-nameresolution
-  (let [env (build) {:keys [e1]} env]
+  (let [env (build) {:keys [e1 tl]} env]
     (testing "an exact name root resolves"
       (is (= [e1] (map :id (run-q env "element:\"PlaceOrder\"")))))
     (testing "and composes with relations"
       (is (= #{"PlaceOrder" "OrderPlaced"} (set (map :name (run-q env "slice:\"Ordering\" | element"))))))
-    (testing "a misspelling resolves through resolve's near-miss tier"
-      (is (= e1 (:id (first (run-q env "element:\"PlaceOrdr\""))))))))
+    (testing "a name root honours the declared kind"
+      (is (= [tl] (map :id (run-q env "timeline:\"Checkout\""))))
+      (is (rejects? #"no element named \"Checkout\"; another kind has that name"
+                    #(run-q env "element:\"Checkout\""))))
+    (testing "and the row is the entity itself, so stages see its real fields"
+      (is (= [{:id e1 :kind :element :name "PlaceOrder"}]
+             (map #(select-keys % [:id :kind :name]) (run-q env "element:\"PlaceOrder\""))))
+      (is (= [e1] (map :id (run-q env "element:\"PlaceOrder\" | where kind=command"))))
+      (is (= [{:swimlane_name "Actor"}]
+             (map :breadcrumb (run-q env "element:\"PlaceOrder\"")))))
+    (testing "a root that names nothing is rejected, never resolved to a near miss"
+      ;; the near-miss tier is resolve's did-you-mean affordance; taking it as a
+      ;; root would be the implicit best pick NoImplicitBestPick forbids
+      (is (rejects? #"no element named \"PlaceOrdr\"; nearest of that kind: PlaceOrder"
+                    #(run-q env "element:\"PlaceOrdr\"")))
+      (is (rejects? #"no swimlane named \"Nothing\"" #(run-q env "swimlane:\"Nothing\""))))
+    (testing "an id root that names nothing is rejected too"
+      (is (rejects? #"no timeline with id 999" #(run-q env "timeline:999"))))))
+
+(deftest an-ambiguous-name-root-is-rejected
+  (testing "a name two slices share is not silently resolved to one of them"
+    ;; slice titles are unique per timeline, not per model, so this is legal and
+    ;; only the id can disambiguate
+    (let [a  (app/new-app "M")
+          t1 (:id (:result (cmd/run a "create-timeline" {:title "T1"})))
+          t2 (:id (:result (cmd/run a "create-timeline" {:title "T2"})))
+          s1 (:id (:result (cmd/run a "add-slice" {:timeline t1 :title "Ordering"
+                                                   :kind "state_change" :index 0})))]
+      (cmd/run a "add-slice" {:timeline t2 :title "Ordering" :kind "state_change" :index 0})
+      (is (rejects? #"several slices are named \"Ordering\""
+                    #(cmd/query-model a "slice:\"Ordering\"")))
+      (is (= [s1] (map :id (cmd/query-model a (str "slice:" s1))))
+          "the id root is the caller's disambiguator"))))
 
 ;; --- value types, enums, and introspection ---------------------------------
 

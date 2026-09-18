@@ -27,6 +27,34 @@
 (defn- coerce [type v]
   (case type :int (->int v) :kw (->kw v) :bool (->bool v) v))
 
+;; --- Field construction (add-field) ----------------------------------------
+;; AddField takes a whole Field (event-model.allium value Field): name, type,
+;; optional, cardinality and nested subfields. The flat flag set a command line
+;; (or a tool call) carries addresses one level at a time, so subfields are
+;; authored by naming the field to nest under rather than by passing a nested
+;; structure through a flag - mirroring how the wireframe commands take a
+;; --parent node id instead of a subtree.
+
+(defn- ->field
+  "A Field from a command's flags: name and type are required, optional and
+  cardinality are set when supplied."
+  [{:keys [name type optional cardinality]}]
+  (cond-> {:name (str name) :type (->kw type)}
+    (some? optional)    (assoc :optional (->bool optional))
+    (some? cardinality) (assoc :cardinality (->kw cardinality))))
+
+(defn- nest-field
+  "The element's `fields` with `field` added inside its field named `parent`,
+  replacing any subfield of the same name exactly as AddField replaces at the top
+  level. The composite decomposes into SetFields - the whole-list operation - since
+  only a whole list can carry a nested one."
+  [fields parent field]
+  (mapv (fn [f]
+          (if (= parent (:name f))
+            (assoc f :subfields (m/upsert-by (:subfields f) field :name))
+            f))
+        fields))
+
 
 
 ;; Each command: rule fn, and params as [option-key rule-arg-key coerce-type required?].
@@ -127,12 +155,26 @@
     ;; into.
     (= command "add-field")
     (if (and (get opts :element) (get opts :name) (get opts :type))
-      (app/apply-rule! app r/add-field
-                       {:element (->int (get opts :element))
-                        :field   (cond-> {:name (str (get opts :name))
-                                          :type (->kw (get opts :type))}
-                                   (get opts :cardinality)
-                                   (assoc :cardinality (->kw (get opts :cardinality))))})
+      (let [eid    (->int (get opts :element))
+            field  (->field opts)
+            parent (some-> (get opts :subfield-of) str)]
+        (if-not parent
+          (app/apply-rule! app r/add-field {:element eid :field field})
+          ;; Nested: the field goes inside an existing field's subfields.
+          (let [el (m/fetch (app/store app) :element eid)]
+            (cond
+              (nil? el)
+              {:error :not-found :type :element :id eid
+               :message (str "element " eid " does not exist")}
+
+              (not (some #(= parent (:name %)) (:fields el)))
+              {:error :not-found :type :field :name parent
+               :message (str "element " eid " has no field " (pr-str parent))}
+
+              :else
+              (app/apply-rule! app r/set-fields
+                               {:element eid
+                                :fields  (nest-field (:fields el) parent field)})))))
       {:error :missing-args :message "add-field requires :element, :name and :type"})
 
     (= command "remove-field")
@@ -418,16 +460,75 @@
     (mapv #(resolve-one entities %) queries)))
 
 ;; ModelQuery.query (event-model.allium): a read-only structural query over the
-;; model. Name-based roots delegate to the same resolve ladder (NameResolution)
-;; rather than matching names here; the engine itself only follows relations.
+;; model. Name-based roots resolve through the same ladder as /resolve
+;; (NameResolution) rather than matching names here; the engine itself only
+;; follows relations.
+
+(defn- describe-candidate
+  "`Name (kind id)` - the self-correcting hint a rejected name root carries."
+  [{cand-name :name, id :id, kind :kind}]
+  (str cand-name " (" (name kind) " " id ")"))
+
+(defn- no-root-message
+  "The rejection for a name root that denotes no entity of the declared kind.
+  It names what the caller can fix the root with: the nearest names of that kind,
+  or - when the name exists under another kind - that kind, since `element:Foo`
+  written for a timeline is exactly the mistake this catches."
+  [kind entity-name same-kind candidates]
+  (let [near  (take 3 same-kind)
+        other (take 3 (filter #(= :exact (:match_type %)) candidates))]
+    (str "no " (name kind) " named " (pr-str entity-name)
+         (cond
+           (seq near)  (str "; nearest of that kind: "
+                            (str/join ", " (map describe-candidate near)))
+           (seq other) (str "; another kind has that name: "
+                            (str/join ", " (map describe-candidate other)))
+           :else       (str "; the model has no " (name kind) " with that name")))))
+
+(defn- query-root
+  "The single entity a name-based query root denotes, or a thrown query error.
+
+  RootsAreEntityKinds gives a name root exactly one entity, and
+  NameResolution.NoImplicitBestPick forbids collapsing candidates into a best
+  guess, so only an `exact`-tier candidate of the declared kind can be a root: the
+  substring and near-miss tiers exist to help a caller choose among candidates,
+  and a root that silently took one would answer a different question than the one
+  asked. Honouring the declared kind matters for the same reason - before this,
+  `element:OrderFlow` landed on a timeline and a typo landed on near-miss.
+  A name that answers with SEVERAL entities of that kind - slice titles are unique
+  per timeline, not per model, so two slices in different timelines may share one -
+  is rejected too, naming them: the caller disambiguates by id, exactly as resolve
+  leaves the choice to the caller."
+  [entities kind entity-name]
+  (let [candidates (->> (resolve-one entities {:name entity-name :kind_hint kind})
+                        :candidates)
+        same-kind  (filter #(= kind (:kind %)) candidates)
+        exacts     (filter #(= :exact (:match_type %)) same-kind)]
+    (cond
+      (= 1 (count exacts))
+      (first exacts)
+
+      (seq exacts)
+      (throw (q/query-error (str "several " (name kind) "s are named " (pr-str entity-name) ": "
+                                 (str/join ", " (map describe-candidate exacts))
+                                 " - use the id, since a name root names one entity")))
+
+      :else
+      (throw (q/query-error (no-root-message kind entity-name same-kind candidates))))))
+
 (defn query-model
   [app query-string]
   (let [expr     (q/parse-query query-string)
         store    (app/store app)
         mid      (app/model-id app)
-        resolver (fn [kind name]
-                   (first (:candidates (resolve-one (resolvable-entities store mid)
-                                                    {:name name :kind_hint kind}))))]
+        resolver (fn [kind entity-name]
+                   ;; The resolution candidate identifies the entity; the row must
+                   ;; carry the ENTITY itself - its type (so the row's kind is
+                   ;; right), its fields and its breadcrumb - or a following stage
+                   ;; would filter, select or order over the candidate's shape
+                   ;; instead of the model's.
+                   (when-let [c (query-root (resolvable-entities store mid) kind entity-name)]
+                     (m/fetch store kind (:id c))))]
     (q/run-query store mid expr {:resolve-name resolver})))
 
 ;; ValidateModel (the surface @guidance operation): report slices/specs that are
@@ -444,6 +545,7 @@
                                {:slice (:id sl) :title (:title sl)}))
      :incomplete-specs (vec (for [t (m/timelines s mid)
                                   sl (m/slices s (:id t))
+                                  :when (not= :informational (:status sl))
                                   sp (m/specs s (:id sl))
                                   :when (not (m/spec-complete? s sp))]
                               {:specification (:id sp) :title (:title sp)}))

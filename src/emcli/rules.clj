@@ -119,9 +119,35 @@
          (str/join ", " (map name field-cardinalities)))
     (seq (:subfields f)) (some invalid-field (:subfields f))))
 
+(defn- duplicate-field-name
+  "The first field name appearing twice in one field list, at any depth, or nil. A
+  field list is keyed by name - AddField upserts by it, RemoveField removes by it -
+  so two entries sharing a name would make both edits address both."
+  [fields]
+  (or (some (fn [[k n]] (when (< 1 n) k)) (frequencies (map :name fields)))
+      (some (fn [f] (when (seq (:subfields f)) (duplicate-field-name (:subfields f)))) fields)))
+
 (defn- require-valid-fields [fields]
-  (when-let [msg (some invalid-field fields)]
-    {:error :invalid-value :message msg}))
+  (or (when-let [msg (some invalid-field fields)]
+        {:error :invalid-value :message msg})
+      (when-let [dup (duplicate-field-name fields)]
+        {:error :invalid-value
+         :message (str "field " (pr-str dup) " appears twice in one field list")})))
+
+(defn- canonical-fields
+  "Every Field member the model holds, at every level: a missing :optional is
+  false, a missing :cardinality is :single, a missing :subfields is empty. `value
+  Field` declares all three, so a field authored through a flat flag set must be
+  stored in the shape any other route (a pre-built argument map, the interchange
+  format) already produces - the canonical record should not depend on how the
+  field was authored."
+  [fields]
+  (mapv (fn [f]
+          (assoc f
+                 :optional (boolean (:optional f))
+                 :cardinality (or (:cardinality f) :single)
+                 :subfields (canonical-fields (:subfields f))))
+        fields))
 
 (defn- commit
   "Validate invariants and package a successful mutation. If the candidate
@@ -284,7 +310,7 @@
       (require-valid-fields fields)
       (or (when-let [stranded (stranding-removal (m/fetch store :element element) fields)]
             (referenced-field-error stranded))
-          (let [store (m/set-field store :element element :fields (vec fields))]
+          (let [store (m/set-field store :element element :fields (canonical-fields fields))]
             (commit store :SetFields [(updated store :element element)]
                     (m/fetch store :element element))))))
 
@@ -294,7 +320,7 @@
 (defn add-field [store {:keys [element field]}]
   (or (require-entity store :element element)
       (let [current (:fields (m/fetch store :element element))
-            fields  (conj (vec (remove #(= (:name field) (:name %)) current)) field)]
+            fields  (m/upsert-by current field :name)]
         (set-fields store {:element element :fields fields}))))
 
 (defn remove-field [store {:keys [element name]}]
@@ -338,8 +364,7 @@
   (or (require-entity store :element element)
       (require-valid-value field-origins origin)
       (let [current (:field_origins (m/fetch store :element element))
-            origins (conj (vec (remove #(= field (:field %)) current))
-                          {:field field :origin origin})]
+            origins (m/upsert-by current {:field field :origin origin} :field)]
         (set-field-origins store {:element element :origins origins}))))
 
 (defn remove-field-origin [store {:keys [element field]}]
@@ -516,8 +541,9 @@
 (defn add-derivation [store {:keys [connection target from]}]
   (or (require-entity store :connection connection)
       (let [current     (:derivations (m/fetch store :connection connection))
-            derivations (conj (vec (remove #(= target (:target_field %)) current))
-                              {:target_field target :source_fields (vec from)})]
+            derivations (m/upsert-by current
+                                     {:target_field target :source_fields (vec from)}
+                                     :target_field)]
         (set-connection-derivations store {:connection connection :derivations derivations}))))
 
 (defn remove-derivation [store {:keys [connection target]}]
@@ -579,8 +605,9 @@
       (require-non-blank :field-name field-name)
       (require-non-blank :field-value field-value)
       (let [current  (:examples (m/fetch store :spec-step step))
-            examples (conj (vec (remove #(= field-name (:field_name %)) current))
-                           {:field_name field-name :field_value field-value})]
+            examples (m/upsert-by current
+                                  {:field_name field-name :field_value field-value}
+                                  :field_name)]
         (set-step-examples store {:step step :examples examples}))))
 
 (defn remove-step-example [store {:keys [step field-name]}]
@@ -702,6 +729,10 @@
         (or (when (not= :screen (:kind el))
               {:error :invalid-value
                :message (str "element " element " is not a screen")})
+            (when (= :canvas tag)
+              {:error :invalid-value
+               :message (str "tag :canvas is the layout's root (always n1) and "
+                             "cannot be added as a node")})
             (let [seed     [:canvas {:-id "n1"}]
                   wf       (or (:wireframe el) seed)
                   schema   (wf/tag-schema tag)
@@ -730,6 +761,10 @@
         (or (when (not= :screen (:kind el))
               {:error :invalid-value
                :message (str "element " element " is not a screen")})
+            (when (= :canvas tag)
+              {:error :invalid-value
+               :message (str "tag :canvas is the layout's root (always n1) and "
+                             "cannot be added as a node")})
             (when-not (:wireframe el)
               {:error :not-found :type :wireframe
                :message (str "element " element " has no wireframe")})

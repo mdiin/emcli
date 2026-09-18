@@ -691,3 +691,74 @@
         (is (not (r/error? (r/create-element s {:model (:id m2) :name "PlaceOrder"
                                                 :kind :command})))
             "a name is unique within its model, not globally")))))
+
+;; --- upsert_by: an entry is replaced in place --------------------------------
+;; List position is observable (it is the order a frontend renders), so a
+;; re-added entry keeps its slot; only a new entry is appended.
+
+(deftest re-adding-an-entry-replaces-it-in-place
+  (let [[store mid]       (s/with-model)
+        {s1 :store el :result} (s/ok store r/create-element {:model mid :name "E" :kind :command})
+        eid               (:id el)
+        {s2 :store}       (s/ok s1 r/add-field {:element eid :field {:name "a" :type :string}})
+        {s3 :store}       (s/ok s2 r/add-field {:element eid :field {:name "b" :type :string}})
+        {s4 :store}       (s/ok s3 r/add-field {:element eid :field {:name "c" :type :string}})
+        {s5 :store}       (s/ok s4 r/add-field {:element eid :field {:name "a" :type :int}})
+        fields            (:fields (m/fetch s5 :element eid))]
+    (is (= ["a" "b" "c"] (map :name fields))
+        "the replaced field keeps its position and the others are untouched")
+    (is (= :int (:type (first fields)))))
+  (testing "and for the other keyed lists too"
+    (let [[store mid]         (s/with-model)
+          {s1 :store el :result} (s/ok store r/create-element {:model mid :name "E" :kind :command})
+          eid                 (:id el)
+          {s2 :store}         (s/ok s1 r/add-field-origin {:element eid :field "a" :origin :user_input})
+          {s3 :store}         (s/ok s2 r/add-field-origin {:element eid :field "b" :origin :generated})
+          {s4 :store}         (s/ok s3 r/add-field-origin {:element eid :field "a" :origin :external})
+          origins             (:field_origins (m/fetch s4 :element eid))]
+      (is (= [["a" :external] ["b" :generated]]
+             (mapv (juxt :field :origin) origins))))))
+
+;; --- a canvas is the root of a layout, never a node -------------------------
+
+(deftest canvas-cannot-be-added-as-a-node
+  (let [[store mid]           (s/with-model)
+        {s1 :store scr :result} (s/ok store r/create-element {:model mid :name "S" :kind :screen})
+        eid                   (:id scr)]
+    (testing "adding one is rejected"
+      (is (= :invalid-value
+             (:error (s/err s1 r/add-wireframe-node {:element eid :tag :canvas})))))
+    (testing "and so is inserting one before a sibling"
+      (let [store (:store (s/ok s1 r/add-wireframe-node {:element eid :tag :row}))]
+        ;; the row is n2, since the canvas root is always n1
+        (is (= :invalid-value
+               (:error (s/err store r/add-wireframe-node-before {:element eid :before "n2"
+                                                                 :tag :canvas}))))))
+    (testing "the root canvas comes with the layout, so a screen still gets one"
+      (is (= :canvas (first (:wireframe (:result (s/ok s1 r/add-wireframe-node
+                                                       {:element eid :tag :row})))))))))
+
+;; --- a field list is keyed by name ------------------------------------------
+
+(deftest a-field-list-cannot-hold-two-of-one-name
+  (let [[store mid]             (s/with-model)
+        {s1 :store el :result}  (s/ok store r/create-element {:model mid :name "E" :kind :command})]
+    (testing "a duplicated name at the top level is rejected"
+      (let [err (s/err s1 r/set-fields {:element (:id el)
+                                        :fields [{:name "a" :type :string}
+                                                 {:name "a" :type :int}]})]
+        (is (= :invalid-value (:error err)))
+        (is (str/includes? (:message err) "appears twice"))))
+    (testing "and at any depth"
+      (is (= :invalid-value
+             (:error (s/err s1 r/set-fields {:element (:id el)
+                                             :fields [{:name "a" :type :string
+                                                       :subfields [{:name "b" :type :string}
+                                                                   {:name "b" :type :int}]}]}))))))
+  (testing "the canonical Field shape is materialised whoever supplied it"
+    (let [[store mid]            (s/with-model)
+          {s1 :store el :result} (s/ok store r/create-element {:model mid :name "E" :kind :command})
+          res                    (s/ok s1 r/add-field {:element (:id el)
+                                                       :field {:name "a" :type :string}})]
+      (is (= {:name "a" :type :string :optional false :cardinality :single :subfields []}
+             (first (:fields (:result res))))))))

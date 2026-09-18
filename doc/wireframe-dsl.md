@@ -46,8 +46,11 @@ ever holds.
 
 Every node carries a stable `:-id` string (`"n1"`, `"n2"`, …) assigned when the
 node is created. Ids are allocated as *one past the highest id currently in the
-tree*, and are never reused — deleting a node neither shifts nor recycles any
-other node's id. Ids are therefore stable under unrelated edits, but they are
+tree*: deleting a node neither shifts nor changes any surviving node's id, so an
+id read once stays valid across unrelated edits. The single exception is the
+highest-numbered node itself — deleting it frees its number, which the next node
+added may take (nothing else's id moves). Ids are therefore stable under
+unrelated edits, but they are
 not the document order: inserting a node before a sibling gives it the next
 free id, which may be higher than its following siblings'. `emcli wireframe
 show` prints the current ids.

@@ -118,7 +118,7 @@
             }
         },
         "emcli_element" : {
-            "description" : "Manage elements (commands, events, read models, screens, automations) and their fields.\nVerbs: add (--name --kind [--id]), add-field (--element --name --type [--cardinality]), add-origin (--element --field --origin), context (--element --new-context), delete (--element), image (--element --url), remove-field (--element --name), remove-origin (--element --field), rename (--element --new-name), swimlane (--element --lane)",
+            "description" : "Manage elements (commands, events, read models, screens, automations) and their fields.\nVerbs: add (--name --kind [--id]), add-field (--element --name --type [--cardinality] [--optional] [--subfield-of]), add-origin (--element --field --origin), context (--element --new-context), delete (--element), image (--element --url), remove-field (--element --name), remove-origin (--element --field), rename (--element --new-name), swimlane (--element --lane)",
             "command" : "emcli element {{verb}} {{args}}",
             "schema" : {
                 "properties" : {

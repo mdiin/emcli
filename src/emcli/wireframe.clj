@@ -127,8 +127,10 @@
         id (conj id)))))
 
 (defn next-node-id
-  "Return the next node id string ('nN'), one past the highest existing
-  numeric suffix in the tree. Allocates monotonically; never reuses ids."
+  "Return the next node id string ('nN'): one past the highest existing numeric
+  suffix in the tree. Deleting a node leaves every surviving node's id unchanged;
+  the only number that can come back is the highest-numbered node's own, once
+  that node is gone (see WireframeNode.node_id in event-model.allium)."
   [wireframe]
   (let [ids (collect-ids wireframe)
         n   (transduce
@@ -217,20 +219,43 @@
               (when (and (:text-children? schema) (not (:leaf? schema))
                          (some vector? children))
                 [{:node-id node-id :message "text element accepts string children only"}])
+              text-child-errs
+              (when (and (not (:leaf? schema)) (not (:text-children? schema))
+                         (some #(not (vector? %)) children))
+                [{:node-id node-id :message "container element accepts node children only"}])
               child-errs
               (when-not (or (:leaf? schema) (:text-children? schema))
                 (mapcat #(when (vector? %) (validate-node-with-ids %)) children))]
-          (concat attr-errs req-errs leaf-errs text-errs child-errs))))))
+          (concat attr-errs req-errs leaf-errs text-errs text-child-errs child-errs))))))
+
+(defn- canvas-node-ids
+  "Every :canvas node's id in the tree rooted at `node`, in tree order."
+  [node]
+  (when (vector? node)
+    (concat (when (= :canvas (first node)) [(node-id-of node)])
+            (mapcat #(canvas-node-ids (nth node %)) (child-indices node)))))
+
+(defn- nested-canvas-ids
+  "The ids of every :canvas node below the tree's root. The root *is* the canvas
+  (always n1); a canvas anywhere else is a state the tag's schema does not admit
+  (doc/wireframe-dsl.md: ':canvas - the root of every wireframe; always n1'), so
+  it is reported rather than accepted."
+  [wireframe]
+  (when (vector? wireframe)
+    (mapcat #(canvas-node-ids (nth wireframe %)) (child-indices wireframe))))
 
 (defn validate
   "Structural validation. Works on the original tree (preserving :-id for error
   attribution), checking tags, required attrs, value types/allowed sets,
-  leaf/text-child nesting, and :screen root.
+  leaf/text-child nesting, the :canvas root, and that no other node is a canvas.
   Returns {:valid? true} or {:valid? false :errors [{:node-id str :message str}]}."
   [wireframe]
-  (let [root-err (when (not= :canvas (first wireframe))
-                   [{:node-id nil :message "root element must be :canvas"}])
-        errs     (concat root-err (validate-node-with-ids wireframe))]
+  (let [root-err    (when (not= :canvas (first wireframe))
+                      [{:node-id nil :message "root element must be :canvas"}])
+        nested-errs (for [id (nested-canvas-ids wireframe)]
+                      {:node-id id
+                       :message ":canvas is the root of a layout and may not be nested"})
+        errs        (concat root-err nested-errs (validate-node-with-ids wireframe))]
     (if (seq errs)
       {:valid? false :errors (vec errs)}
       {:valid? true})))

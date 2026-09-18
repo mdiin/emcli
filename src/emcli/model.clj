@@ -117,7 +117,8 @@
 ;; title within its slice (see the uniqueness invariants in event-model.allium).
 ;; Two names are the same name when they differ only in case and surrounding
 ;; whitespace, so "Order", "order" and "Order " are one name and cannot resolve
-;; as a tie (NameResolution's exact tier compares the same way).
+;; as a tie (NameResolution's exact tier can never separate two names this rule
+;; makes equal).
 
 (defn same-name-key
   "The comparison key of a name: its characters folded to the form two names
@@ -146,6 +147,24 @@
                      (same-name? (get e name-key) name))
             e))
         entities))
+
+;; ---------------------------------------------------------------------------
+;; Keyed list edits (the spec's upsert_by)
+;; ---------------------------------------------------------------------------
+;; The authoring operations that touch one entry of a keyed list - an element's
+;; fields, its field-origins, a connection's derivations, a step's examples -
+;; replace an existing entry IN PLACE. Position is observable (it is the order a
+;; frontend renders), so a re-added entry must keep its slot rather than move to
+;; the end; only a genuinely new entry is appended.
+
+(defn upsert-by
+  "`entries` with `item` replacing the entry whose `key-of` equals `key-of(item)`,
+  at that entry's position, or appended when no entry matches."
+  [entries item key-of]
+  (let [k (key-of item)]
+    (if (some #(= k (key-of %)) entries)
+      (mapv #(if (= k (key-of %)) item %) entries)
+      (conj (vec entries) item))))
 
 ;; ---------------------------------------------------------------------------
 ;; Relationship navigation (matches the `with` reverse references in the spec)

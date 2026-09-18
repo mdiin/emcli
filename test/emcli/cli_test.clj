@@ -1,7 +1,8 @@
 (ns emcli.cli-test
   "The CLI's entity-grouped subcommands must cover exactly the flat authoring
   commands the server exposes — every operation reachable, nothing dangling."
-  (:require [clojure.test :refer [deftest testing is]]
+  (:require [cheshire.core :as json]
+            [clojure.test :refer [deftest testing is]]
             [emcli.cli :as cli]
             [emcli.commands :as cmd]))
 
@@ -79,3 +80,20 @@
            (#'cli/parse-resolve-queries " Baz:slice, Snaz , Foobar "))))
   (testing "blank entries are dropped"
     (is (= [{:name "Baz"}] (#'cli/parse-resolve-queries "Baz,,")))))
+
+;; The ECA plugin embeds a copy of the generated tool definitions, and nothing
+;; else keeps the two in step: a stale description there tells a harness's model
+;; about flags that no longer exist, which is how the plugin drifted from
+;; tools.json once already (the `add-field` flags).
+(deftest plugin-manifest-matches-the-generated-tools
+  (let [tools (json/parse-string (slurp "tools.json") true)
+        eca   (:customTools (json/parse-string (slurp "plugins/event-modeling/eca.json") true))]
+    (is (= (set (keys tools)) (set (keys eca)))
+        "the plugin advertises exactly the tools tools.json defines")
+    (doseq [[tool definition] tools]
+      (is (= (:description definition) (get-in eca [tool :description]))
+          (str tool "'s description is in sync"))
+      (is (= (:command definition) (get-in eca [tool :command]))
+          (str tool "'s command is in sync"))
+      (is (= (:schema definition) (get-in eca [tool :schema]))
+          (str tool "'s schema is in sync")))))

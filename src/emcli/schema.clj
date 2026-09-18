@@ -14,10 +14,15 @@
       every embedded copy of its `from` and an INBOUND dependency on every
       embedded copy of its `to`; import dedups by (from groupId, to groupId).
     * ExportRequiresComplete    — export is rejected unless every
-      non-informational slice and every specification is complete.
+      non-informational slice, and every specification of such a slice, is
+      complete: content the export drops (an informational slice and the
+      specifications inside it) cannot block it.
     * ImportRejectsForbiddenDocument — import is all-or-nothing: a document the
-      always-on authoring invariants reject is rejected as a whole, naming the
-      offending slices, and nothing is installed.
+      always-on authoring invariants reject is rejected as a whole, naming what
+      the failing operation concerned (the slices for a slice-level step, the
+      elements or swimlanes for an element-level one), and nothing is installed.
+      Import installs state through the same authoring rules an operator's edits
+      go through, so it cannot install what those rules would refuse.
   Informational slices and the documented technical/visual fields are dropped.
   So is the information-completeness provenance (Connection.derivations and
   Element.field_origins): the interchange format has no field-level derivation or
@@ -85,7 +90,12 @@
 ;; ---------------------------------------------------------------------------
 
 (defn export-readiness
-  "Return offending slices/specs that block export (empty map => ready)."
+  "Return offending slices/specs that block export (empty map => ready).
+
+  A slice tagged informational is dropped by `export` (see the dropped-fields
+  guidance), so neither it nor the specifications inside it can block the export:
+  demanding that content which will never be written satisfy is_complete would let
+  a storytelling slice veto the export of everything else."
   [store model-id]
   (let [bad-slices (for [t (m/timelines store model-id)
                          s (m/slices store (:id t))
@@ -94,6 +104,7 @@
                      {:slice (:id s) :title (:title s)})
         bad-specs  (for [t (m/timelines store model-id)
                          s (m/slices store (:id t))
+                         :when (not= :informational (:status s))
                          sp (m/specs store (:id s))
                          :when (not (m/spec-complete? store sp))]
                      {:specification (:id sp) :title (:title sp)})]
@@ -220,16 +231,26 @@
 (defn- ensure-swimlane
   "Find-or-create a swimlane by name; returns [store lane-id]. The schema carries
   no aggregate ordering, so reimported swimlanes get an index in creation order
-  (the documented Swimlane.index fallback)."
+  (the documented Swimlane.index fallback). The look-up compares names by the
+  model's name equality (m/same-name?), so a document spelling one aggregate two
+  ways finds the lane it already has instead of colliding with it."
   [store model-id name]
   (if (or (nil? name) (= "" name))
     [store nil]
-    (if-let [lane (first (m/by-field store :swimlane :name name))]
+    (if-let [lane (first (filter #(m/same-name? (:name %) name) (m/swimlanes store model-id)))]
       [store (:id lane)]
       (let [idx (count (m/swimlanes store model-id))
             {:keys [store result]} (check-step {:step :create-swimlane :swimlanes [name]}
                                                (r/create-swimlane store {:model model-id :name name :index idx}))]
         [store (:id result)]))))
+
+(defn- lookup-name
+  "The value a name-keyed map holds under a key that is the same name as `name`
+  (m/same-name?), or nil. The interchange format's two grouping keys are names
+  (Timeline.title, Swimlane.name), so they are looked up by the model's name
+  equality rather than by exact string."
+  [m name]
+  (some (fn [[k v]] (when (m/same-name? k name) v)) m))
 
 (defn- resolve-far
   "Resolve a dependency's far-end element to a canonical element id. Prefers the
@@ -265,7 +286,15 @@
                                                (r/create-model store0 {:name model-name}))
         mid        (:id mid)
         ;; --- timelines (grouped by slice context, in first-seen order) ------
-        contexts   (distinct (map #(get % "context" "") slices))
+        ;; A context is a name (Timeline.title), so contexts group by the model's
+        ;; name equality rather than by exact string: a document whose slices say
+        ;; "Flow" and "flow" describes one timeline, exactly as those two strings
+        ;; are one name in the canonical model. The first spelling seen becomes
+        ;; the timeline's title.
+        contexts   (reduce (fn [acc c]
+                             (if (some #(m/same-name? % c) acc) acc (conj acc c)))
+                           []
+                           (map #(get % "context" "") slices))
         [store ctx->tl]
         (reduce (fn [[s acc] ctx]
                   (let [{s2 :store tl :result} (check-step {:step :create-timeline :contexts [ctx]}
@@ -287,10 +316,23 @@
                                                          :name (get e "title")
                                                          :kind (or (::kind e) (type->elkind (get e "type")))}))
                         eid (:id el)
-                        s2  (-> s2
-                                (m/set-field :element eid :context (schema->ctx (get e "context") :internal))
-                                (m/set-field :element eid :fields (mapv schema->field (get e "fields" []))))
-                        s2  (if lane (m/set-field s2 :element eid :swimlane lane) s2)]
+                        ;; The rest of the element's state is applied through the
+                        ;; same authoring operations an operator uses
+                        ;; (ImportRejectsForbiddenDocument), so a document cannot
+                        ;; install state the surface would refuse: SetFields
+                        ;; validates every field it installs, where writing the list
+                        ;; directly accepted a nameless or blank-named field and
+                        ;; then wedged the element against later field edits.
+                        {s2 :store} (check-step {:step :set-element-context :elements [(get e "title")]}
+                                                (r/set-element-context s2 {:element eid
+                                                                           :new-context (schema->ctx (get e "context") :internal)}))
+                        {s2 :store} (check-step {:step :set-fields :elements [(get e "title")]}
+                                                (r/set-fields s2 {:element eid
+                                                                  :fields (mapv schema->field (get e "fields" []))}))
+                        {s2 :store} (if lane
+                                      (check-step {:step :assign-swimlane :elements [(get e "title")]}
+                                                  (r/assign-swimlane s2 {:element eid :lane lane}))
+                                      {:store s2})]
                     [s2 (assoc acc g eid)]))
                 [store {}] by-group)
         ;; [kind name] -> element id, for resolving foreign dep/step references.
@@ -299,14 +341,16 @@
         [store embedid->placement slice-id-map]
         (reduce
          (fn [[s pmap smap] ss]
-           (let [tl   (ctx->tl (get ss "context" ""))
+           (let [tl   (lookup-name ctx->tl (get ss "context" ""))
                  {s2 :store sl :result}
                  (check-step {:step :add-slice :slices [(get ss "id")]}
                              (r/add-slice s {:timeline tl :title (get ss "title")
                                              :kind (slicetype->kind (get ss "sliceType") :state_change)
                                              :index (get ss "index" 0)}))
                  slid (:id sl)
-                 s2   (m/set-field s2 :slice slid :status (schema->status (get ss "status") :created))
+                 {s2 :store} (check-step {:step :set-slice-status :slices [(get ss "id")]}
+                                         (r/set-slice-status s2 {:slice slid
+                                                                 :new-status (schema->status (get ss "status") :created)}))
                  ;; placements (one per embedded element)
                  [s3 pmap2]
                  (reduce (fn [[s pm] e]
@@ -321,8 +365,9 @@
                  s4 (reduce (fn [s img]
                               (if-let [e (first (filter #(= (get % "id") (get img "elementId"))
                                                         (embedded-elements-of ss)))]
-                                (m/set-field s :element (group->el (get e "groupId" (str "anon-" (get e "id"))))
-                                             :image_url (get img "url"))
+                                (:store (check-step {:step :set-image-url :slices [(get ss "id")]}
+                                                    (r/set-image-url s {:element (group->el (get e "groupId" (str "anon-" (get e "id"))))
+                                                                        :url (get img "url")})))
                                 s))
                             s3 (get ss "screenImages" []))]
              [s4 pmap2 (assoc smap (get ss "id") slid)]))
@@ -358,17 +403,30 @@
                          (fn [s [clause steps]]
                            (reduce
                             (fn [s st]
+                              ;; Every step is applied through the authoring rule,
+                              ;; so a step the rules refuse - a when step on a
+                              ;; state_view specification, a blank error name -
+                              ;; rejects the document as a whole instead of being
+                              ;; silently dropped (ImportRejectsForbiddenDocument).
                               (if (= "SPEC_ERROR" (get st "type"))
-                                (let [res (r/add-error-step s {:spec spid :error-name (get st "title")
-                                                               :index (get st "index" 0)})]
-                                  (if (r/error? res) s (apply-step-extras (:store res) (:result res) st spid)))
+                                (let [{s2 :store res :result}
+                                      (check-step {:step :add-error-step :slices [(get ss "id")]}
+                                                  (r/add-error-step s {:spec spid :error-name (get st "title")
+                                                                       :index (get st "index" 0)}))]
+                                  (apply-step-extras s2 res st spid))
                                 (let [kind (spectype->elkind (get st "type"))
-                                      el   (name->el [kind (get st "title")])
-                                      res  (when el (r/add-spec-step s {:spec spid :clause clause
-                                                                        :element el :index (get st "index" 0)}))]
-                                  (if (and res (not (r/error? res)))
-                                    (apply-step-extras (:store res) (:result res) st spid)
-                                    s))))
+                                      el   (name->el [kind (get st "title")])]
+                                  (if-not el
+                                    ;; A reference to an element the document does
+                                    ;; not embed - one the model holds unplaced, so
+                                    ;; the format had no element to carry it in (see
+                                    ;; the dropped-fields guidance).
+                                    s
+                                    (let [{s2 :store res :result}
+                                          (check-step {:step :add-spec-step :slices [(get ss "id")]}
+                                                      (r/add-spec-step s {:spec spid :clause clause
+                                                                          :element el :index (get st "index" 0)}))]
+                                      (apply-step-extras s2 res st spid))))))
                             s steps))
                          s2 [[:given_step (get spec "given" [])]
                              [:when_step (get spec "when" [])]

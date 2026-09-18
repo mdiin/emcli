@@ -86,7 +86,7 @@
           [_ msgs] (recording-sub a)
           model (:model (first @msgs))
           p1    (first (:placements (first (:slices (first (:timelines model))))))]
-      (is (= [{:name "id" :type :uuid :cardinality :single}]
+      (is (= [{:name "id" :type :uuid :optional false :cardinality :single}]
              (:fields (:element p1)))))))
 
 (deftest snapshot-carries-the-whole-element-registry

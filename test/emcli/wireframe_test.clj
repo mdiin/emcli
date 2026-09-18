@@ -27,7 +27,32 @@
   (testing "advances past highest existing id"
     (is (= "n6" (wf/next-node-id simple-wf))))
   (testing "handles gaps in numbering"
-    (is (= "n4" (wf/next-node-id [:canvas {:-id "n1"} [:col {:-id "n3"}]])))))
+    (is (= "n4" (wf/next-node-id [:canvas {:-id "n1"} [:col {:-id "n3"}]]))))
+  (testing "the number of a deleted highest node is reused"
+    ;; a tree whose highest node was deleted: n1 and n2 survive, so the next node
+    ;; added takes n3 again - WireframeNode.node_id says a removed node's number
+    ;; may be reused when it was the highest in the tree
+    (is (= "n3" (wf/next-node-id [:canvas {:-id "n1"} [:col {:-id "n2"}]])))))
+
+(deftest a-canvas-may-only-be-the-root
+  (testing "a canvas nested below the root is malformed"
+    (let [{:keys [valid? errors]} (wf/validate [:canvas {:-id "n1"} [:canvas {:-id "n2"}]])]
+      (is (false? valid?))
+      (is (= ["n2"] (map :node-id errors)))
+      (is (= ":canvas is the root of a layout and may not be nested"
+             (:message (first errors))))))
+  (testing "the root canvas is not itself a violation"
+    (is (true? (:valid? (wf/validate [:canvas {:-id "n1"}]))))
+    (is (true? (:valid? (wf/validate simple-wf))))))
+
+(deftest a-container-may-not-hold-text
+  (testing "a string child on a container tag is malformed"
+    (let [{:keys [valid? errors]} (wf/validate [:canvas {:-id "n1"} [:row {:-id "n2"} "text"]])]
+      (is (false? valid?))
+      (is (= ["n2"] (map :node-id errors)))
+      (is (= "container element accepts node children only" (:message (first errors))))))
+  (testing "an empty container is fine: a tree is grown one node at a time"
+    (is (true? (:valid? (wf/validate [:canvas {:-id "n1"} [:row {:-id "n2"}]]))))))
 
 ;; ---------------------------------------------------------------------------
 ;; validate — structural

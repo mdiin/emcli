@@ -57,7 +57,10 @@
   "The QueryKind behind a model entity type (only :spec-step differs)."
   [t] (if (= t :spec-step) :step t))
 
-(defn- query-error [msg]
+(defn query-error
+  "A rejected query: the one error shape the engine raises, and the shape a
+  caller-supplied name resolver raises too, so the boundary maps them all alike."
+  [msg]
   (ex-info msg {:error :invalid-query :message msg}))
 
 (defn- normalize-relation
@@ -354,21 +357,39 @@
     :specification (m/model-specs store mid)
     :step          (m/all store :spec-step)))
 
-(defn- root-items [store mid root opts]
+(defn- root-items
+  "The entities a root stage starts from: every entity of the kind, or the single
+  one an id / name names.
+
+  A root that names nothing is rejected rather than yielding an empty result: an
+  empty result reads as 'nothing is related to X', while the truth is 'there is
+  no X' - the distinction UnknownStepRejected already draws for kinds and
+  relations. A name root resolves through the supplied `:resolve-name`, which
+  returns the one entity of the declared kind the name denotes, or nil when there
+  is none; the kind it returns is the declared kind by construction, so a root can
+  never land on another kind."
+  [store mid root opts]
   (let [k (:kind root)]
     (cond
-      (:id root)   (if-let [e (m/fetch store (model-type k) (:id root))] [{:entity e}] [])
-      (:name root) (if-let [c ((:resolve-name opts) k (:name root))]
-                     (if-let [e (m/fetch store (model-type (:kind c)) (:id c))] [{:entity e}] [])
-                     [])
+      (:id root)   (if-let [e (m/fetch store (model-type k) (:id root))]
+                     [{:entity e}]
+                     (throw (query-error (str "no " (token-label k) " with id "
+                                              (:id root) " in the model"))))
+      (:name root) (if-let [e ((:resolve-name opts) k (:name root))]
+                     [{:entity e}]
+                     (throw (query-error (str "no " (token-label k) " named "
+                                              (pr-str (:name root))))))
       :else        (map (fn [e] {:entity e}) (kind-collection store mid k)))))
 
 (defn run-query
   "Evaluate a parsed query `expr` against `store` (one model, id `mid`).
   Returns a vector of rows, or an integer when the pipeline ends in `count`.
-  `opts` may carry :resolve-name (fn [kind name] -> candidate-or-nil) for
-  name-based roots (which delegate to NameResolution). Throws ex-info
-  {:error :invalid-query} on an invalid query. Read-only."
+  `opts` carries :resolve-name (fn [kind name] -> entity-or-nil) for name-based
+  roots, which delegate to NameResolution: it returns the single entity of `kind`
+  the name denotes, and nil when there is none. It must never choose among
+  several candidates (NameResolution.NoImplicitBestPick), and the error it raises
+  for a name that denotes nothing is the query error above. Throws ex-info
+  {:error :invalid-query} on a root or stage that names nothing. Read-only."
   [store mid expr opts]
   (let [{:keys [root plan]} (compile-query expr)]
     (execute store (root-items store mid root opts) plan)))

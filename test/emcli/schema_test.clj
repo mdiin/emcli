@@ -125,7 +125,20 @@
           slid        (:id (first (m/slices store tlid)))
           store       (:store (s/ok store r/set-slice-status {:slice slid :new-status :informational}))
           doc         (sc/export store mid)]
-      (is (not (some #(= "just a note" (get % "title")) (get doc "slices")))))))
+      (is (not (some #(= "just a note" (get % "title")) (get doc "slices"))))))
+  (testing "nor does an incomplete specification inside it"
+    ;; content that export drops cannot be required to satisfy is_complete: the
+    ;; slice is exempt, and so are the specifications it carries
+    (let [[store mid] (build-model)
+          store       (:store (s/ok store r/create-timeline {:model mid :title "Notes"}))
+          tlid        (:id (last (m/timelines store mid)))
+          store       (:store (s/ok store r/add-slice {:timeline tlid :title "just a note"
+                                                       :kind :state_change :index 0}))
+          slid        (:id (first (m/slices store tlid)))
+          store       (:store (s/ok store r/set-slice-status {:slice slid :new-status :informational}))
+          store       (:store (s/ok store r/add-specification {:slice slid :title "half written"}))]
+      (is (empty? (sc/export-readiness store mid)))
+      (is (map? (sc/export store mid))))))
 
 ;; --- ModelRoundtrip --------------------------------------------------------
 
@@ -334,3 +347,56 @@
           [store mid] (sc/import-model renamed)]
       (is (some? mid))
       (is (contains? (set (map :name (m/elements store mid))) "OrderCancelled")))))
+
+;; --- ImportRejectsForbiddenDocument: fields ---------------------------------
+
+(defn- foreign-doc-with-fields
+  "`foreign-doc` with the first command's field list replaced by `pairs`, each a
+  [name type] pair. A document is valid against eventmodeling.schema.json whether
+  or not its fields are named, but the canonical model is not: Field.name is a
+  required String and AddField rejects a blank one."
+  [doc pairs]
+  (assoc-in doc ["slices" 0 "commands" 0 "fields"]
+            (mapv (fn [[n t]] {"name" n "type" t "cardinality" "Single" "optional" false})
+                  pairs)))
+
+(deftest import-refuses-a-field-the-authoring-surface-would
+  (testing "a blank field name is refused as a whole, naming the step"
+    (let [e (import-failure (foreign-doc-with-fields foreign-doc [["" "String"]]))]
+      (is (some? e) "the import is refused, not installed with a nameless field")
+      (is (= :import-rejected (:error (ex-data e))))
+      (is (= :invalid-value (:error (:rule-error (ex-data e))))
+          "the guard the operator path applies is the one that fired")
+      (is (str/includes? (ex-message e) "field missing name"))))
+  (testing "the same document with a named field imports"
+    (let [[store mid] (sc/import-model (foreign-doc-with-fields foreign-doc [["orderId" "UUID"]]))
+          cmd         (first (filter #(= "PlaceOrder" (:name %)) (m/elements store mid)))]
+      (is (some? mid))
+      (is (= ["orderId"] (map :name (:fields cmd)))))))
+
+;; --- import: the grouping keys are names ------------------------------------
+
+(deftest import-groups-case-variant-keys-into-one
+  (testing "two contexts that differ only in case describe one timeline"
+    (let [[store mid] (sc/import-model (assoc-in foreign-doc ["slices" 1 "context"] "ordering"))]
+      (is (= ["Ordering"] (map :title (m/timelines store mid)))
+          "one timeline, titled with the first spelling seen")
+      (is (= 2 (count (m/model-slices store mid))) "both slices are in it")))
+  (testing "two aggregates that differ only in case describe one swimlane"
+    (let [[store mid] (sc/import-model (assoc-in foreign-doc ["slices" 0 "events" 0 "aggregate"]
+                                                 "orders"))]
+      (is (= ["Orders"] (map :name (m/swimlanes store mid)))))))
+
+;; --- import: a step the authoring rules refuse ------------------------------
+
+(deftest import-refuses-a-step-the-authoring-rules-refuse
+  (testing "a when step on a state_view specification rejects the document as a whole"
+    ;; the operator path refuses this with :invariant-violation
+    ;; (SpecificationComposition); import must not quietly drop the step instead
+    (let [doc (update-in foreign-doc ["slices" 1 "specifications" 0 "when"]
+                         (constantly [{"id" "w2" "title" "PlaceOrder"
+                                       "type" "SPEC_COMMAND" "index" 0}]))
+          e   (import-failure doc)]
+      (is (some? e) "the step is not silently dropped")
+      (is (= :import-rejected (:error (ex-data e))))
+      (is (= :invariant-violation (:error (:rule-error (ex-data e))))))))

@@ -254,7 +254,11 @@
     {:flag "name" :type "string" :required true :note "field name; replaces any existing field of the same name"}
     {:flag "type" :type "keyword" :required true
      :values ["string" "boolean" "double" "decimal" "long" "custom" "date" "date_time" "uuid" "int"]}
-    {:flag "cardinality" :type "keyword" :required false :values ["single" "list"]}]
+    {:flag "cardinality" :type "keyword" :required false :values ["single" "list"]}
+    {:flag "optional" :type "boolean" :required false
+     :note "whether the field may be absent (Field.optional)"}
+    {:flag "subfield-of" :type "string" :required false
+     :note "name of a field of the same element to nest this field inside (a Field list is recursive, so one level is added per call, and the parent must be a field of the element itself)"}]
    "remove-field"
    [{:flag "element" :type "int" :required true :ref "elements[].id"}
     {:flag "name" :type "string" :required true :note "field name to remove"}]

@@ -402,7 +402,7 @@
 
     "Field": {
       "type": "object",
-      "description": "An element field as stored. `optional`, `cardinality` and `subfields` are present only when the field carries them: authoring may omit all three, and the interchange export defaults them to false, single and [].",
+      "description": "An element field as stored, in the canonical shape: `optional` is false, `cardinality` is single and `subfields` is [] unless the author set otherwise, so every route that authors a field (a CLI flag set, a pre-built argument map, an interchange import) produces the same record.",
       "required": ["name", "type"],
       "additionalProperties": false,
       "properties": {
@@ -415,7 +415,7 @@
     },
 
     "SnapshotField": {
-      "description": "A field as streamed on a snapshot placement's element: shape only, no subfields. The full recursive Field shape (subfields included) travels in the element's canonical record instead — a delta `entity`, or the matching `model.elements` entry. `optional` and `cardinality` are absent when the field was authored without them.",
+      "description": "A field as streamed on a snapshot placement's element: shape only, no subfields. The full recursive Field shape (subfields included) travels in the element's canonical record instead — a delta `entity`, or the matching `model.elements` entry. `optional` and `cardinality` are always carried, defaulted to false and single when the author did not set them.",
       "type": "object",
       "required": ["name", "type"],
       "additionalProperties": false,
@@ -458,7 +458,7 @@
 
     "WireframeNode": {
       "type": "array",
-      "description": "A layout node in hiccup-like form: [tag, id-map, attrs?, ...children]. Cheshire serialises Clojure keywords as strings, so the Clojure vector `[:button {:-id \"n2\"} {:label \"OK\" :variant :primary}]` arrives on the wire as `[\"button\", {\"-id\": \"n2\"}, {\"label\": \"OK\", \"variant\": \"primary\"}]`. The first element is the tag; the second always carries \"-id\", a stable string address for incremental edits, allocated one past the highest id in the tree and never reused (so deleting a node neither shifts nor recycles another node's id). A third object, when the node has content attributes, holds those attributes in a map of its own — the id map stays separate — and the children follow it. The tree's root node is always tagged \"canvas\" (the tree IS the wireframe; there is no wrapper object). The tag and attribute vocabulary is in doc/wireframe-dsl.md.",
+      "description": "A layout node in hiccup-like form: [tag, id-map, attrs?, ...children]. Cheshire serialises Clojure keywords as strings, so the Clojure vector `[:button {:-id \"n2\"} {:label \"OK\" :variant :primary}]` arrives on the wire as `[\"button\", {\"-id\": \"n2\"}, {\"label\": \"OK\", \"variant\": \"primary\"}]`. The first element is the tag; the second always carries \"-id\", a stable string address for incremental edits, allocated one past the highest id in the tree, so deleting a node neither shifts nor changes any other node's id (only the highest-numbered node's own number is freed for reuse). A third object, when the node has content attributes, holds those attributes in a map of its own — the id map stays separate — and the children follow it. The tree's root node is always tagged \"canvas\" (the tree IS the wireframe; there is no wrapper object), and no other node is one. The tag and attribute vocabulary is in doc/wireframe-dsl.md.",
       "minItems": 2,
       "prefixItems": [
         { "type": "string", "description": "tag name (e.g. \"canvas\", \"row\", \"col\", \"button\", \"input\")" },
@@ -504,7 +504,7 @@
     },
     "fieldCardinality": { "enum": ["single", "list"] },
     "deltaOp": {
-      "description": "The authoring operation that produced the delta (also the SSE event name). Every mutating operation of the ModelAuthoring surface appears here; nothing else produces a delta, and import re-snapshots instead.",
+      "description": "The authoring operation that produced the delta (also the SSE event name): every operation of the ModelAuthoring surface that mutates the model appears here, and nothing else produces a delta (import re-snapshots instead). A composite operation - one the surface offers as a single verb but which edits one entry of a whole-list field, such as AddField or AddDerivation - reports the delta of the whole-list operation it decomposes into (SetFields, SetFieldOrigins, SetConnectionDerivations, SetStepExamples), so those four names each cover several verbs.",
       "enum": [
         "CreateTimeline", "RenameTimeline", "DeleteTimeline",
         "CreateSwimlane", "RenameSwimlane", "ReorderSwimlane", "DeleteSwimlane",

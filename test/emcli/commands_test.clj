@@ -390,3 +390,23 @@
     (testing "a non-integer --slice is a bad-argument, like any other int param"
       (is (= :bad-argument (:error (cmd/run a "reorder-placement"
                                             {:slice "x" :element (ids "B") :position "front"})))))))
+
+(deftest add-field-carries-optional-and-subfields
+  ;; AddField takes a whole Field; the flat flag set addresses one level at a
+  ;; time, so a subfield is authored by naming the field to nest it under.
+  (let [a  (app/new-app "M")
+        el (:id (:result (cmd/run a "create-element" {:name "E" :kind "command"})))
+        el-field (fn [] (m/fetch (app/store a) :element el))]
+    (testing "optional and cardinality reach the stored field"
+      (cmd/run a "add-field" {:element el :name "id" :type "uuid"
+                              :optional true :cardinality "list"})
+      (is (= {:name "id" :type :uuid :optional true :cardinality :list :subfields []}
+             (first (:fields (el-field))))))
+    (testing "a subfield is nested into an existing field"
+      (is (not (r/error? (cmd/run a "add-field" {:element el :name "amount" :type "double"
+                                                 :subfield-of "id"}))))
+      (is (= [["amount" :double]]
+             (mapv (juxt :name :type) (:subfields (first (:fields (el-field))))))))
+    (testing "naming a field the element does not have is rejected"
+      (is (= :not-found (:error (cmd/run a "add-field" {:element el :name "x" :type "int"
+                                                        :subfield-of "nope"})))))))
