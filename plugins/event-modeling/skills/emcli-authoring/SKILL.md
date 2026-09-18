@@ -2,7 +2,7 @@
 name: emcli-authoring
 description: >
   Use this skill when you need to edit an Event Model. Covers the complete command reference for authoring
-  an Event Model via the tools (emcli_resolve, emcli_validate, and the per-group authoring tools) with gotchas.
+  an Event Model via the per-group authoring tools, with gotchas.
 ---
 
 # emcli Authoring Reference
@@ -13,7 +13,7 @@ description: >
 
 ## Tool workflow
 
-1. **Resolve names to ids** with `emcli_resolve` before any authoring call that needs an integer id. Never guess ids.
+1. **Never guess ids.** This skill is loaded by `em-author`, which has `emcli_resolve`, `emcli_query` and `emcli_validate` disabled: take the ids from the task you were given (the caller resolves names) or from a previous call's result. If you genuinely cannot get an id, say so rather than inventing one.
 2. **Author** with the matching per-group tool — one call per command. Choose the tool whose name matches the entity you want to mutate, supply `verb` + any required `args` as space-separated `--flag value` pairs.
 
 

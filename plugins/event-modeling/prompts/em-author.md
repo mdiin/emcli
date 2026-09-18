@@ -27,7 +27,7 @@ You have tools at your disposal to solve the Event Modeling task. Follow these r
 
 ## Working rhythm
 1. Understand the task at hand
-2. Use the appropriate per-group tool (`emcli_timeline`, `emcli_swimlane`, `emcli_slice`, `emcli_element`, `emcli_placement`, `emcli_connection`, `emcli_spec`, `emcli_step`, `emcli_wireframe`); read each result's `id` for subsequent calls — no need to resolve freshly created entities. (Wireframe verbs are the exception: they return the screen element, so read node ids from a `wireframe show`.
+2. Use the appropriate per-group tool (`emcli_timeline`, `emcli_swimlane`, `emcli_slice`, `emcli_element`, `emcli_placement`, `emcli_connection`, `emcli_spec`, `emcli_step`, ); read each result's `id` for subsequent calls — no need to resolve freshly created entities. `emcli_wireframe` is not in your tool set: spawn a `wireframer` for layout work.
 
 **Corrections:** use `rename`, `reorder`, `remove` or `delete` verbs. Deletes cascade — removing a timeline removes its slices; removing a slice removes its placements and specs.
 

@@ -212,6 +212,8 @@ prints as just `[nN] :tag`.
   (and any field edit that drops a name) is rejected when the screen's stored
   layout still names that field, with an error naming the field and the node ids
   that refer to it, so a field edit cannot strand a reference. A model that
-  already holds one — written before the guard existed — is left alone: unrelated
-  field edits still go through, and the layout has to be repaired by editing or
-  deleting the referring node.
+  already holds a stranded reference — written before the guard existed — is not
+  left editable: `WireframeReferencesResolve` is always on, so the store fails
+  validation at load (`invalid store in <file>: N invariant violation(s) remain
+  after repair`) and is refused outright. Repair it in the file itself, by editing
+  the referring node's `field-name` or deleting that node.

@@ -1,10 +1,10 @@
 ## Tool Manifest
 
-`tools.json` at the project root is in [ECA.dev custom tool format](https://eca.dev/docs/custom-tools) — an object (not an array) with one key per command group. Each entry carries:
+`tools.json` at the project root is in [ECA.dev custom tool format](https://eca.dev/docs/custom-tools) — an object (not an array) with one key per tool: one per command group (`emcli_timeline` … `emcli_wireframe`), plus one each for the whole-surface tools `emcli_resolve`, `emcli_query` and `emcli_validate`. Each entry carries:
 
 - **`description`** — a human/LLM-readable summary of the group plus a per-verb flag synopsis (required flags plain, optional flags in `[brackets]`).
 - **`command`** — the full invocation pattern, e.g. `emcli wireframe {{verb}} {{args}}`, with `{{verb}}` and `{{args}}` as placeholders. ECA.dev expands these at call time; for other harnesses the `command` field documents the intended invocation.
-- **`schema`** — a JSON Schema fragment (just `properties` and `required`, no top-level `"type": "object"`) with a `verb` enum and a free-text `args` string.
+- **`schema`** — a JSON Schema fragment (just `properties` and `required`, no top-level `"type": "object"`). A command group's schema has a `verb` enum and a free-text `args` string; the three whole-surface tools take their own single property (`queries` for `emcli_resolve`, `query` for `emcli_query`, none for `emcli_validate`).
 
 It is the canonical harness-agnostic tool manifest for LLM integrations: integrators should pick the subset of tools relevant to their use case and pass them along with an appropriate system prompt.
 
