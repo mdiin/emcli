@@ -16,21 +16,7 @@ description: >
 1. **Resolve names to ids** with `emcli_resolve` before any authoring call that needs an integer id. Never guess ids.
 2. **Author** with the matching per-group tool — one call per command. Choose the tool whose name matches the entity you want to mutate, supply `verb` + any required `args` as space-separated `--flag value` pairs.
 
-## emcli_resolve
 
-```
-queries: "Name[:kind_hint],..."
-```
-
-`kind_hint` only ranks candidates, never filters them. Values: `timeline`, `swimlane`, `slice`, `element`, `specification`.
-
-Returns an array of matches with `id`, `kind`, `swimlane`, and `name`.
-
-Empty name with kind hint finds all entities of that kind. Example for finding all timelines: `queries: ":timeline"`
-
-## emcli_validate
-
-Runs Event Model validation and returns all warnings and errors. Use when the user requests a model check.
 
 ## Per-group authoring tools
 

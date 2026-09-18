@@ -30,6 +30,10 @@ query: "element:42 | outgoing {derivations}"
 
 Roots: `timeline`, `swimlane`, `slice`, `element`, `specification`, `step`. Stages: `where`, `order`, `select`, `count`, `limit`, `distinct`. An invalid stage returns an error naming the valid alternatives; run `emcli query --relations` for the full vocabulary.
 
+## Guidelines
+
+- To list **all** entities of a kind, use `emcli_query` with a bare kind root (`timeline`, `element`, `slice`, …)
+- `emcli_resolve` turns a name into ids (fuzzy, did-you-mean); an empty name + kind hint does *not* enumerate a kind — the hint only ranks, and the result is capped at 5 candidates across all kinds.
 
 ## Communication
 
