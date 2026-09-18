@@ -370,3 +370,9 @@
     (testing "and a good operand of either form still works"
       (is (vector? (run-q env "element | limit 2")))
       (is (vector? (run-q env "element | where name ~ ^Place"))))))
+
+(deftest an-out-of-range-root-id-is-rejected
+  (let [env (build)]
+    (testing "an id past Long range must not silently become a whole-kind root"
+      (is (rejects? #"id is out of range" #(run-q env "element:99999999999999999999")))
+      (is (vector? (run-q env (str "element:" (:e1 env)))) "an in-range id still roots"))))

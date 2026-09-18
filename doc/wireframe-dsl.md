@@ -152,8 +152,12 @@ emcli wireframe set-attr --element 42 --node n5 --attr label --value "New order"
 emcli wireframe delete-node --element 42 --node n3
 ```
 
-`--element` must always name a **screen** element that exists; any other kind is
-rejected with `element N is not a screen`.
+`--element` must always name an element that exists. `add-node` and
+`add-node-before` additionally require it to be a **screen**, rejecting any other
+kind with `element N is not a screen`; the variables that edit one node
+(`set-attr`, `set-text`, `delete-node`) need a layout to edit instead, and answer
+`element N has no wireframe` when the element carries none — which a non-screen
+never does, since only screens may carry a layout.
 
 ## Output format
 

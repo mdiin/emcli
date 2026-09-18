@@ -256,7 +256,13 @@
       (nil? nm) {:kind k}
       :else     (let [v (str/trim nm)]
                   (if (re-matches #"-?\d+" v)
-                    {:kind k :id (parse-long v)}
+                    ;; parse-long is nil past Long range, which would leave no id and
+                    ;; silently answer the whole kind - a root names ONE entity, and
+                    ;; one that names nothing is rejected (see root-items)
+                    (let [id (parse-long v)]
+                      (when (nil? id)
+                        (throw (query-error (str "id is out of range: '" v "'"))))
+                      {:kind k :id id})
                     {:kind k :name (str/replace v #"^\"|\"$" "")})))))
 
 (defn- parse-value [v]

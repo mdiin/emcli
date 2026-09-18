@@ -998,3 +998,20 @@
                                                             :element (:id cmd) :index 0})]
         (is (true? (:is_complete (m/canonical-entity store :specification (:id sp)))))
         (is (= [:spec-step :specification] (mapv :type (:changes delta))))))))
+
+(deftest delete-element-lists-its-groups-in-the-documented-order
+  (let [[store mid]             (s/with-model)
+        {s1 :store cmd :result} (s/ok store r/create-element {:model mid :name "Cmd" :element-type :command})
+        {s2 :store tl :result}  (s/ok s1 r/create-timeline {:model mid :title "T"})
+        {s3 :store sl :result}  (s/ok s2 r/add-slice {:timeline (:id tl) :title "S"
+                                                      :slice-type :state_change :index 0})
+        {s4 :store sp :result}  (s/ok s3 r/add-specification {:slice (:id sl) :title "spec"})
+        {s5 :store}             (s/ok s4 r/place-element {:slice (:id sl) :element (:id cmd)})
+        {s6 :store}             (s/ok s5 r/add-spec-step {:spec (:id sp) :clause :when_step
+                                                          :element (:id cmd) :index 0})]
+    ;; both verdicts move: the slice loses its only command, the spec its only when-step
+    (let [{:keys [delta]} (s/ok s6 r/delete-element {:element (:id cmd)})]
+      (is (= [[:deleted :placement] [:deleted :spec-step] [:deleted :element]
+              [:updated :slice] [:updated :specification]]
+             (mapv (juxt :action :type) (:changes delta)))
+          "deletions, then the element, then the verdicts those removals moved"))))
