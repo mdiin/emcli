@@ -9,6 +9,14 @@
 --   - Single-source Elements, referenced from slices across timelines and named
 --     uniquely within their model (compared case-insensitively), so an element's
 --     name identifies exactly one element
+--   - Field names, which are names like every other name in the model - unique
+--     within their field list, compared case-insensitively - but referenced BY
+--     NAME rather than by identity, making a field name the model's one textual
+--     reference
+--   - Renaming every named thing - timeline, swimlane, slice, specification,
+--     element, error step and field - each keeping the model's references
+--     consistent, which for a field means carrying the new name through every
+--     derivation, override, example and layout node that names it
 --   - Information completeness / field provenance: every field on an element
 --     traces to a source (carried from an incoming connection's source element,
 --     derived from named source fields, or introduced via an operator override),
@@ -89,31 +97,31 @@ entity Slice {
     timeline: Timeline
     title: String
     index: Integer
-    kind: state_change | state_view | automation
+    slice_type: state_change | state_view | automation
     -- 'informational' tags a pure story-telling slice: not acted on, exempt
     -- from composition rules, and dropped on schema export. It is a status (not
-    -- a kind) so the slice still carries its pattern kind while being tagged.
+    -- a type) so the slice still carries its pattern type while being tagged.
     status: created | in_progress | done | informational
 
     -- Elements that appear in this slice (single-source, referenced).
     placements: ElementPlacement with slice = this
     specifications: Specification with slice = this
 
-    -- Placements grouped by element kind, for the composition rules.
-    commands: placements where element.kind = command
-    events: placements where element.kind = event
-    read_models: placements where element.kind = read_model
-    screens: placements where element.kind = screen
-    automations: placements where element.kind = automation
+    -- Placements grouped by element type, for the composition rules.
+    commands: placements where element.element_type = command
+    events: placements where element.element_type = event
+    read_models: placements where element.element_type = read_model
+    screens: placements where element.element_type = screen
+    automations: placements where element.element_type = automation
 
     -- Export-readiness: the strict composition a slice must satisfy before it
     -- can be exported. Need not hold during authoring. Slices with status
     -- 'informational' are excluded from export entirely, regardless of this
     -- predicate (see SchemaCodec.ExportRequiresComplete).
     is_complete:
-        (kind = state_change and commands.count = 1) or
-        (kind = state_view and read_models.count = 1) or
-        (kind = automation and commands.count = 1 and automations.count = 1)
+        (slice_type = state_change and commands.count = 1) or
+        (slice_type = state_view and read_models.count = 1) or
+        (slice_type = automation and commands.count = 1 and automations.count = 1)
 }
 
 -- A reference to a single-source Element from within a Slice.
@@ -139,9 +147,15 @@ entity Element {
                                  -- model, compared case-insensitively and ignoring
                                  -- surrounding whitespace, so it names exactly one
                                  -- element (see invariant ElementNameUnique)
-    kind: command | event | read_model | screen | automation
+    element_type: command | event | read_model | screen | automation
     context: internal | external
 
+    -- A field list holds no two fields under one name, compared case-insensitively
+    -- like every other name in the model (see invariant FieldNameUnique). Names
+    -- are also the model's one TEXTUAL form of reference: a connection derivation,
+    -- a field-origin override, a step example and a screen's layout all name a
+    -- field rather than pointing at one, which is why renaming a field has a
+    -- cascade where renaming an element does not (see RenameField).
     fields: List<Field>
 
     -- The consistency boundary (aggregate) this element belongs to.
@@ -189,12 +203,12 @@ entity Element {
     --   INTRODUCED - this element carries a FieldOrigin override for this field.
     is_information_complete:
         fields.all(f =>
-            incoming.any(c => c.from.fields.any(ff => ff.name = f.name))
+            incoming.any(c => c.from.fields.any(ff => same_name(ff.name, f.name)))
             or incoming.any(c => c.derivations.any(d =>
-                d.target_field = f.name
+                same_name(d.target_field, f.name)
                 and d.source_fields.all(src =>
-                    c.from.fields.any(sf => sf.name = src))))
-            or field_origins.any(o => o.field = f.name))
+                    c.from.fields.any(sf => same_name(sf.name, src)))))
+            or field_origins.any(o => same_name(o.field, f.name)))
 }
 
 -- An explicit, directed wiring between two single-source Elements.
@@ -307,18 +321,18 @@ entity Specification {
     then_steps: steps where clause = then_step
 
     -- Singletons used by the composition and export-readiness rules.
-    when_commands: steps where clause = when_step and element.kind = command
-    then_read_models: steps where clause = then_step and element.kind = read_model
+    when_commands: steps where clause = when_step and element.element_type = command
+    then_read_models: steps where clause = then_step and element.element_type = read_model
 
     -- Export-readiness: the singleton each shape requires. Need not hold during
     -- authoring (steps are added incrementally); enforced only at export.
     is_complete:
-        ((slice.kind = state_change or slice.kind = automation) and when_commands.count = 1) or
-        (slice.kind = state_view and then_read_models.count = 1)
+        ((slice.slice_type = state_change or slice.slice_type = automation) and when_commands.count = 1) or
+        (slice.slice_type = state_view and then_read_models.count = 1)
 }
 
 -- A single Given/When/Then step. References the model Element it asserts about
--- (single-source link; an error step refers to no element). The element's kind gives the
+-- (single-source link; an error step refers to no element). The element's type gives the
 -- schema step type (event -> SPEC_EVENT, command -> SPEC_COMMAND,
 -- read_model -> SPEC_READMODEL); an error step maps to SPEC_ERROR.
 entity SpecStep {
@@ -380,12 +394,16 @@ config {
 -- same_name(a, b), a black box function: true when `a` and `b` are that same
 -- string. An element's name, a timeline's title and a swimlane's name are unique
 -- within their model; a slice's title is unique within its timeline; a
--- specification's title within its slice (the invariants in the Invariants
--- section state each, with its reason). Every operation that creates or renames
--- one of these rejects a collision instead of allowing a second entity under a
--- name already in use, and the rejection names the entity already holding the
--- name (its id, and its kind where it has one), so a caller reuses or places
--- what exists rather than inventing a near-duplicate name. Where a name is unique
+-- specification's title within its slice; a field's name within its field list
+-- (the invariants in the Invariants section state each, with its reason). Every
+-- operation that creates or renames one of these rejects a collision instead of
+-- allowing a second entity under a name already in use, and the rejection names
+-- the entity already holding the name (its id, and its element or slice type where it carries one), so
+-- a caller reuses or places what exists rather than inventing a near-duplicate
+-- name. AddField is the one exception, and deliberately so: it is a field editor
+-- keyed on the name, so a name it already finds is UPDATED in place, while
+-- RenameField - which moves an existing field rather than editing one - rejects
+-- the collision (see invariant FieldNameUnique). Where a name is unique
 -- within a model, two models may still each hold it.
 
 rule CreateTimeline {
@@ -457,7 +475,7 @@ rule DeleteSwimlaneCascades {
 -- Slices --------------------------------------------------------------------
 
 rule AddSlice {
-    when: AddSlice(timeline, title, kind, index, id?)
+    when: AddSlice(timeline, title, slice_type, index, id?)
     requires: non_blank(title)
     -- The title must be unique within this timeline (see invariant
     -- SliceTitleUnique); the same title in another timeline is a different slice
@@ -466,10 +484,24 @@ rule AddSlice {
     ensures: Slice.created(
         timeline: timeline,
         title: title,
-        kind: kind,
+        slice_type: slice_type,
         index: index,
         status: created
     )
+}
+
+-- Rename a slice's title. The title is unique within the smallest container that
+-- has to tell one slice from another - its timeline (see invariant
+-- SliceTitleUnique) - and, like a timeline's or a swimlane's, nothing points at
+-- it: a slice is addressed by identity wherever it is referenced, and the title
+-- reaches another boundary only as a derived breadcrumb (see
+-- NameResolution.CandidateDisambiguation), so there is nothing to cascade.
+rule RenameSlice {
+    when: RenameSlice(slice, new_title)
+    requires: non_blank(new_title)
+    requires: not slice.timeline.slices.any(other =>
+        other != slice and same_name(other.title, new_title))
+    ensures: slice.title = new_title
 }
 
 rule ReorderSlice {
@@ -519,15 +551,15 @@ rule SetSliceStatus {
     ensures: slice.status = new_status
 }
 
-rule SetSliceKind {
-    when: SetSliceKind(slice, new_kind)
-    ensures: slice.kind = new_kind
+rule SetSliceType {
+    when: SetSliceType(slice, new_slice_type)
+    ensures: slice.slice_type = new_slice_type
 }
 
 -- Elements ------------------------------------------------------------------
 
 rule CreateElement {
-    when: CreateElement(model, name, kind, id?)
+    when: CreateElement(model, name, element_type, id?)
     requires: non_blank(name)
     -- A second element under a name the model already uses is rejected rather
     -- than allowed to exist (see invariant ElementNameUnique). The name is how
@@ -537,34 +569,71 @@ rule CreateElement {
     ensures: Element.created(
         model: model,
         name: name,
-        kind: kind,
+        element_type: element_type,
         context: internal
     )
 }
 
 -- Field editing touches a single field by name, preserving the rest of the
--- element's field list (subfields included). Three black-box collection helpers
--- express the shared key-based semantics used throughout the authoring
--- operations below:
+-- element's field list (subfields included). The black-box collection helpers
+-- below express the shared key-based semantics used throughout the authoring
+-- operations. A key here is always a NAME - a field's own name, a field-origin's
+-- field, a derivation's target_field, an example's field_name - and keys are
+-- compared by the model's name equality, so two keys are the same key when they
+-- are the same name (same_name), exactly as two entities' names are. That single
+-- equality is what makes a field list hold at most one entry per name, and what
+-- makes a field REFERENCE resolve under the same equality the declaration does
+-- (see invariant FieldNameUnique).
 --   upsert_by(list, item, key_of): returns the list with `item` replacing any
---     existing entry sharing its key (key_of(entry) = key_of(item)), or with
---     `item` added when no entry matches; every other entry is preserved.
+--     existing entry whose key is the same name as item's key, or with `item`
+--     added when no entry matches; every other entry is preserved.
 --   upsert_field(list, parent_field?, item): AddField's keyed edit at either
 --     level - `upsert_by(list, item, f => f.name)` when no parent is named,
 --     otherwise `upsert_by` over the subfields of the field whose name is
 --     `parent_field`, with every other field left untouched.
---   remove_by(list, key, key_of): returns the list with every entry whose key
---     equals `key` removed; every other entry is preserved.
+--   remove_by(list, key, key_of): returns the list with every entry whose key is
+--     the same name as `key` removed; every other entry is preserved.
 --   next_index(list): the sort key that places a new entry after every existing
 --     one - one past the highest key in the list, or 0 for an empty list. Order
 --     is a sort key only, so this merely makes the new entry render last until
 --     the operator reorders it.
+--   field_names_unique(fields): true when no field list in the tree rooted at
+--     `fields` - the element's own list, and any field's subfields, however deep
+--     - holds two fields under one name. The predicate is recursive because a
+--     field list is a tree, and because the whole tree is installed at once by
+--     the import path (see invariant FieldNameUnique).
+--
+-- RenameField's cascade needs three more, each respelling a name where it is
+-- held rather than looked up:
+--   rename_keyed(list, old_name, new_name, key_of): returns the list with the key
+--     of every entry that is the same name as `old_name` respelled to `new_name`;
+--     every other entry, and every other part of a matched entry, is preserved.
+--     Respelling a key is what renames a field, because the key IS the name for
+--     an element's fields (f => f.name), a field-origin override (o => o.field),
+--     a step example (e => e.field_name) and a derivation's target (d =>
+--     d.target_field) alike.
+--   rename_source_fields(derivations, old_name, new_name): rename_keyed one level
+--     deeper - every entry of every derivation's source_fields that is the same
+--     name as `old_name` respelled to `new_name`, with the derivations and their
+--     target_fields otherwise preserved. A source_fields entry names a field of
+--     the connection's `from` element, which is why a rename on an element
+--     reaches this list only through that element's outgoing connections.
+--   rename_layout_field(tree, old_name, new_name): returns a layout tree with the
+--     value of every field-name attribute that is the same name as `old_name`
+--     respelled to `new_name`; the tree's structure, its node ids and every other
+--     attribute are untouched, and a null tree (a screen carrying no layout) comes
+--     back null.
 
--- Upsert `field` into the element's fields, replacing any existing field with
--- the same name; the rest of the list is preserved. A field list carries at most
--- one entry per name - the key this upsert and RemoveField address an entry by -
--- so a list holding two of a name is not a state the surface can produce, and a
--- document whose fields repeat one is rejected on import rather than installed.
+-- Upsert `field` into the element's fields, replacing any existing field whose
+-- name is the same name, or adding it when none matches; the rest of the list is
+-- preserved. Because the key is the name, this is also how an existing field's
+-- type, optionality and cardinality are edited: adding a field under a name the
+-- element already carries UPDATES that field rather than colliding with it. A
+-- field list carries at most one entry per name - the key this upsert and
+-- RemoveField address an entry by - so a list holding two of a name is not a
+-- state the surface can produce, and a document whose fields repeat one is
+-- rejected on import rather than installed (see invariant FieldNameUnique, which
+-- states that and the deliberate contrast with RenameField).
 -- With `parent_field`, the field is upserted into THAT field's subfields instead.
 -- A Field list is recursive while an operation's arguments are not, so the tree is
 -- edited one level per call: `parent_field` names a field of the element itself,
@@ -573,19 +642,80 @@ rule CreateElement {
 rule AddField {
     when: AddField(element, field, parent_field?)
     requires: non_blank(field.name)
-    requires: parent_field = null or element.fields.any(f => f.name = parent_field)
+    requires: parent_field = null or element.fields.any(f => same_name(f.name, parent_field))
     ensures: element.fields = upsert_field(element.fields, parent_field, field)
 }
 
 -- Remove the field named `name` from the element's fields; the rest is preserved.
+-- `name` is matched by name equality, and a field list holds at most one entry
+-- under a name (see invariant FieldNameUnique), so at most one field is removed.
 -- A name the element's stored layout still names cannot be removed: the guard is
 -- on the removal itself, not on every field edit whose proposed state fails to
--- resolve, so unrelated field edits are never blocked by the layout.
+-- resolve, so unrelated field edits are never blocked by the layout. Removal is
+-- the one field edit that can destroy a reference, which is why the layout guard
+-- lives here; a rename moves the reference along with the field instead of
+-- stranding it (see RenameField).
 rule RemoveField {
     when: RemoveField(element, name)
-    requires: not (element.fields.any(f => f.name = name)
+    requires: not (element.fields.any(f => same_name(f.name, name))
                    and field_referenced_by_layout(element, name))
     ensures: element.fields = remove_by(element.fields, name, f => f.name)
+}
+
+-- Rename the field named `name` on `element` to `new_name`, carrying every
+-- reference to it along. A field name is the model's ONE textual reference: a
+-- derivation names the field it produces and the fields it draws from, a
+-- field-origin override names the field it introduces, a step example names the
+-- field it populates, and a layout node names the field it presents or accepts.
+-- This is therefore the one rename in the model with something to cascade - every
+-- other rename changes a name nothing points at (see the renames note below) -
+-- and it rewrites all of the reference sites in the same operation, so no
+-- reference is ever left dangling by a rename:
+--   * the declaration itself, in the element's fields;
+--   * the element's own field-origin override for it, keyed by field name;
+--   * every derivation on an INCOMING connection naming it as the target_field;
+--   * every derivation on an OUTGOING connection naming it among source_fields;
+--   * every example on a step that asserts about this element, keyed by
+--     field_name;
+--   * every field-name attribute value in the element's own layout, when it has
+--     one, so WireframeReferencesResolve keeps holding across the rename.
+-- The two sides of a connection are distinct and are not interchangeable: a
+-- derivation's target_field names a field of the connection's `to` element, while
+-- its source_fields name fields of its `from` element. Renaming a field on this
+-- element therefore rewrites the target side of the connections that point AT it
+-- and the source side of the connections that leave it, and never the far side,
+-- which names a field of the element at the other end.
+-- A name the element's fields do not carry is rejected rather than a silent
+-- no-op, and the new name must not be one another field of the same list already
+-- holds: like RemoveField, this operation moves an existing field, so a collision
+-- would silently destroy the sibling holding that name. That is the deliberate
+-- contrast with AddField, which upserts because it is how a field is edited (see
+-- invariant FieldNameUnique). Renaming a field to the name it already holds is no
+-- collision; because names are compared case-insensitively, a respelling that
+-- changes only case or surrounding whitespace is exactly that case, and it
+-- cascades like any other rename - every reference follows the declaration to the
+-- new spelling.
+-- Subfields are not addressed here: like RemoveField, this operation takes one
+-- name per call and reaches the element's own field list only, so the tree is
+-- edited one level at a time and a nesting level is not invented to search in.
+rule RenameField {
+    when: RenameField(element, name, new_name)
+    requires: non_blank(new_name)
+    requires: element.fields.any(f => same_name(f.name, name))
+    requires: not element.fields.any(f =>
+        not same_name(f.name, name) and same_name(f.name, new_name))
+    ensures: element.fields = rename_keyed(element.fields, name, new_name, f => f.name)
+    ensures: element.field_origins = rename_keyed(element.field_origins, name, new_name, o => o.field)
+    ensures:
+        for c in element.incoming:
+            c.derivations = rename_keyed(c.derivations, name, new_name, d => d.target_field)
+    ensures:
+        for c in element.outgoing:
+            c.derivations = rename_source_fields(c.derivations, name, new_name)
+    ensures:
+        for st in SpecSteps where st.element = element:
+            st.examples = rename_keyed(st.examples, name, new_name, e => e.field_name)
+    ensures: element.wireframe = rename_layout_field(element.wireframe, name, new_name)
 }
 
 rule SetElementContext {
@@ -691,6 +821,18 @@ rule AddSpecification {
     ensures: Specification.created(slice: slice, title: title)
 }
 
+-- Rename a specification's title, unique within its slice (see invariant
+-- SpecificationTitleUnique) and referenced by nothing: a specification is
+-- addressed by identity, and its title travels to another boundary only as part
+-- of a breadcrumb (see NameResolution.CandidateDisambiguation).
+rule RenameSpecification {
+    when: RenameSpecification(spec, new_title)
+    requires: non_blank(new_title)
+    requires: not spec.slice.specifications.any(other =>
+        other != spec and same_name(other.title, new_title))
+    ensures: spec.title = new_title
+}
+
 -- Add a normal step that asserts about an existing element.
 rule AddSpecStep {
     when: AddSpecStep(spec, clause, element, index, id?)
@@ -716,6 +858,26 @@ rule AddErrorStep {
         is_error: true,
         expect_empty: false
     )
+}
+
+-- Rename an error outcome, leaving the step's clause, position and identity
+-- alone. An error step is a then-step that refers to no element (see
+-- AddErrorStep) and carries its outcome as a name, so renaming that name is the
+-- step's whole state change.
+-- error_name is CONTENT, not an identifier: no boundary resolves a step by name
+-- (see NameResolution.ResolvableScope), a step is addressed by identity or by
+-- (spec, clause, index), and the name is what the specification asserts the
+-- system produces. No uniqueness is required of it, and two error steps of one
+-- specification may carry the same name - AddErrorStep does not guard against
+-- that either, so this rule introduces no new constraint on error_name.
+-- The guard is consequently the SHAPE of the target rather than a collision: only
+-- an error step is renamed this way. A normal step's element reference is set and
+-- cleared through AddSpecStep and RemoveSpecStep.
+rule RenameErrorStep {
+    when: RenameErrorStep(step, new_error_name)
+    requires: step.is_error
+    requires: non_blank(new_error_name)
+    ensures: step.error_name = new_error_name
 }
 
 rule RemoveSpecStep {
@@ -793,12 +955,17 @@ rule SetStepExpectEmpty {
 --   text_tag(tag): the tag carries a text content.
 --   fields_resolve(screen, attributes): every field-name value among
 --     `attributes` names a field declared on `screen`, so a layout refers only
---     to the fields of the screen that owns it.
+--     to the fields of the screen that owns it. Names are matched by the model's
+--     name equality, the same equality the declaration and every other reference
+--     use.
 --   field_referenced_by_layout(screen, name): a node in `screen`'s stored layout
 --     still names the field `name` through its field-name attribute; false when
 --     the screen carries no layout, or no node names that field. A field a
 --     stored layout names may not be removed (see RemoveField), so no field edit
---     can leave a layout referring to a field the screen no longer declares.
+--     can leave a layout referring to a field the screen no longer declares; a
+--     rename, by contrast, rewrites the attribute rather than being blocked by it
+--     (see RenameField). Matched by name equality, like every other field
+--     reference.
 --   wireframe_well_formed(node): the tree rooted at `node` is structurally
 --     valid: every tag is known, every node's attributes satisfy its tag's
 --     schema, leaf tags carry no children, text tags carry a text content
@@ -822,7 +989,7 @@ rule SetStepExpectEmpty {
 -- empty wireframe.
 rule AddWireframeNode {
     when: AddWireframeNode(screen, tag, attributes, parent?, text?)
-    requires: screen.kind = screen
+    requires: screen.element_type = screen
     -- The canvas is the layout's root, created with the layout itself (a screen
     -- with no layout starts from empty_wireframe). No node below it may be one.
     requires: tag != canvas
@@ -845,7 +1012,7 @@ rule AddWireframeNode {
 -- cannot be a target.
 rule AddWireframeNodeBefore {
     when: AddWireframeNodeBefore(screen, sibling, tag, attributes, text?)
-    requires: screen.kind = screen
+    requires: screen.element_type = screen
     requires: screen.wireframe != null
     requires: node_exists(screen.wireframe, sibling)
     requires: sibling != root_node_id(screen.wireframe)
@@ -986,28 +1153,55 @@ rule DeleteElementCascades {
     ensures: not exists element
 }
 
--- Renaming an element. Because elements are single-source and referenced by
--- identity, all placements, connections and spec steps reflect the new name
--- automatically; there is nothing to cascade.
+-- Renames ---------------------------------------------------------------------
+--
+-- The seven renames - RenameTimeline, RenameSwimlane, RenameSlice,
+-- RenameSpecification, RenameElement, RenameErrorStep and RenameField - share two
+-- guards: a non-blank new name, and no collision with a name the same container
+-- already holds. RenameErrorStep takes the first and not the second, its
+-- error_name being content rather than an identifier (see RenameErrorStep). They
+-- differ only in what has to travel with the name.
+--
+-- All but one carry nothing. A timeline, a swimlane, a slice, a specification, an
+-- element and an error step are addressed by identity, and the model holds no
+-- textual reference to any of their names: where one of those names appears
+-- elsewhere it is derived rather than stored (an element's name inside a
+-- placement's rendering, a slice's title inside a resolution breadcrumb), so
+-- those boundaries see the new name the moment it is written. Renaming an element
+-- is the case the model already stated outright: because elements are
+-- single-source and referenced by identity, all placements, connections and spec
+-- steps reflect the new name automatically.
+--
+-- A field's name is the exception, for the same reason: a field is the model's
+-- only thing referenced BY NAME rather than by identity. Its reference sites - a
+-- derivation's target_field and source_fields, a field-origin override's field, a
+-- step example's field_name and a layout node's field-name attribute - are
+-- enumerated under RenameField, which rewrites them all in one operation. Those
+-- are the complete set: a field name is vocabulary internal to this model, and no
+-- boundary outside it holds one.
+--
+-- RenameField is therefore both the only rename with a cascade and the only one
+-- that must REJECT a collision rather than update in place; see the note under
+-- invariant FieldNameUnique for why that contrasts deliberately with AddField.
 
 -- ---------------------------------------------------------------------------
 -- Invariants
 -- ---------------------------------------------------------------------------
 
 -- Authoring invariant (always holds, even mid-edit): a slice may never contain
--- an element kind that is a category error for it, and never more than one of
--- each singleton kind. Singletons MAY be absent during incremental authoring;
+-- an element type that is a category error for it, and never more than one of
+-- each singleton type. Singletons MAY be absent during incremental authoring;
 -- their presence is required only at export (see Slice.is_complete).
-invariant PlacementMatchesSliceKind {
+invariant PlacementMatchesSliceType {
     for s in Slices:
         s.status != informational implies (
-            (s.kind = state_change implies
+            (s.slice_type = state_change implies
                 (s.commands.count <= 1
                  and s.read_models.count = 0 and s.automations.count = 0)) and
-            (s.kind = state_view implies
+            (s.slice_type = state_view implies
                 (s.read_models.count <= 1
                  and s.commands.count = 0 and s.automations.count = 0)) and
-            (s.kind = automation implies
+            (s.slice_type = automation implies
                 (s.commands.count <= 1 and s.automations.count <= 1
                  and s.read_models.count = 0)))
 }
@@ -1094,6 +1288,38 @@ invariant SpecificationTitleUnique {
             spec != other implies not same_name(spec.title, other.title)
 }
 
+-- A field's name is a name like any other, compared the same way and constrained
+-- for the same reason, scoped to the smallest container that has to tell one
+-- field from another: its field list. No field list - an element's, or any
+-- field's subfields, however deep - holds two fields under one name.
+-- The reason bites harder for a field than for an entity, because a field name is
+-- the model's one textual reference rather than an identity anything points at: a
+-- derivation, a field-origin override, a step example and a layout node each NAME
+-- a field, so a name holding two candidates would make every one of those
+-- references ambiguous - a derivation sourcing the wrong field, a layout
+-- presenting one the author did not mean. Where an element's name collides the
+-- model cannot address the element; where a field's name collides the model cannot
+-- tell what a reference already written means.
+-- Rejection happens before a collision is written (RenameField rejects one, and
+-- AddField never creates one because it upserts by name), and - as with an
+-- element's name - the invariant additionally refuses one arriving by any other
+-- path, import included: a document whose one element declares two fields under
+-- one name is rejected rather than installed. Nothing repairs a collision already
+-- present, since choosing which of two same-named fields to rename, and to what,
+-- would be guessing the author's intent.
+-- The asymmetry with AddField is deliberate and not an oversight. AddField is
+-- keyed on the name because it is how a field's type, optionality and cardinality
+-- are edited, so it must be able to match an existing field by name, and a name it
+-- finds is UPDATED in place. RenameField MOVES an existing field onto a name, so a
+-- collision there would silently destroy the field already holding it, and is
+-- REJECTED instead. The two also differ in what they imply for references:
+-- updating a field in place leaves every reference spelling as it was, while a
+-- rename respells them all (see RenameField).
+invariant FieldNameUnique {
+    for e in Elements:
+        field_names_unique(e.fields)
+}
+
 -- A specification's Given/When/Then steps must match its slice's pattern.
 -- state_change and automation share one shape; state_view has its own.
 -- Always-on (loosened for incremental authoring): given steps are events; When
@@ -1103,15 +1329,15 @@ invariant SpecificationTitleUnique {
 -- command/read_model" requirement is deferred to export (Specification.is_complete).
 invariant SpecificationComposition {
     for spec in Specifications:
-        spec.given_steps.all(s => s.element?.kind = event) and
-        spec.when_steps.all(s => s.element?.kind = command) and
-        ((spec.slice.kind = state_change or spec.slice.kind = automation) implies (
+        spec.given_steps.all(s => s.element?.element_type = event) and
+        spec.when_steps.all(s => s.element?.element_type = command) and
+        ((spec.slice.slice_type = state_change or spec.slice.slice_type = automation) implies (
             spec.when_commands.count <= 1 and
-            spec.then_steps.all(s => s.is_error or s.element?.kind = event))) and
-        (spec.slice.kind = state_view implies (
+            spec.then_steps.all(s => s.is_error or s.element?.element_type = event))) and
+        (spec.slice.slice_type = state_view implies (
             spec.when_steps.count = 0 and
             spec.then_read_models.count <= 1 and
-            spec.then_steps.all(s => s.element?.kind = read_model)))
+            spec.then_steps.all(s => s.element?.element_type = read_model)))
 }
 
 -- Every recorded example on a spec step must carry both a non-empty
@@ -1126,14 +1352,14 @@ invariant ExamplesWellFormed {
 }
 
 -- Connections may only follow the Event Modeling patterns.
-invariant ValidConnectionKinds {
+invariant ValidConnectionElementTypes {
     for c in Connections:
-        (c.from.kind = screen and c.to.kind = command) or
-        (c.from.kind = command and c.to.kind = event) or
-        (c.from.kind = event and c.to.kind = read_model) or
-        (c.from.kind = read_model and c.to.kind = screen) or
-        (c.from.kind = read_model and c.to.kind = automation) or
-        (c.from.kind = automation and c.to.kind = command)
+        (c.from.element_type = screen and c.to.element_type = command) or
+        (c.from.element_type = command and c.to.element_type = event) or
+        (c.from.element_type = event and c.to.element_type = read_model) or
+        (c.from.element_type = read_model and c.to.element_type = screen) or
+        (c.from.element_type = read_model and c.to.element_type = automation) or
+        (c.from.element_type = automation and c.to.element_type = command)
 }
 
 -- A layout tree is always structurally well-formed: known tags only, each node's
@@ -1145,24 +1371,27 @@ invariant ValidConnectionKinds {
 invariant WireframeWellFormed {
     for e in Elements:
         e.wireframe != null implies (
-            e.kind = screen and wireframe_well_formed(e.wireframe))
+            e.element_type = screen and wireframe_well_formed(e.wireframe))
 }
 
 -- A layout refers only to fields its own screen declares: every field-name value
--- in a screen's stored layout names a field the screen has. Two guards keep this
+-- in a screen's stored layout names a field the screen has. Three edits keep this
 -- true. Every wireframe edit that would name an unresolvable field is rejected
 -- before it is applied (see AddWireframeNode, AddWireframeNodeBefore and
--- SetWireframeAttr), and the field side is guarded too: an edit that would remove
--- a name the screen's stored layout still refers to is rejected (see RemoveField).
--- Reference resolution therefore holds at every observable state, not merely at
--- the moment a layout first names the field. field_references(tree) is every
--- field-name value the tree names.
+-- SetWireframeAttr); the field side is guarded too, so an edit that would remove a
+-- name the screen's stored layout still refers to is rejected (see RemoveField);
+-- and renaming a field rewrites the layout attribute that names it along with the
+-- declaration (see RenameField), which is what lets a rename carry the reference
+-- with it rather than being blocked by it. Reference resolution therefore holds at
+-- every observable state, not merely at the moment a layout first names the field,
+-- and the names it resolves are compared by the model's name equality (same_name).
+-- field_references(tree) is every field-name value the tree names.
 invariant WireframeReferencesResolve {
     for e in Elements:
         e.wireframe != null implies (
-            e.kind = screen and
+            e.element_type = screen and
             field_references(e.wireframe).all(ref =>
-                e.fields.any(f => f.name = ref.field_name)))
+                e.fields.any(f => same_name(f.name, ref.field_name))))
 }
 
 -- ---------------------------------------------------------------------------
@@ -1288,8 +1517,8 @@ contract SchemaCodec {
         --     open question on reinstating the referenced element.
         --   * a specification step whose type is absent or outside the format's
         --     step types (SPEC_EVENT, SPEC_COMMAND, SPEC_READMODEL, SPEC_ERROR):
-        --     a step asserts about an element of a kind, and an unrecognised type
-        --     names no kind the model could map it to, so the step is dropped
+        --     a step asserts about an element of a type, and an unrecognised type
+        --     names no element type the model could map it to, so the step is dropped
         --     rather than guessed at. Unlike the enum values above, this is not a
         --     tolerated value with a default: there is no sensible default step.
         --   * a screenImages entry whose elementId names no element the slice
@@ -1301,7 +1530,7 @@ contract SchemaCodec {
         --     order is dropped on export; swimlane NAMES still round-trip via
         --     element.aggregate. Reimported swimlanes fall back to creation order.
         --   * Element.wireframe: a screen's layout tree is authoring-only in the
-        --     same way. The format describes an element's name, kind, context,
+        --     same way. The format describes an element's name, type, context,
         --     fields and aggregate, but carries no layout of any kind, so a
         --     wireframe is dropped on export and not reconstructed on import. A
         --     screen's fields still round-trip; only the layout that presents
@@ -1309,7 +1538,8 @@ contract SchemaCodec {
         -- Preserved mappings: slice.context <-> Timeline.title;
         --   element.aggregate <-> Swimlane.name (the two grouping keys, unique per
         --   model, so each names exactly one timeline/swimlane on reimport);
-        --   sliceType <-> Slice.kind;
+        --   sliceType <-> Slice.slice_type;
+        --   element.type <-> Element.element_type;
         --   element.context <-> Element.context;
         --   screenImages.url <-> Element.image_url; dependencies <-> Connection;
         --   slice index/status <-> Slice.index/status.
@@ -1373,6 +1603,19 @@ contract ChangeStream {
         -- SetFieldOrigins, SetConnectionDerivations or SetStepExamples, as the
         -- change-stream schema lists. Exactly one delta per mutation holds either
         -- way.
+        --
+        -- RenameField is the one composite that decomposes into no single
+        -- whole-list edit: it respells a name across the element's fields, its
+        -- field_origins, its layout, the derivations of every connection that
+        -- touches it and the examples of every step that asserts about it. It is
+        -- a named operation in its own right, and its ONE delta carries every
+        -- entity whose observable state changed: the element (fields,
+        -- field_origins and wireframe together, appearing once), each affected
+        -- connection and each affected spec-step. Renaming a field that nothing
+        -- references still emits its delta, with the element alone in the
+        -- changes. The other renames - RenameSlice, RenameSpecification,
+        -- RenameErrorStep, alongside the longer-standing RenameTimeline,
+        -- RenameSwimlane and RenameElement - are single-entity deltas.
         -- An operation that succeeds without changing anything - reordering an
         -- element to where it already sits - still emits its delta, carrying no
         -- changed entities: the stream records the operations the model accepted,
@@ -1554,14 +1797,18 @@ value QueryStage {
     projection: List<String>?
 
     -- filter: compare `field` on the current kind against `operand` using
-    -- `comparator`. order: sort by `field`, descending when `descending`.
+    -- `comparator`. order: sort by `field`, descending when `descending`. Either
+    -- way `field` names one of the closed set ProjectableFieldsAreClosed states;
+    -- a name outside it is rejected, never silently ignored (see
+    -- UnknownFieldRejected).
     field: String?
     comparator: QueryComparator?
     operand: String?
     descending: Boolean?
 
-    -- select: the fields to project onto each row. An absent list selects the
-    -- default identity + breadcrumb shape (see
+    -- select: the fields to project onto each row, drawn from the same closed
+    -- set (see ModelQuery.ProjectableFieldsAreClosed). An absent list selects
+    -- the default identity + breadcrumb shape (see
     -- ModelQuery.ResultsAreBoundedByQuestion).
     fields: List<String>?
 
@@ -1653,6 +1900,55 @@ contract ModelQuery {
         -- returned as a bare row, and without projection a row carries only the
         -- landed entity.
 
+    @invariant ProjectableFieldsAreClosed
+        -- The field names a select, where or order stage may name are closed, and
+        -- the closure is this specification's entity declarations rather than an
+        -- open record: a stage may name the row's own display fields, or an
+        -- attribute the landed entity's declaration states. Anything else is
+        -- rejected (see UnknownFieldRejected).
+        -- A row's display fields are its identity and its location: id; kind, the
+        -- entity CATEGORY (see QueryKind); name or title; and breadcrumb - plus the
+        -- projected edge under its kind key when one was requested (see
+        -- EdgeAttributesAreProjected above).
+        -- The entity's declared attributes give a stage its working vocabulary: an
+        -- element row can name `fields` (the recursive Field list, subfields
+        -- included), `element_type`, `context`, `swimlane` and
+        -- `is_information_complete`; a slice row `slice_type`, `status` and
+        -- `index`; a step row `clause`, `is_error` and `error_name`; and so on.
+        -- `fields` is what makes an element's field names readable at all: it is
+        -- the vocabulary the element operations address a field by, so a caller can
+        -- learn which field names exist before adding, removing or renaming one, or
+        -- before recording a derivation that names them - one round trip for the
+        -- whole model, without dumping it.
+        -- The set is per kind, because an entity's declaration is: a name that
+        -- exists on one entity and not on another is rejected on the other, the way
+        -- a relation unreachable from the current kind is (see UnknownStepRejected),
+        -- naming what that row does carry.
+        -- `kind` and the entity's own type are deliberately different words, and
+        -- this is where the difference bites: `kind` is the entity category on this
+        -- boundary (element, slice, step, ...), while what an ELEMENT is - command,
+        -- event, read_model, screen, automation - is its `element_type`, and what a
+        -- SLICE is is its `slice_type`. A query filtering on
+        -- `element_type = command` therefore asks a different question from one
+        -- filtering on `kind = element`, and both are well defined.
+        -- A projection may name an attribute whose value is itself a structure - a
+        -- field list, a layout tree, a reverse reference. Returning it whole is the
+        -- caller's explicit request: the DEFAULT row stays lean (see
+        -- ResultsAreBoundedByQuestion), and what a projection costs is what the
+        -- caller asked for.
+
+    @invariant UnknownFieldRejected
+        -- A select, where or order stage naming a field outside
+        -- ProjectableFieldsAreClosed's set is rejected, naming the fields that row
+        -- does carry, rather than yielding an empty result. This is the field
+        -- counterpart of UnknownStepRejected and takes the same posture: a
+        -- misspelled or unsupported name is a mistake to correct, not an answer.
+        -- Without it a query naming a field its row cannot answer is
+        -- indistinguishable from a row whose value is genuinely empty - `select
+        -- fields` returning nothing because a typo named something the row has no
+        -- field for, and returning nothing because the element declares no fields,
+        -- read the same, and the second is a fact while the first is a mistake.
+
     @invariant StagesAreClosed
         -- A query is a root followed by a pipeline of stages applied left to
         -- right over a collection. The stages are exactly: follow (a relation
@@ -1686,9 +1982,10 @@ contract ModelQuery {
         -- model. Each row carries the landed entity's identity (id and kind), its
         -- name or title, and enough location breadcrumb to distinguish
         -- same-named siblings, plus the projected edge when one was requested.
-        -- select narrows a row to the named fields; count collapses the whole
-        -- result to a scalar. Exploring a model of thousands of entities with a
-        -- handful of stages returns a handful of rows.
+        -- select narrows a row to the named fields - always within the closed set
+        -- ProjectableFieldsAreClosed states, never the whole entity record; count
+        -- collapses the whole result to a scalar. Exploring a model of thousands
+        -- of entities with a handful of stages returns a handful of rows.
 
     @invariant ReadOnly
         -- A query never mutates the model: no rule fires, nothing is created,
@@ -1735,7 +2032,7 @@ surface ModelAuthoring {
             t.title
             for s in t.slices:
                 s.title
-                s.kind
+                s.slice_type
                 s.status
                 s.index
                 s.is_complete
@@ -1768,7 +2065,7 @@ surface ModelAuthoring {
 
         for el in model.elements:
             el.name
-            el.kind
+            el.element_type
             -- Which swimlane row this element is assigned to (absent if
             -- unassigned), so the UI can group elements by lane.
             el.swimlane
@@ -1796,16 +2093,18 @@ surface ModelAuthoring {
         DeleteSwimlane(lane)
 
         -- Slices
-        AddSlice(timeline, title, kind, index, id?)
+        AddSlice(timeline, title, slice_type, index, id?)
+        RenameSlice(slice, new_title)
         ReorderSlice(slice, new_index)
         SetSliceStatus(slice, new_status)
-        SetSliceKind(slice, new_kind)
+        SetSliceType(slice, new_slice_type)
         DeleteSlice(slice)
 
         -- Elements
-        CreateElement(model, name, kind, id?)
+        CreateElement(model, name, element_type, id?)
         AddField(element, field, parent_field?)
         RemoveField(element, name)
+        RenameField(element, name, new_name)
         SetElementContext(element, new_context)
         AssignSwimlane(element, lane)
         SetImageUrl(element, url)
@@ -1835,9 +2134,11 @@ surface ModelAuthoring {
 
         -- Specifications (Given / When / Then)
         AddSpecification(slice, title, id?)
+        RenameSpecification(spec, new_title)
         DeleteSpecification(spec)
         AddSpecStep(spec, clause, element, index, id?)
         AddErrorStep(spec, error_name, index, id?)
+        RenameErrorStep(step, new_error_name)
         RemoveSpecStep(step)
         AddStepExample(step, field_name, field_value)
         RemoveStepExample(step, field_name)
@@ -1897,7 +2198,7 @@ surface ModelChangeStream {
         -- displays.
         for el in subscription.model.elements:
             el.name
-            el.kind
+            el.element_type
             el.context
             el.swimlane
             el.is_information_complete
@@ -1914,14 +2215,14 @@ surface ModelChangeStream {
             t.title
             for s in t.slices:
                 s.title
-                s.kind
+                s.slice_type
                 s.status
                 s.index
                 s.is_complete
                 for p in s.placements:
                     p.index
                     p.element.name
-                    p.element.kind
+                    p.element.element_type
                     -- Which swimlane row this element is assigned to (absent if
                     -- unassigned), so the frontend can group elements by lane.
                     p.element.swimlane
@@ -1997,7 +2298,7 @@ surface ModelChangeStream {
         -- created it, delivered in commit order before the reference. A
         -- placement, a connection and a specification step nest a reduced
         -- display projection of the element they refer to -- a placement the
-        -- element's name, kind, swimlane, is_information_complete, image_url,
+        -- element's name, element_type, swimlane, is_information_complete, image_url,
         -- wireframe and its field shapes; a connection end and a specification
         -- step its name alone (the exposes list above is the detailed statement)
         -- -- which is not a substitute for the registry: an element that is
@@ -2021,7 +2322,7 @@ surface ModelChangeStream {
 -- Schema mapping & round-trip fidelity decisions are documented on the
 -- SchemaCodec contract above.
 
-open question "NameResolution.NameQuery.kind_hint currently records only the resolvable entity kind (Timeline/Swimlane/Slice/Element/Specification). Should it also carry a finer sub-kind hint (Element.kind: command/event/read_model/screen/automation, or Slice.kind: state_change/state_view/automation) to further rank candidates? Those are inline enums on Element/Slice today; supporting them as hint fields requires promoting them to named enums (a change to existing entities) or a parallel named enum duplicating their literals. Deferred pending a decision on whether the extra ranking signal is worth that."
+open question "NameResolution.NameQuery.kind_hint currently records only the resolvable entity kind (Timeline/Swimlane/Slice/Element/Specification). Should it also carry a finer sub-kind hint (Element.element_type: command/event/read_model/screen/automation, or Slice.slice_type: state_change/state_view/automation) to further rank candidates? Those are inline enums on Element/Slice today; supporting them as hint fields requires promoting them to named enums (a change to existing entities) or a parallel named enum duplicating their literals. Deferred pending a decision on whether the extra ranking signal is worth that."
 
-open question "A dependency or a specification step naming an element the document does not embed - an element the model holds with no placement anywhere - is dropped on import, together with the connection or step that named it (see the dropped-fields guidance). Should import instead reinstate the element from the reference itself? A dependency carries the target's groupId, title and elementType, and a step its title and type, so the element could be recreated with that name and kind - no fields, no context, no swimlane, which is all the document states about it - and the connection or step would survive the round-trip. The alternative, taken here, keeps import from inventing element state the document does not carry and records the loss instead. Which loss is worse is a judgement about how far the placement-bound projection should reach."
+open question "A dependency or a specification step naming an element the document does not embed - an element the model holds with no placement anywhere - is dropped on import, together with the connection or step that named it (see the dropped-fields guidance). Should import instead reinstate the element from the reference itself? A dependency carries the target's groupId, title and elementType, and a step its title and type, so the element could be recreated with that name and element type - no fields, no context, no swimlane, which is all the document states about it - and the connection or step would survive the round-trip. The alternative, taken here, keeps import from inventing element state the document does not carry and records the loss instead. Which loss is worse is a judgement about how far the placement-bound projection should reach."
 

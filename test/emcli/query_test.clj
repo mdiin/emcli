@@ -23,11 +23,11 @@
   (let [a   (app/new-app "M")
         tl  (:id (:result (cmd/run a "create-timeline" {:title "Checkout"})))
         lane (:id (:result (cmd/run a "create-swimlane" {:name "Actor" :index 0})))
-        sl1 (:id (:result (cmd/run a "add-slice" {:timeline tl :title "Ordering" :kind "state_change" :index 0})))
-        sl2 (:id (:result (cmd/run a "add-slice" {:timeline tl :title "Confirm" :kind "state_change" :index 1})))
-        e1  (:id (:result (cmd/run a "create-element" {:name "PlaceOrder" :kind "command"})))
-        e2  (:id (:result (cmd/run a "create-element" {:name "OrderPlaced" :kind "event"})))
-        e3  (:id (:result (cmd/run a "create-element" {:name "OrderView" :kind "read_model"})))]
+        sl1 (:id (:result (cmd/run a "add-slice" {:timeline tl :title "Ordering" :slice-type "state_change" :index 0})))
+        sl2 (:id (:result (cmd/run a "add-slice" {:timeline tl :title "Confirm" :slice-type "state_change" :index 1})))
+        e1  (:id (:result (cmd/run a "create-element" {:name "PlaceOrder" :element-type "command"})))
+        e2  (:id (:result (cmd/run a "create-element" {:name "OrderPlaced" :element-type "event"})))
+        e3  (:id (:result (cmd/run a "create-element" {:name "OrderView" :element-type "read_model"})))]
     (cmd/run a "add-field" {:element e1 :name "id" :type "string"})
     (cmd/run a "add-field" {:element e2 :name "id" :type "string"})
     (cmd/run a "assign-swimlane" {:element e1 :lane lane})
@@ -107,15 +107,15 @@
 (deftest stages-are-closed
   (let [env (build) {:keys [sl1 e1 e2 e3]} env]
     (testing "where: =, !=, ~ (regex), in (set membership)"
-      (is (= #{e1}    (ids (run-q env "element | where kind=command"))))
-      (is (= #{e1 e3} (ids (run-q env "element | where kind!=event"))))
+      (is (= #{e1}    (ids (run-q env "element | where element_type=command"))))
+      (is (= #{e1 e3} (ids (run-q env "element | where element_type!=event"))))
       (is (= #{e2}    (ids (run-q env "element | where name~Placed"))))
-      (is (= #{e1 e2} (ids (run-q env "element | where kind in (command,event)")))))
+      (is (= #{e1 e2} (ids (run-q env "element | where element_type in (command,event)")))))
     (testing "order: ascending and descending"
       (is (= ["OrderPlaced" "OrderView" "PlaceOrder"] (map :name (run-q env "element | order name"))))
       (is (= ["PlaceOrder" "OrderView" "OrderPlaced"] (map :name (run-q env "element | order -name")))))
     (testing "select narrows a row"
-      (is (= #{:id :name} (set (keys (first (run-q env "element | where kind=command | select id,name")))))))
+      (is (= #{:id :name} (set (keys (first (run-q env "element | where element_type=command | select id,name")))))))
     (testing "count collapses to a scalar"
       (is (= 2 (run-q env (str "slice:" sl1 " | element | count")))))
     (testing "limit caps the rows"
@@ -169,7 +169,7 @@
     (testing "and the row is the entity itself, so stages see its real fields"
       (is (= [{:id e1 :kind :element :name "PlaceOrder"}]
              (map #(select-keys % [:id :kind :name]) (run-q env "element:\"PlaceOrder\""))))
-      (is (= [e1] (map :id (run-q env "element:\"PlaceOrder\" | where kind=command"))))
+      (is (= [e1] (map :id (run-q env "element:\"PlaceOrder\" | where element_type=command"))))
       (is (= [{:swimlane_name "Actor"}]
              (map :breadcrumb (run-q env "element:\"PlaceOrder\"")))))
     (testing "a root that names nothing is rejected, never resolved to a near miss"
@@ -189,8 +189,8 @@
           t1 (:id (:result (cmd/run a "create-timeline" {:title "T1"})))
           t2 (:id (:result (cmd/run a "create-timeline" {:title "T2"})))
           s1 (:id (:result (cmd/run a "add-slice" {:timeline t1 :title "Ordering"
-                                                   :kind "state_change" :index 0})))]
-      (cmd/run a "add-slice" {:timeline t2 :title "Ordering" :kind "state_change" :index 0})
+                                                   :slice-type "state_change" :index 0})))]
+      (cmd/run a "add-slice" {:timeline t2 :title "Ordering" :slice-type "state_change" :index 0})
       (is (rejects? #"several slices are named \"Ordering\""
                     #(cmd/query-model a "slice:\"Ordering\"")))
       (is (= [s1] (map :id (cmd/query-model a (str "slice:" s1))))
@@ -201,7 +201,7 @@
     (let [a (app/new-app "M")]
       (dotimes [i 6]
         (let [tl (:id (:result (cmd/run a "create-timeline" {:title (str "T" i)})))]
-          (cmd/run a "add-slice" {:timeline tl :title "Ordering" :kind "state_change" :index 0})))
+          (cmd/run a "add-slice" {:timeline tl :title "Ordering" :slice-type "state_change" :index 0})))
       (let [msg (try (cmd/query-model a "slice:\"Ordering\"") nil
                      (catch Exception e (ex-message e)))]
         (is (re-find #"several slices are named" msg))
@@ -215,10 +215,10 @@
 (deftest keyword-case-never-changes-the-question
   (let [env (build)]
     (testing "a comparator word is case-insensitive, like the other keywords"
-      (is (= (ids (run-q env "element | where kind in (command,event)"))
-             (ids (run-q env "ELEMENT | WHERE kind IN command,event")))))
-    (testing "a field name is not: an unknown field simply matches nothing"
-      (is (= [] (run-q env "element | where KIND=command"))))))
+      (is (= (ids (run-q env "element | where element_type in (command,event)"))
+             (ids (run-q env "ELEMENT | WHERE element_type IN command,event")))))
+    (testing "a field name is not: an unknown field is rejected, not silently empty"
+      (is (rejects? #"KIND" #(run-q env "element | where KIND=command"))))))
 
 ;; --- value types, enums, and introspection ---------------------------------
 
@@ -232,10 +232,10 @@
            (last (:stages (q/parse-query "element | slice")))))
     (is (= {:kind :follow :target :element :direction :outgoing :projection nil}
            (last (:stages (q/parse-query "element | outgoing")))))
-    (is (= {:kind :where :field "kind" :comparator :equals :operand "command"}
-           (last (:stages (q/parse-query "element | where kind=command")))))
-    (is (= {:kind :where :field "kind" :comparator :in_set :operand ["command" "event"]}
-           (last (:stages (q/parse-query "element | where kind in (command,event)")))))
+    (is (= {:kind :where :field "element_type" :comparator :equals :operand "command"}
+           (last (:stages (q/parse-query "element | where element_type=command")))))
+    (is (= {:kind :where :field "element_type" :comparator :in_set :operand ["command" "event"]}
+           (last (:stages (q/parse-query "element | where element_type in (command,event)")))))
     (is (= {:kind :order :field "name" :descending true}
            (last (:stages (q/parse-query "element | order -name")))))
     (is (= {:kind :select :fields ["id" "name"]}
@@ -244,15 +244,15 @@
     (is (= {:kind :count} (last (:stages (q/parse-query "element | count")))))
     (is (= {:kind :distinct} (last (:stages (q/parse-query "element | distinct"))))))
   (testing "QueryExpression is a value: equal when identical, unequal otherwise"
-    (is (= (q/parse-query "element | where kind=command")
-           (q/parse-query "element | where kind=command")))
-    (is (not= (q/parse-query "element | where kind=command")
-              (q/parse-query "element | where kind=event"))))
+    (is (= (q/parse-query "element | where element_type=command")
+           (q/parse-query "element | where element_type=command")))
+    (is (not= (q/parse-query "element | where element_type=command")
+              (q/parse-query "element | where element_type=event"))))
   (testing "comparators are a closed enum"
     (is (= #{:equals :not_equals :matches}
            (set (map #(:comparator (last (:stages (q/parse-query (str "element | where name" % "x")))))
                      ["=" "!=" "~"]))))
-    (is (= :in_set (:comparator (last (:stages (q/parse-query "element | where kind in (a)"))))))))
+    (is (= :in_set (:comparator (last (:stages (q/parse-query "element | where element_type in (a)"))))))))
 
 (deftest relations-doc-introspection
   (let [d (q/relations-doc)]
@@ -269,3 +269,39 @@
       (let [s (q/tool-description)]
         (is (re-find #"outgoing" s))
         (is (re-find #"where" s))))))
+
+;; --- the closed field set (ProjectableFieldsAreClosed / UnknownFieldRejected) --
+
+(deftest projectable-fields-are-closed
+  (let [env (build)
+        e1  (:e1 env) sl1 (:sl1 env)]
+    (testing "an element row carries the vocabulary the element operations address a field by"
+      (let [[row] (run-q env (str "element:" e1 " | select name,element_type,context,fields"))]
+        (is (= "PlaceOrder" (:name row)))
+        (is (= :command (:element_type row)) "the element's own type, not the category")
+        (is (= :internal (:context row)))
+        (is (= ["id"] (map :name (:fields row)))
+            "the recursive Field list, so a caller can read a name before renaming one")))
+    (testing "a stage may name the entity's declared attributes, not only the row's"
+      (is (= ["Checkout"] (map :title (run-q env "timeline | select title"))))
+      (is (= 2 (count (run-q env "slice | where status = created"))) "slice.status")
+      (is (= ["Ordering"] (map :name (run-q env (str "slice:" sl1 " | select name"))))
+          "a row's name is the slice's title")
+      (is (= #{:when_step} (set (map :clause (run-q env "step | select clause"))))))
+    (testing "a projected association is nameable under its own key"
+      (let [[row] (run-q env (str "element:" e1 " | slice {index} | select name,placement"))]
+        (is (= "Ordering" (:name row)))
+        (is (= 0 (get-in row [:placement :index])))))
+    (testing "kind is the entity CATEGORY; the element's own type is element_type"
+      (is (= 3 (count (run-q env "element | where kind = element"))))
+      (is (= ["PlaceOrder"] (map :name (run-q env "element | where element_type = command"))))
+      (is (= [] (run-q env "element | where kind = command"))
+          "a valid field that no row's value matches, not an unknown name"))
+    (testing "a name the row cannot answer is rejected, naming what it does carry"
+      (is (rejects? #"unknown field \"nosuchfield\" on element rows"
+                    #(run-q env "element | select nosuchfield")))
+      (is (rejects? #"unknown field \"nosuchfield\"" #(run-q env "element | where nosuchfield = x")))
+      (is (rejects? #"unknown field \"nosuchfield\"" #(run-q env "element | order nosuchfield"))))
+    (testing "the set is per kind: a name on one entity is refused on another"
+      (is (rejects? #"\"fields\" on step rows" #(run-q env "step | select fields")))
+      (is (rejects? #"\"status\" on element rows" #(run-q env "element | select status"))))))

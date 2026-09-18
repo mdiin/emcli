@@ -69,12 +69,12 @@
         sw   (id! a "create-swimlane"   {:name "Lane A" :index 0})
         sw2  (id! a "create-swimlane"   {:name "Lane B" :index 1})
         sl   (id! a "add-slice"         {:timeline tl :title "Place order"
-                                         :kind "state_change" :index 0})
-        cmd  (id! a "create-element"    {:name "PlaceOrder"   :kind "command"})
-        evt  (id! a "create-element"    {:name "OrderPlaced"  :kind "event"})
-        evt2 (id! a "create-element"    {:name "OrderCancelled" :kind "event"})
-        rm   (id! a "create-element"    {:name "OrderSummary" :kind "read_model"})
-        scr  (id! a "create-element"    {:name "OrderScreen"  :kind "screen"})]
+                                         :slice-type "state_change" :index 0})
+        cmd  (id! a "create-element"    {:name "PlaceOrder"   :element-type "command"})
+        evt  (id! a "create-element"    {:name "OrderPlaced"  :element-type "event"})
+        evt2 (id! a "create-element"    {:name "OrderCancelled" :element-type "event"})
+        rm   (id! a "create-element"    {:name "OrderSummary" :element-type "read_model"})
+        scr  (id! a "create-element"    {:name "OrderScreen"  :element-type "screen"})]
     (run! a "add-field"       {:element cmd :name "id" :type "uuid"})
     (run! a "add-field"       {:element cmd :name "amount" :type "decimal"})
     (run! a "add-field"       {:element evt :name "id" :type "uuid"})
@@ -125,17 +125,17 @@
    ["DeleteSwimlane"         "delete-swimlane"
     (fn [{:keys [sw2]}] {:lane sw2})]
    ["AddSlice"               "add-slice"
-    (fn [{:keys [tl]}] {:timeline tl :title "New slice" :kind "state_view" :index 1})]
+    (fn [{:keys [tl]}] {:timeline tl :title "New slice" :slice-type "state_view" :index 1})]
    ["ReorderSlice"           "reorder-slice"
     (fn [{:keys [sl]}] {:slice sl :new-index 3})]
    ["SetSliceStatus"         "set-slice-status"
     (fn [{:keys [sl]}] {:slice sl :new-status "done"})]
-   ["SetSliceKind"           "set-slice-kind"
-    (fn [{:keys [sl]}] {:slice sl :new-kind "automation"})]
+   ["SetSliceType"           "set-slice-type"
+    (fn [{:keys [sl]}] {:slice sl :new-slice-type "automation"})]
    ["DeleteSlice"            "delete-slice"
     (fn [{:keys [sl]}] {:slice sl})]
    ["CreateElement"          "create-element"
-    (fn [_] {:name "NewEl" :kind "event"})]
+    (fn [_] {:name "NewEl" :element-type "event"})]
    ["SetFields"              "add-field"
     (fn [{:keys [cmd]}] {:element cmd :name "total" :type "decimal"})]
    ["SetElementContext"      "set-element-context"
@@ -274,7 +274,7 @@
   differs on, the projection always carrying keys the canonical record adds only
   when an operation sets them -- does not read as disagreement. Only a differing
   value is a violation."
-  [:id :name :kind :swimlane :is_information_complete :image_url :wireframe])
+  [:id :name :element_type :swimlane :is_information_complete :image_url :wireframe])
 
 (defn- element-facts [m]
   (into {} (map (fn [k] [k (get m k)])) shared-element-facts))
@@ -352,8 +352,8 @@
   []
   (let [a      (app/new-app "Orders")
         tl     (id! a "create-timeline" {:title "Order flow"})
-        sl     (id! a "add-slice" {:timeline tl :title "Place order" :kind "state_change" :index 0})
-        el     (id! a "create-element" {:name "OrderCancelled" :kind "event"}) ; unplaced so far
+        sl     (id! a "add-slice" {:timeline tl :title "Place order" :slice-type "state_change" :index 0})
+        el     (id! a "create-element" {:name "OrderCancelled" :element-type "event"}) ; unplaced so far
         msgs   (atom [])
         _      (app/subscribe! a #(swap! msgs conj %))
         seed   (first @msgs)

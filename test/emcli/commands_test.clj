@@ -19,7 +19,7 @@
             "nothing was committed")))
     (testing "an id argument is validated too"
       (is (= :bad-argument (:error (cmd/run a "add-slice"
-                                            {:timeline "nope" :title "t" :kind "state_change" :index "0"})))))
+                                            {:timeline "nope" :title "t" :slice-type "state_change" :index "0"})))))
     (testing "structured/composite command: bad :connection is rejected"
       (is (= :bad-argument (:error (cmd/run a "add-derivation"
                                             {:connection "xyz" :target "t" :from "a"})))))
@@ -61,13 +61,13 @@
       (let [res (cmd/run a "create-swimlane" {:name "L" :index 0 :id "9"})]
         (is (= :id-conflict (:error res)))))
     (testing "non-integer --id is a bad-argument, same as any other int param"
-      (is (= :bad-argument (:error (cmd/run a "create-element" {:name "E" :kind "command" :id "nope"})))))))
+      (is (= :bad-argument (:error (cmd/run a "create-element" {:name "E" :element-type "command" :id "nope"})))))))
 
 ;; --- add-field flat-flag API ------------------------------------------------
 
 (deftest add-field-accepts-flat-flags
   (let [a   (app/new-app "M")
-        eid (:id (:result (cmd/run a "create-element" {:name "Order" :kind "event"})))]
+        eid (:id (:result (cmd/run a "create-element" {:name "Order" :element-type "event"})))]
     (testing "adds a field from flat --name --type flags"
       (let [res (cmd/run a "add-field" {:element eid :name "orderId" :type "uuid"})]
         (is (not (r/error? res)))
@@ -95,7 +95,7 @@
   "An app with one screen element; returns [app screen-element-id]."
   []
   (let [a   (app/new-app "M")
-        eid (:id (:result (cmd/run a "create-element" {:name "OrderList" :kind "screen"})))]
+        eid (:id (:result (cmd/run a "create-element" {:name "OrderList" :element-type "screen"})))]
     [a eid]))
 
 (defn- node-attrs
@@ -309,9 +309,9 @@
 (deftest resolve-names-test
   (let [a  (app/new-app "M")
         tl (:id (:result (cmd/run a "create-timeline" {:title "Checkout"})))]
-    (cmd/run a "add-slice" {:timeline tl :title "Baz" :kind "state_change" :index 0})
-    (cmd/run a "create-element" {:name "Snaz" :kind "read_model"})
-    (cmd/run a "create-element" {:name "Snazzz" :kind "read_model"})
+    (cmd/run a "add-slice" {:timeline tl :title "Baz" :slice-type "state_change" :index 0})
+    (cmd/run a "create-element" {:name "Snaz" :element-type "read_model"})
+    (cmd/run a "create-element" {:name "Snazzz" :element-type "read_model"})
 
     (testing "exact match wins outright, carries its breadcrumb"
       (let [[res] (cmd/resolve-names a [{:name "Baz"}])]
@@ -354,9 +354,9 @@
   (let [a  (app/new-app "M")
         sl (:id (:result (cmd/run a "add-slice"
                                   {:timeline (:id (:result (cmd/run a "create-timeline" {:title "T"})))
-                                   :title "S" :kind "state_change" :index 0})))
-        a1 (:id (:result (cmd/run a "create-element" {:name "A" :kind "event"})))
-        a2 (:id (:result (cmd/run a "create-element" {:name "B" :kind "event"})))]
+                                   :title "S" :slice-type "state_change" :index 0})))
+        a1 (:id (:result (cmd/run a "create-element" {:name "A" :element-type "event"})))
+        a2 (:id (:result (cmd/run a "create-element" {:name "B" :element-type "event"})))]
     (cmd/run a "place-element" {:slice sl :element a1})
     (cmd/run a "place-element" {:slice sl :element a2})
     [a sl {"A" a1 "B" a2}]))
@@ -395,7 +395,7 @@
   ;; AddField takes a whole Field; the flat flag set addresses one level at a
   ;; time, so a subfield is authored by naming the field to nest it under.
   (let [a  (app/new-app "M")
-        el (:id (:result (cmd/run a "create-element" {:name "E" :kind "command"})))
+        el (:id (:result (cmd/run a "create-element" {:name "E" :element-type "command"})))
         el-field (fn [] (m/fetch (app/store a) :element el))]
     (testing "optional and cardinality reach the stored field"
       (cmd/run a "add-field" {:element el :name "id" :type "uuid"

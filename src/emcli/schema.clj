@@ -41,12 +41,12 @@
 (def ^:private status->schema {:created "Created" :in_progress "InProgress" :done "Done"})
 (def ^:private schema->status (set/map-invert status->schema))
 
-(def ^:private kind->slicetype {:state_change "STATE_CHANGE" :state_view "STATE_VIEW" :automation "AUTOMATION"})
-(def ^:private slicetype->kind (set/map-invert kind->slicetype))
+(def ^:private slice-type->schema-type {:state_change "STATE_CHANGE" :state_view "STATE_VIEW" :automation "AUTOMATION"})
+(def ^:private schema-type->slice-type (set/map-invert slice-type->schema-type))
 
-(def ^:private elkind->type {:command "COMMAND" :event "EVENT" :read_model "READMODEL"
+(def ^:private element-type->schema-type {:command "COMMAND" :event "EVENT" :read_model "READMODEL"
                              :screen "SCREEN" :automation "AUTOMATION"})
-(def ^:private type->elkind (set/map-invert elkind->type))
+(def ^:private schema-type->element-type (set/map-invert element-type->schema-type))
 
 (def ^:private ctx->schema {:internal "INTERNAL" :external "EXTERNAL"})
 (def ^:private schema->ctx (set/map-invert ctx->schema))
@@ -59,13 +59,13 @@
 (def ^:private card->schema {:single "Single" :list "List"})
 (def ^:private schema->card (set/map-invert card->schema))
 
-;; element kind -> the schema slice array it is embedded in, and the SPEC_ type
-(def ^:private kind->array {:command "commands" :event "events" :read_model "readmodels"
+;; element type -> the schema slice array it is embedded in, and the SPEC_ type
+(def ^:private element-type->schema-array {:command "commands" :event "events" :read_model "readmodels"
                            :screen "screens" :automation "processors"})
-(def ^:private array->kind {"commands" :command "events" :event "readmodels" :read_model
+(def ^:private schema-array->element-type {"commands" :command "events" :event "readmodels" :read_model
                            "screens" :screen "processors" :automation})
-(def ^:private elkind->spectype {:event "SPEC_EVENT" :command "SPEC_COMMAND" :read_model "SPEC_READMODEL"})
-(def ^:private spectype->elkind {"SPEC_EVENT" :event "SPEC_COMMAND" :command "SPEC_READMODEL" :read_model})
+(def ^:private element-type->spec-type {:event "SPEC_EVENT" :command "SPEC_COMMAND" :read_model "SPEC_READMODEL"})
+(def ^:private spec-type->element-type {"SPEC_EVENT" :event "SPEC_COMMAND" :command "SPEC_READMODEL" :read_model})
 
 ;; ---------------------------------------------------------------------------
 ;; Field value <-> schema Field
@@ -123,11 +123,11 @@
    (for [c (m/outgoing store element-id)
          :let [to (m/fetch store :element (:to c))]]
      {"id" (group-id (:to c)) "title" (:name to) "type" "OUTBOUND"
-      "elementType" (elkind->type (:kind to))})
+      "elementType" (element-type->schema-type (:element_type to))})
    (for [c (m/incoming store element-id)
          :let [from (m/fetch store :element (:from c))]]
      {"id" (group-id (:from c)) "title" (:name from) "type" "INBOUND"
-      "elementType" (elkind->type (:kind from))})))
+      "elementType" (element-type->schema-type (:element_type from))})))
 
 (defn- embedded-element [store placement]
   (let [el   (m/placement-element store placement)
@@ -135,7 +135,7 @@
     {"id"           (embedded-id (:id el) (:id placement))
      "groupId"      (group-id (:id el))
      "title"        (:name el)
-     "type"         (elkind->type (:kind el))
+     "type"         (element-type->schema-type (:element_type el))
      "context"      (ctx->schema (:context el) "INTERNAL")
      "aggregate"    (or (:name lane) "")
      "domain"       ""
@@ -146,7 +146,7 @@
   (let [el (m/step-element store step)]
     (cond-> {"id"    (str "s" (:id step))
              "title" (if (:is_error step) (:error_name step) (:name el))
-             "type"  (if (:is_error step) "SPEC_ERROR" (elkind->spectype (:kind el)))
+             "type"  (if (:is_error step) "SPEC_ERROR" (element-type->spec-type (:element_type el)))
              "index" (:index step)
              "expectEmptyList" (boolean (:expect_empty step))}
       (seq (:examples step))
@@ -165,7 +165,7 @@
 
 (defn- slice->schema [store timeline slice]
   (let [pls      (m/placements store (:id slice))
-        embedded (group-by #(kind->array (:kind (m/placement-element store %))) pls)
+        embedded (group-by #(element-type->schema-array (:element_type (m/placement-element store %))) pls)
         screens-with-img (for [p (get embedded "screens")
                                :let [el (m/placement-element store p)]
                                :when (:image_url el)]
@@ -176,7 +176,7 @@
              "index"     (:index slice)
              "status"    (status->schema (:status slice) "Created")
              "context"   (:title timeline)
-             "sliceType" (kind->slicetype (:kind slice))
+             "sliceType" (slice-type->schema-type (:slice_type slice))
              "specifications" (mapv #(spec->schema store %) (m/specs store (:id slice)))}
       true (into (for [[arr ps] embedded]
                    [arr (mapv #(embedded-element store %) ps)]))
@@ -224,9 +224,9 @@
                                  subject))))))
 
 (defn- embedded-elements-of [schema-slice]
-  (mapcat (fn [arr] (map (fn [e] (assoc e ::kind (array->kind arr)))
+  (mapcat (fn [arr] (map (fn [e] (assoc e ::element-type (schema-array->element-type arr)))
                          (get schema-slice arr [])))
-          (keys array->kind)))
+          (keys schema-array->element-type)))
 
 (defn- ensure-swimlane
   "Find-or-create a swimlane by name; returns [store lane-id]. The schema carries
@@ -258,7 +258,7 @@
   foreign document's dependency by (elementType, title) against element names."
   [group->el name->el dep]
   (or (group->el (get dep "id"))
-      (name->el [(type->elkind (get dep "elementType")) (get dep "title")])))
+      (name->el [(schema-type->element-type (get dep "elementType")) (get dep "title")])))
 
 (defn- apply-step-extras
   "Re-attach a step's expectEmptyList and examples after creation, so both
@@ -314,7 +314,7 @@
                         (check-step {:step :create-element :elements [(get e "title")]}
                                     (r/create-element s {:model mid
                                                          :name (get e "title")
-                                                         :kind (or (::kind e) (type->elkind (get e "type")))}))
+                                                         :element-type (or (::element-type e) (schema-type->element-type (get e "type")))}))
                         eid (:id el)
                         ;; The rest of the element's state is applied through the
                         ;; same authoring operations an operator uses
@@ -335,8 +335,8 @@
                                       {:store s2})]
                     [s2 (assoc acc g eid)]))
                 [store {}] by-group)
-        ;; [kind name] -> element id, for resolving foreign dep/step references.
-        name->el (into {} (for [e (m/elements store mid)] [[(:kind e) (:name e)] (:id e)]))
+        ;; [element-type name] -> element id, for resolving foreign dep/step references.
+        name->el (into {} (for [e (m/elements store mid)] [[(:element_type e) (:name e)] (:id e)]))
         ;; --- slices, placements, screenImages, specifications --------------
         [store embedid->placement slice-id-map]
         (reduce
@@ -345,7 +345,7 @@
                  {s2 :store sl :result}
                  (check-step {:step :add-slice :slices [(get ss "id")]}
                              (r/add-slice s {:timeline tl :title (get ss "title")
-                                             :kind (slicetype->kind (get ss "sliceType") :state_change)
+                                             :slice-type (schema-type->slice-type (get ss "sliceType") :state_change)
                                              :index (get ss "index" 0)}))
                  slid (:id sl)
                  {s2 :store} (check-step {:step :set-slice-status :slices [(get ss "id")]}
@@ -417,15 +417,15 @@
                                                   (r/add-error-step s {:spec spid :error-name (get st "title")
                                                                        :index (get st "index" 0)}))]
                                   (apply-step-extras s2 res st spid))
-                                (let [kind (spectype->elkind (get st "type"))
-                                      el   (name->el [kind (get st "title")])]
+                                (let [element-type (spec-type->element-type (get st "type"))
+                                      el   (name->el [element-type (get st "title")])]
                                   (if-not el
                                     ;; A step the document's own reference cannot
                                     ;; resolve: either it names an element the
                                     ;; document does not embed - one the model holds
                                     ;; unplaced, so the format had no element to
                                     ;; carry it in - or its type is one this model
-                                    ;; cannot map to a step kind. Both are
+                                    ;; cannot map to a step type. Both are
                                     ;; documented losses (dropped-fields guidance).
                                     s
                                     (let [{s2 :store res :result}

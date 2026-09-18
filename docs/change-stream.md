@@ -76,12 +76,12 @@ Populated:
     "id": 1,
     "name": "Orders",
     "elements": [
-      { "id": 2, "type": "element", "model": 1, "name": "PlaceOrder", "kind": "command",
+      { "id": 2, "type": "element", "model": 1, "name": "PlaceOrder", "element_type": "command",
         "context": "internal",
         "fields": [ { "name": "id", "type": "uuid", "optional": false, "cardinality": "single" } ],
         "field_origins": [ { "field": "id", "origin": "user_input" } ],
         "is_information_complete": true },
-      { "id": 3, "type": "element", "model": 1, "name": "OrderPlaced", "kind": "event",
+      { "id": 3, "type": "element", "model": 1, "name": "OrderPlaced", "element_type": "event",
         "context": "internal",
         "fields": [ { "name": "id", "type": "uuid", "optional": false, "cardinality": "single" } ],
         "field_origins": [], "is_information_complete": true }
@@ -89,11 +89,11 @@ Populated:
     "timelines": [
       { "id": 5, "title": "Order flow",
         "slices": [
-          { "id": 6, "title": "Place order", "kind": "state_change", "status": "created", "index": 0,
+          { "id": 6, "title": "Place order", "slice_type": "state_change", "status": "created", "index": 0,
             "is_complete": true,
             "placements": [
               { "id": 7, "index": 0,
-                "element": { "id": 2, "name": "PlaceOrder", "kind": "command",
+                "element": { "id": 2, "name": "PlaceOrder", "element_type": "command",
                              "swimlane": null, "is_information_complete": true,
                              "image_url": null, "wireframe": null,
                              "fields": [ { "name": "id", "type": "uuid",
@@ -165,7 +165,7 @@ The ids correlate directly with deltas: the placement `id` matches a
 placement-bound: an element appears *as an element* under a placement only where
 it is placed, and an element that is wired but never placed appears in the
 nested projections only as the `{id, name}` end of a connection, without its
-fields or kind. That is precisely why the snapshot carries `elements`: every
+fields or element type. That is precisely why the snapshot carries `elements`: every
 element of the model is there in full, so a consumer never has to reconstruct
 one from a placement or a connection reference — and so an element created
 before it subscribed, whose `CreateElement` delta was sent before the
@@ -187,14 +187,14 @@ Create:
 
 ```
 event: CreateElement
-data: {"op":"CreateElement","changes":[{"action":"created","type":"element","id":5,"entity":{"model":1,"name":"PlaceOrder","kind":"command","context":"internal","fields":[],"field_origins":[],"is_information_complete":true,"id":5,"type":"element"}}]}
+data: {"op":"CreateElement","changes":[{"action":"created","type":"element","id":5,"entity":{"model":1,"name":"PlaceOrder","element_type":"command","context":"internal","fields":[],"field_origins":[],"is_information_complete":true,"id":5,"type":"element"}}]}
 ```
 
 Update (full new entity state is sent):
 
 ```
 event: SetImageUrl
-data: {"op":"SetImageUrl","changes":[{"action":"updated","type":"element","id":4,"entity":{"model":1,"name":"OrderScreen","kind":"screen","context":"internal","fields":[{"name":"id","type":"uuid","optional":false,"cardinality":"single","subfields":[]}],"field_origins":[],"is_information_complete":true,"image_url":"http://x/s.png","id":4,"type":"element"}}]}
+data: {"op":"SetImageUrl","changes":[{"action":"updated","type":"element","id":4,"entity":{"model":1,"name":"OrderScreen","element_type":"screen","context":"internal","fields":[{"name":"id","type":"uuid","optional":false,"cardinality":"single","subfields":[]}],"field_origins":[],"is_information_complete":true,"image_url":"http://x/s.png","id":4,"type":"element"}}]}
 ```
 
 Cascading delete — **one** delta listing every removed entity, leaves first:
@@ -215,7 +215,7 @@ data: {"op":"DeleteTimeline","changes":[{"action":"deleted","type":"placement","
 | `RenameSwimlane` / `ReorderSwimlane` | updated | swimlane |
 | `DeleteSwimlane` | updated, deleted | element(s) re-stated with `swimlane: null`, then the swimlane |
 | `AddSlice` | created | slice |
-| `ReorderSlice` / `SetSliceStatus` / `SetSliceKind` | updated | slice |
+| `ReorderSlice` / `SetSliceStatus` / `SetSliceType` | updated | slice |
 | `DeleteSlice` | deleted | slice + cascaded placements, specifications, spec-steps |
 | `CreateElement` | created | element |
 | `SetFields` / `SetElementContext` / `AssignSwimlane` / `SetImageUrl` / `SetFieldOrigins` / `RenameElement` | updated | element |
@@ -253,8 +253,8 @@ All entities carry integer `id` and `type`; relationships are integer ids.
 |------|--------|
 | `timeline` | `id, type, model, title` |
 | `swimlane` | `id, type, model, name, index` |
-| `slice` | `id, type, timeline, title, kind, index, status` |
-| `element` | `id, type, model, name, kind, context, fields[], field_origins[], is_information_complete, swimlane?, image_url?, wireframe?` |
+| `slice` | `id, type, timeline, title, slice_type, index, status` |
+| `element` | `id, type, model, name, element_type, context, fields[], field_origins[], is_information_complete, swimlane?, image_url?, wireframe?` |
 | `placement` | `id, type, slice, element, index` |
 | `connection` | `id, type, model, from, to, derivations[]` |
 | `specification` | `id, type, slice, title` |
@@ -285,9 +285,9 @@ Embedded value objects:
 
 ### Enum values
 
-- `slice.kind`: `state_change`, `state_view`, `automation`
+- `slice.slice_type`: `state_change`, `state_view`, `automation`
 - `slice.status`: `created`, `in_progress`, `done`, `informational`
-- `element.kind`: `command`, `event`, `read_model`, `screen`, `automation`
+- `element.element_type`: `command`, `event`, `read_model`, `screen`, `automation`
 - `element.context`: `internal`, `external`
 - `spec-step.clause`: `given_step`, `when_step`, `then_step`
 - `field.type`: `string`, `boolean`, `double`, `decimal`, `long`, `custom`, `date`, `date_time`, `uuid`, `int`
@@ -317,7 +317,7 @@ single normalised store works end to end:
 Three shape differences to keep in mind:
 
 - The snapshot is a **nested projection** (slices under timelines, element name/
-  kind under placements), whereas a delta `entity` is the **flat canonical
+  element_type under placements), whereas a delta `entity` is the **flat canonical
   record** with foreign-key ids (e.g. a slice entity has `timeline`; a placement
   has `slice` and `element`). Index by id and the two line up. `model.elements`
   is the one place the snapshot already uses the flat canonical record.

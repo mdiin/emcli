@@ -14,28 +14,28 @@
 
 (deftest new-list-fields-default-empty
   (let [[store mid] (s/with-model)
-        el  (:result (s/ok store r/create-element {:model mid :name "E" :kind :event}))]
+        el  (:result (s/ok store r/create-element {:model mid :name "E" :element-type :event}))]
     (is (= [] (:field_origins el)))
-    (let [store (:store (s/ok store r/create-element {:model mid :name "E" :kind :event}))
+    (let [store (:store (s/ok store r/create-element {:model mid :name "E" :element-type :event}))
           a     (:id (first (m/elements store mid)))
-          store (:store (s/ok store r/create-element {:model mid :name "B" :kind :command}))
+          store (:store (s/ok store r/create-element {:model mid :name "B" :element-type :command}))
           b     (:id (second (m/elements store mid)))
           c     (:result (s/ok store r/connect {:from b :to a}))]
       (is (= [] (:derivations c))))))
 
 ;; --- rules -----------------------------------------------------------------
 
-(defn- two-elements [kind-from kind-to]
+(defn- two-elements [element-type-from element-type-to]
   (let [[store mid] (s/with-model)
-        store (:store (s/ok store r/create-element {:model mid :name "Src" :kind kind-from}))
+        store (:store (s/ok store r/create-element {:model mid :name "Src" :element-type element-type-from}))
         from  (:id (first (m/elements store mid)))
-        store (:store (s/ok store r/create-element {:model mid :name "Dst" :kind kind-to}))
+        store (:store (s/ok store r/create-element {:model mid :name "Dst" :element-type element-type-to}))
         to    (:id (second (m/elements store mid)))]
     [store mid from to]))
 
 (deftest set-field-origins-rule
   (let [[store mid] (s/with-model)
-        store (:store (s/ok store r/create-element {:model mid :name "Cmd" :kind :command}))
+        store (:store (s/ok store r/create-element {:model mid :name "Cmd" :element-type :command}))
         eid   (:id (first (m/elements store mid)))
         {:keys [delta result]} (s/ok store r/set-field-origins
                                      {:element eid :origins [{:field "id" :origin :user_input}]})]
@@ -109,7 +109,7 @@
 (deftest introduced-field-is-sourced
   (testing "a field-origin override marks a field as legitimately introduced"
     (let [[store mid] (s/with-model)
-          store (:store (s/ok store r/create-element {:model mid :name "PlaceOrder" :kind :command}))
+          store (:store (s/ok store r/create-element {:model mid :name "PlaceOrder" :element-type :command}))
           eid   (:id (first (m/elements store mid)))
           store (with-field store eid "id")          ; user-entered, no upstream
           dst   (m/fetch store :element eid)]
@@ -121,7 +121,7 @@
 (deftest aggregation-spans-multiple-incoming-connections
   (testing "a read model field set is covered by the union of its inbound connections"
     (let [[store mid] (s/with-model)
-          mk    (fn [s name kind] (let [s (:store (s/ok s r/create-element {:model mid :name name :kind kind}))]
+          mk    (fn [s name element-type] (let [s (:store (s/ok s r/create-element {:model mid :name name :element-type element-type}))]
                                     [s (:id (last (m/elements s mid)))]))
           [store e1] (mk store "OrderPlaced" :event)
           [store e2] (mk store "ShippingSet" :event)
@@ -143,7 +143,7 @@
 
 (deftest add-field-origin-appends-and-replaces
   (let [[store mid] (s/with-model)
-        store (:store (s/ok store r/create-element {:model mid :name "Cmd" :kind :command}))
+        store (:store (s/ok store r/create-element {:model mid :name "Cmd" :element-type :command}))
         eid   (:id (first (m/elements store mid)))]
     (testing "appends preserving existing origins"
       (let [store (:store (s/ok store r/add-field-origin {:element eid :field "id" :origin :user_input}))
@@ -181,8 +181,8 @@
 (deftest add-derivation-splits-comma-separated-from-over-the-command-layer
   (let [a   (app/new-app "M")
         mid (app/model-id a)
-        from (:result (cmd/run a "create-element" {:name "Evt" :kind "event"}))
-        to   (:result (cmd/run a "create-element" {:name "RM" :kind "read_model"}))
+        from (:result (cmd/run a "create-element" {:name "Evt" :element-type "event"}))
+        to   (:result (cmd/run a "create-element" {:name "RM" :element-type "read_model"}))
         _    (cmd/run a "connect" {:from (:id from) :to (:id to)})
         cid  (:id (first (m/connections (app/store a) mid)))
         res  (cmd/run a "add-derivation" {:connection cid :target "total" :from "unitPrice, quantity"})]
@@ -192,7 +192,7 @@
 
 (deftest add-field-and-remove-field-append-and-remove
   (let [[store mid] (s/with-model)
-        store (:store (s/ok store r/create-element {:model mid :name "Cmd" :kind :command}))
+        store (:store (s/ok store r/create-element {:model mid :name "Cmd" :element-type :command}))
         eid   (:id (first (m/elements store mid)))
         id-field {:name "id" :type :uuid :optional false :cardinality :single :subfields []}
         at-field {:name "at" :type :date_time :optional false :cardinality :single :subfields []}]
@@ -215,7 +215,7 @@
 
 (deftest remove-field-origin-removes-the-named-override
   (let [[store mid] (s/with-model)
-        store (:store (s/ok store r/create-element {:model mid :name "Cmd" :kind :command}))
+        store (:store (s/ok store r/create-element {:model mid :name "Cmd" :element-type :command}))
         eid   (:id (first (m/elements store mid)))
         store (:store (s/ok store r/add-field-origin {:element eid :field "id" :origin :user_input}))
         store (:store (s/ok store r/add-field-origin {:element eid :field "at" :origin :generated}))
@@ -233,9 +233,9 @@
 
 (deftest add-step-example-and-remove-step-example-append-and-remove
   (let [a    (app/new-app "M")
-        el   (:result (cmd/run a "create-element" {:name "PlaceOrder" :kind "command"}))
+        el   (:result (cmd/run a "create-element" {:name "PlaceOrder" :element-type "command"}))
         tl   (:result (cmd/run a "create-timeline" {:title "T"}))
-        sl   (:result (cmd/run a "add-slice" {:timeline (:id tl) :title "S" :kind "state_change" :index 0}))
+        sl   (:result (cmd/run a "add-slice" {:timeline (:id tl) :title "S" :slice-type "state_change" :index 0}))
         sp   (:result (cmd/run a "add-specification" {:slice (:id sl) :title "spec"}))
         st   (:result (cmd/run a "add-spec-step" {:spec (:id sp) :clause "when_step" :element (:id el) :index 0}))]
     (cmd/run a "add-step-example" {:step (:id st) :field-name "id" :field-value "1"})
@@ -254,8 +254,8 @@
 (deftest validate-reports-incomplete-and-orphaned
   (let [a   (app/new-app "M")
         mid (app/model-id a)
-        from (:result (cmd/run a "create-element" {:name "Evt" :kind "event"}))
-        to   (:result (cmd/run a "create-element" {:name "RM" :kind "read_model"}))]
+        from (:result (cmd/run a "create-element" {:name "Evt" :element-type "event"}))
+        to   (:result (cmd/run a "create-element" {:name "RM" :element-type "read_model"}))]
     (cmd/run a "add-field" {:element (:id to) :name "total" :type "decimal" :cardinality "single"})
     (cmd/run a "connect" {:from (:id from) :to (:id to)})
     (let [cid (:id (first (m/connections (app/store a) mid)))]

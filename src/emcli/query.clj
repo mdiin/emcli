@@ -57,6 +57,42 @@
   "The QueryKind behind a model entity type (only :spec-step differs)."
   [t] (if (= t :spec-step) :step t))
 
+;; The closed field set ModelQuery.ProjectableFieldsAreClosed states, in two
+;; halves.
+;;
+;; The row's own display fields: its identity, the entity CATEGORY, and its
+;; location. `kind` is the category (element, slice, ...), NOT what an element is
+;; - that is the element's own `element_type` attribute, below. The two words are
+;; kept apart deliberately.
+(def ^:private row-fields #{"id" "kind" "name" "breadcrumb"})
+
+;; The attributes each kind's entity declaration carries (event-model.allium).
+;; The model is schemaless - a canonical record IS the stored map, with no list of
+;; its keys - so the declarations cannot be read off at run time and are written
+;; down here instead. A change to an entity declaration in the spec belongs here
+;; too: the spec's ProjectableFieldsAreClosed is the authority, and query-test
+;; covers the set, including that a name on one entity is refused on another.
+(def ^:private entity-fields
+  {:timeline      #{"model" "title"}
+   :swimlane      #{"model" "name" "index"}
+   :slice         #{"timeline" "title" "index" "slice_type" "status"
+                    "placements" "specifications" "commands" "events" "read_models"
+                    "screens" "automations" "is_complete"}
+   :element       #{"model" "name" "element_type" "context" "fields" "swimlane"
+                    "image_url" "wireframe" "placements" "outgoing" "incoming"
+                    "field_origins" "is_information_complete"}
+   :specification #{"slice" "title" "steps" "given_steps" "when_steps" "then_steps"
+                    "when_commands" "then_read_models" "is_complete"}
+   :step          #{"spec" "clause" "index" "element" "is_error" "error_name"
+                    "expect_empty" "examples"}})
+
+(defn- accepted-fields
+  "Every field name a stage may use on a row of `kind`: the row's display fields
+  and the entity's declared attributes, plus any edge key a projection upstream
+  attached (an association is projected under its own key)."
+  [kind projected]
+  (into (into row-fields (get entity-fields kind)) projected))
+
 (defn query-error
   "A rejected query: the one error shape the engine raises, and the shape a
   caller-supplied name resolver raises too, so the boundary maps them all alike."
@@ -255,11 +291,33 @@
 ;; Compilation (static kind walk)
 ;; ---------------------------------------------------------------------------
 
+(defn- check-fields!
+  "Reject a stage naming a field its row cannot answer
+  (ModelQuery.UnknownFieldRejected), naming what the row does carry. A misspelled
+  or unsupported name is a mistake to correct, not an answer: without this the
+  stage would silently match nothing, which reads the same as a genuinely empty
+  value."
+  [st kind projected]
+  (let [names    (case (:kind st)
+                   :where  [(:field st)]
+                   :order  [(:field st)]
+                   :select (:fields st)
+                   nil)
+        accepted (accepted-fields kind projected)]
+    (doseq [f names :when (some? f)]
+      (when-not (accepted f)
+        (throw (query-error
+                (str "unknown field " (pr-str f) " on " (token-label kind) " rows; "
+                     (name (:kind st)) " accepts "
+                     (str/join ", " (sort accepted)))))))))
+
 (defn- compile-query
-  "Walk the pipeline, validating each follow against the registry and tracking
-  the current entity kind; attaches the resolved :relation to each follow stage."
+  "Walk the pipeline, validating each follow against the registry and each
+  field-naming stage against the closed field set; tracks the current entity kind
+  and any edge key a projection has attached, and attaches the resolved :relation
+  to each follow stage."
   [expr]
-  (loop [stages (:stages expr), current (:kind (:root expr)), plan []]
+  (loop [stages (:stages expr), current (:kind (:root expr)), projected #{}, plan []]
     (if-let [st (first stages)]
       (if (= :follow (:kind st))
         (let [rel (relation current (or (:direction st) (:target st)))]
@@ -267,18 +325,34 @@
             (throw (query-error
                     (str "relation " (token-label current) " -> " (token-label (:to rel))
                          " is not an association; there is nothing to project with `{...}`"))))
-          (recur (rest stages) (:to rel) (conj plan (assoc st :relation rel))))
-        (recur (rest stages) current (conj plan st)))
+          (recur (rest stages) (:to rel)
+                 (cond-> projected (:projection st) (conj (name (:edge-key rel))))
+                 (conj plan (assoc st :relation rel))))
+        (do (check-fields! st current projected)
+            (recur (rest stages) current projected (conj plan st))))
       {:root (:root expr) :plan plan})))
 
 ;; ---------------------------------------------------------------------------
 ;; Execution
 ;; ---------------------------------------------------------------------------
 
-(defn- field-value [item k]
-  (let [kk (keyword k)
-        e  (:entity item)]
-    (if (and (map? e) (contains? e kk)) (get e kk) (get item kk))))
+(defn- field-value
+  "The value a stage sees for field `k` on a pipeline item: the row's own display
+  fields first (the entity CATEGORY as `kind`, its name or title as `name`), then
+  the landed entity's declared attributes, then the item itself, which carries an
+  edge key when a projection attached one. Resolving exactly the names
+  accepted-fields admits is what keeps an accepted name from resolving to nothing
+  - the failure UnknownFieldRejected exists to prevent, since an unresolvable name
+  and a genuinely empty value would otherwise read the same."
+  [item k]
+  (let [e (:entity item)]
+    (cond
+      (= (keyword k) (:edge-key item)) (:edge item)
+      (= k "id")   (:id e)
+      (= k "kind") (kind-of (:type e))
+      (= k "name") (or (:name e) (:title e))
+      :else        (let [kk (keyword k)]
+                     (if (and (map? e) (contains? e kk)) (get e kk) (get item kk))))))
 
 (defn- text
   "A comparable textual form of a field value. Keynote: in Clojure/Babashka
@@ -346,9 +420,19 @@
                            identity (rest stages) selected))
         :select   (recur items xf (rest stages) (:fields st))
         :count    (count (into [] xf items)))
-      (let [rows (mapv #(row store %) (into [] xf items))]
+      (let [final (into [] xf items)
+            rows  (mapv #(row store %) final)]
         (if selected
-          (mapv #(select-keys % (map keyword selected)) rows)
+          ;; Projection reads the same values the filter and sort stages read, so
+          ;; a row's display fields (id, kind, name, breadcrumb) come from the row
+          ;; and a landed entity's attribute from the entity (see field-value).
+          (mapv (fn [item r]
+                  (into {}
+                        (map (fn [f]
+                               (let [k (keyword f)]
+                                 [k (if (contains? r k) (get r k) (field-value item f))])))
+                        selected))
+                final rows)
           rows)))))
 
 (defn- kind-collection [store mid k]
@@ -448,10 +532,21 @@
      "  order <field> | order -<field>          ( - = descending )\n"
      "  select <field,...>\n"
      "  count | limit <n> | distinct\n\n"
+     "FIELD: a stage names either a row's display field - id, kind (the entity"
+     " CATEGORY, e.g. `element`), name, breadcrumb, or a projected edge's key - or"
+     " an attribute the landed entity declares. So `element | select"
+     " name,element_type,context,fields` reads an element's own field names, which"
+     " is how you learn what the field operations address a field by (`fields` is"
+     " the recursive list, subfields included). Beware that `kind` is the CATEGORY:"
+     " what an element IS is its `element_type` (command | event | read_model |"
+     " screen | automation), and what a slice is, is its `slice_type`. The set is"
+     " per kind, and an unknown field name is REJECTED naming what that row does"
+     " carry - never silently an empty result.\n\n"
      "Examples:\n"
      "  timelines | slice | where status=in_progress | select id,title\n"
      "  element:42 | slice\n"
-     "  slice:7 | elements {index} | where kind=command\n"
-     "  element:42 | outgoing {derivations}\n\n"
-     "An invalid stage returns an error naming the valid alternatives."
-     " Run `emcli query --relations` for the live list.")))
+     "  slice:7 | elements {index} | where element_type=command\n"
+     "  element:42 | outgoing {derivations}\n"
+     "  element | select name,fields\n\n"
+     "An invalid stage, kind, relation or field name returns an error naming the"
+     " valid alternatives. Run `emcli query --relations` for the live list.")))

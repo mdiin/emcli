@@ -15,7 +15,7 @@
   (let [[store mid] (s/with-model)]
     (doseq [[rule args type] [[r/create-timeline {:model mid :title "T"} :timeline]
                               [r/create-swimlane {:model mid :name "L" :index 0} :swimlane]
-                              [r/create-element  {:model mid :name "E" :kind :command} :element]]]
+                              [r/create-element  {:model mid :name "E" :element-type :command} :element]]]
       (let [{:keys [store delta result]} (s/ok store rule args)]
         (is (= type (:type result)))
         (is (m/exists? store type (:id result)))
@@ -62,7 +62,7 @@
       (let [store (:store (s/ok store r/rename-timeline {:timeline tlid :new-title "New"}))]
         (is (= "New" (:title (m/fetch store :timeline tlid))))))
     (testing "SetElementContext / SetImageUrl / RenameElement / SetFields"
-      (let [store (:store (s/ok store r/create-element {:model mid :name "Order" :kind :screen}))
+      (let [store (:store (s/ok store r/create-element {:model mid :name "Order" :element-type :screen}))
             eid   (:id (first (m/elements store mid)))
             store (:store (s/ok store r/set-element-context {:element eid :new-context :external}))
             store (:store (s/ok store r/set-image-url {:element eid :url "http://x/y.png"}))
@@ -101,7 +101,7 @@
     (let [[store mid] (s/with-model)
           store       (:store (s/ok store r/create-swimlane {:model mid :name "Orders" :index 0}))
           lane        (:id (first (m/swimlanes store mid)))
-          store       (:store (s/ok store r/create-element {:model mid :name "Order" :kind :command}))
+          store       (:store (s/ok store r/create-element {:model mid :name "Order" :element-type :command}))
           eid         (:id (first (m/elements store mid)))
           store       (:store (s/ok store r/assign-swimlane {:element eid :lane lane}))]
       (is (= lane (:swimlane (m/fetch store :element eid))))
@@ -115,7 +115,7 @@
   (let [[store mid] (s/with-model)
         store       (:store (s/ok store r/create-timeline {:model mid :title "T"}))
         tlid        (:id (first (m/timelines store mid)))
-        store       (:store (s/ok store r/add-slice {:timeline tlid :title "S" :kind :state_change :index 0}))
+        store       (:store (s/ok store r/add-slice {:timeline tlid :title "S" :slice-type :state_change :index 0}))
         slid        (:id (first (m/slices store tlid)))]
     (testing "any status transition is accepted, regardless of the prior status"
       (doseq [[from to] [[:created :in_progress]
@@ -136,9 +136,9 @@
   (let [[store mid] (s/with-model)
         store       (:store (s/ok store r/create-timeline {:model mid :title "T"}))
         tlid        (:id (first (m/timelines store mid)))
-        store       (:store (s/ok store r/add-slice {:timeline tlid :title "S" :kind :state_change :index 0}))
+        store       (:store (s/ok store r/add-slice {:timeline tlid :title "S" :slice-type :state_change :index 0}))
         slid        (:id (first (m/slices store tlid)))
-        store       (:store (s/ok store r/create-element {:model mid :name "PlaceOrder" :kind :command}))
+        store       (:store (s/ok store r/create-element {:model mid :name "PlaceOrder" :element-type :command}))
         eid         (:id (first (m/elements store mid)))
         store       (:store (s/ok store r/place-element {:slice slid :element eid}))
         pid         (:id (first (m/placements store slid)))
@@ -178,11 +178,11 @@
   (let [[store mid] (s/with-model)
         store       (:store (s/ok store r/create-timeline {:model mid :title "T"}))
         tlid        (:id (first (m/timelines store mid)))
-        store       (:store (s/ok store r/add-slice {:timeline tlid :title "S" :kind :state_change :index 0}))
+        store       (:store (s/ok store r/add-slice {:timeline tlid :title "S" :slice-type :state_change :index 0}))
         slid        (:id (first (m/slices store tlid)))
-        store       (:store (s/ok store r/create-element {:model mid :name "PlaceOrder" :kind :command}))
+        store       (:store (s/ok store r/create-element {:model mid :name "PlaceOrder" :element-type :command}))
         cmd         (:id (first (m/elements store mid)))
-        store       (:store (s/ok store r/create-element {:model mid :name "OrderPlaced" :kind :event}))
+        store       (:store (s/ok store r/create-element {:model mid :name "OrderPlaced" :element-type :event}))
         evt         (:id (second (m/elements store mid)))
         store       (:store (s/ok store r/place-element {:slice slid :element cmd}))
         pid         (:id (first (m/placements store slid)))
@@ -214,10 +214,10 @@
         store          (:store (s/ok store r/create-timeline {:model mid :title "T"}))
         tlid           (:id (first (m/timelines store mid)))
         store          (:store (s/ok store r/add-slice {:timeline tlid :title "S"
-                                                        :kind :state_change :index 0}))
+                                                        :slice-type :state_change :index 0}))
         slid           (:id (first (m/slices store tlid)))
         [store elements] (reduce (fn [[st acc] nm]
-                                   (let [res (s/ok st r/create-element {:model mid :name nm :kind :event})]
+                                   (let [res (s/ok st r/create-element {:model mid :name nm :element-type :event})]
                                      [(:store res) (assoc acc nm (:id (:result res)))]))
                                  [store {}] names)
         store          (reduce (fn [st nm]
@@ -287,7 +287,7 @@
 
 (deftest placement-rules-reject-an-element-not-placed
   (let [{:keys [store mid slid elements]} (slice-with-elements ["A"])
-        store (:store (s/ok store r/create-element {:model mid :name "Z" :kind :event}))
+        store (:store (s/ok store r/create-element {:model mid :name "Z" :element-type :event}))
         zid   (:id (first (filter #(= "Z" (:name %)) (m/elements store mid))))]
     (testing "remove"
       (let [err (s/err store r/remove-placement {:slice slid :element zid})]
@@ -353,7 +353,7 @@
   "A store with one screen element that has a :searchTerm field."
   []
   (let [[store mid] (s/with-model)
-        res         (s/ok store r/create-element {:model mid :name "OrderList" :kind :screen})
+        res         (s/ok store r/create-element {:model mid :name "OrderList" :element-type :screen})
         store       (:store res)
         eid         (:id (:result res))
         store       (:store (s/ok store r/add-field {:element eid
@@ -380,7 +380,7 @@
 
 (deftest add-wireframe-node-rejects-non-screen-element
   (let [[store mid] (s/with-model)
-        res         (s/ok store r/create-element {:model mid :name "PlaceOrder" :kind :command})
+        res         (s/ok store r/create-element {:model mid :name "PlaceOrder" :element-type :command})
         store       (:store res)
         eid         (:id (:result res))
         err         (s/err store r/add-wireframe-node {:element eid :tag :col :parent "n1"})]
@@ -627,26 +627,26 @@
   []
   (let [[store mid]              (s/with-model)
         {s1 :store tl :result}   (s/ok store r/create-timeline {:model mid :title "Ordering"})
-        {s2 :store el :result}   (s/ok s1 r/create-element {:model mid :name "PlaceOrder" :kind :command})
+        {s2 :store el :result}   (s/ok s1 r/create-element {:model mid :name "PlaceOrder" :element-type :command})
         {s3 :store ln :result}   (s/ok s2 r/create-swimlane {:model mid :name "Orders" :index 0})
         {s4 :store sl :result}   (s/ok s3 r/add-slice {:timeline (:id tl) :title "Place order"
-                                                       :kind :state_change :index 0})
+                                                       :slice-type :state_change :index 0})
         {s5 :store sp :result}   (s/ok s4 r/add-specification {:slice (:id sl) :title "Places order"})]
     {:store s5 :model mid :timeline tl :element el :lane ln :slice sl :spec sp}))
 
 (deftest a-colliding-name-is-rejected-and-names-the-incumbent
   (let [{:keys [store model timeline element lane slice spec]} (unique-name-fixture)]
-    (testing "element: a name is not reused, whatever the kind of either"
-      (let [err (s/err store r/create-element {:model model :name "placeorder" :kind :event})]
+    (testing "element: a name is not reused, whatever the element type of either"
+      (let [err (s/err store r/create-element {:model model :name "placeorder" :element-type :event})]
         (is (= :name-conflict (:error err)))
         (is (= (:id element) (:id err)) "the rejection names the element that holds it")
         (is (= :element (:type err)))
         (is (str/includes? (:message err) (str (:id element))))
-        (is (str/includes? (:message err) "command") "its kind is named too, for reuse")))
+        (is (str/includes? (:message err) "command") "its element type is named too, for reuse")))
     (testing "element: renaming onto another element's name is rejected"
       (let [{s :store other :result} (s/ok store r/create-element {:model model
                                                                   :name "CancelOrder"
-                                                                  :kind :command})
+                                                                  :element-type :command})
             err                      (s/err s r/rename-element {:element (:id other)
                                                                 :new-name "PlaceOrder"})]
         (is (= :name-conflict (:error err)))
@@ -666,7 +666,7 @@
         (is (= (:id lane) (:id err)))))
     (testing "slice title, within its timeline"
       (let [err (s/err store r/add-slice {:timeline (:id timeline) :title "place order"
-                                          :kind :state_change :index 1})]
+                                          :slice-type :state_change :index 1})]
         (is (= :name-conflict (:error err)))
         (is (= (:id slice) (:id err)))))
     (testing "specification title, within its slice"
@@ -685,11 +685,11 @@
     (testing "the same name in a different container"
       (let [{s :store t2 :result} (s/ok store r/create-timeline {:model model :title "Viewing"})]
         (is (not (r/error? (r/add-slice s {:timeline (:id t2) :title "Place order"
-                                           :kind :state_change :index 0}))))
+                                           :slice-type :state_change :index 0}))))
         (is (not (r/error? (r/create-swimlane s {:model model :name "Customers" :index 1})))))
       (let [{s :store m2 :result} (s/ok store r/create-model {:name "Other"})]
         (is (not (r/error? (r/create-element s {:model (:id m2) :name "PlaceOrder"
-                                                :kind :command})))
+                                                :element-type :command})))
             "a name is unique within its model, not globally")))))
 
 ;; --- upsert_by: an entry is replaced in place --------------------------------
@@ -698,7 +698,7 @@
 
 (deftest re-adding-an-entry-replaces-it-in-place
   (let [[store mid]       (s/with-model)
-        {s1 :store el :result} (s/ok store r/create-element {:model mid :name "E" :kind :command})
+        {s1 :store el :result} (s/ok store r/create-element {:model mid :name "E" :element-type :command})
         eid               (:id el)
         {s2 :store}       (s/ok s1 r/add-field {:element eid :field {:name "a" :type :string}})
         {s3 :store}       (s/ok s2 r/add-field {:element eid :field {:name "b" :type :string}})
@@ -710,7 +710,7 @@
     (is (= :int (:type (first fields)))))
   (testing "and for the other keyed lists too"
     (let [[store mid]         (s/with-model)
-          {s1 :store el :result} (s/ok store r/create-element {:model mid :name "E" :kind :command})
+          {s1 :store el :result} (s/ok store r/create-element {:model mid :name "E" :element-type :command})
           eid                 (:id el)
           {s2 :store}         (s/ok s1 r/add-field-origin {:element eid :field "a" :origin :user_input})
           {s3 :store}         (s/ok s2 r/add-field-origin {:element eid :field "b" :origin :generated})
@@ -723,7 +723,7 @@
 
 (deftest canvas-cannot-be-added-as-a-node
   (let [[store mid]           (s/with-model)
-        {s1 :store scr :result} (s/ok store r/create-element {:model mid :name "S" :kind :screen})
+        {s1 :store scr :result} (s/ok store r/create-element {:model mid :name "S" :element-type :screen})
         eid                   (:id scr)]
     (testing "adding one is rejected"
       (is (= :invalid-value
@@ -742,7 +742,7 @@
 
 (deftest a-field-list-cannot-hold-two-of-one-name
   (let [[store mid]             (s/with-model)
-        {s1 :store el :result}  (s/ok store r/create-element {:model mid :name "E" :kind :command})]
+        {s1 :store el :result}  (s/ok store r/create-element {:model mid :name "E" :element-type :command})]
     (testing "a duplicated name at the top level is rejected"
       (let [err (s/err s1 r/set-fields {:element (:id el)
                                         :fields [{:name "a" :type :string}
@@ -757,7 +757,7 @@
                                                                    {:name "b" :type :int}]}]}))))))
   (testing "the canonical Field shape is materialised whoever supplied it"
     (let [[store mid]            (s/with-model)
-          {s1 :store el :result} (s/ok store r/create-element {:model mid :name "E" :kind :command})
+          {s1 :store el :result} (s/ok store r/create-element {:model mid :name "E" :element-type :command})
           res                    (s/ok s1 r/add-field {:element (:id el)
                                                        :field {:name "a" :type :string}})]
       (is (= {:name "a" :type :string :optional false :cardinality :single :subfields []}

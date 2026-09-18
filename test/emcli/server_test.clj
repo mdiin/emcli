@@ -37,8 +37,8 @@
   (testing "GET /model is the richer ModelAuthoring exposes projection"
     (let [tl   (:result (body-json (post "/authoring/create-timeline" {:title "Ordering"})))
           sl   (:result (body-json (post "/authoring/add-slice"
-                                         {:timeline (:id tl) :title "Place" :kind "state_change" :index 0})))
-          cmd  (:result (body-json (post "/authoring/create-element" {:name "PlaceOrder" :kind "command"})))
+                                         {:timeline (:id tl) :title "Place" :slice-type "state_change" :index 0})))
+          cmd  (:result (body-json (post "/authoring/create-element" {:name "PlaceOrder" :element-type "command"})))
           _    (post "/authoring/place-element" {:slice (:id sl) :element (:id cmd)})
           spec (:result (body-json (post "/authoring/add-specification" {:slice (:id sl) :title "spec"})))
           st   (:result (body-json (post "/authoring/add-spec-step"
@@ -73,11 +73,11 @@
   (testing "an invariant-violating command is 422"
     (let [tl (:result (body-json (post "/authoring/create-timeline" {:title "T"})))
           sl (:result (body-json (post "/authoring/add-slice"
-                                       {:timeline (:id tl) :title "S" :kind "state_change" :index 0})))
-          c1 (:result (body-json (post "/authoring/create-element" {:name "A" :kind "command"})))
-          c2 (:result (body-json (post "/authoring/create-element" {:name "B" :kind "command"})))]
+                                       {:timeline (:id tl) :title "S" :slice-type "state_change" :index 0})))
+          c1 (:result (body-json (post "/authoring/create-element" {:name "A" :element-type "command"})))
+          c2 (:result (body-json (post "/authoring/create-element" {:name "B" :element-type "command"})))]
       (is (= 200 (:status (post "/authoring/place-element" {:slice (:id sl) :element (:id c1)}))))
-      ;; a second command in a state_change slice breaks PlacementMatchesSliceKind
+      ;; a second command in a state_change slice breaks PlacementMatchesSliceType
       (let [resp (post "/authoring/place-element" {:slice (:id sl) :element (:id c2)})]
         (is (= 422 (:status resp)))
         (is (= "invariant-violation" (:error (body-json resp))))))))
@@ -86,9 +86,9 @@
   (testing "export of an incomplete model is 422; a complete one exports 200"
     (let [tl (:result (body-json (post "/authoring/create-timeline" {:title "Ordering"})))
           sl (:result (body-json (post "/authoring/add-slice"
-                                       {:timeline (:id tl) :title "Place" :kind "state_change" :index 0})))]
+                                       {:timeline (:id tl) :title "Place" :slice-type "state_change" :index 0})))]
       (is (= 422 (:status (get* "/export"))) "no command placed yet")
-      (let [cmd (:result (body-json (post "/authoring/create-element" {:name "PlaceOrder" :kind "command"})))]
+      (let [cmd (:result (body-json (post "/authoring/create-element" {:name "PlaceOrder" :element-type "command"})))]
         (post "/authoring/place-element" {:slice (:id sl) :element (:id cmd)})
         (let [spec (:result (body-json (post "/authoring/add-specification" {:slice (:id sl) :title "spec"})))]
           (is (= 422 (:status (get* "/export"))) "spec has no when-command yet")
@@ -101,7 +101,7 @@
   "A document in the eventmodeling.schema.json interchange shape whose
   STATE_CHANGE slice carries `n` commands. n = 1 is valid and imports; n = 2 is
   still valid against the schema (a slice's arrays hold as many commands as they
-  like) but the always-on authoring invariant PlacementMatchesSliceKind forbids
+  like) but the always-on authoring invariant PlacementMatchesSliceType forbids
   it, so the document must be refused."
   [n]
   {"name" "Imported"
@@ -127,9 +127,9 @@
   (testing "POST /import of a valid-but-forbidden document is refused and installs nothing"
     (let [tl     (:result (body-json (post "/authoring/create-timeline" {:title "Ordering"})))
           sl     (:result (body-json (post "/authoring/add-slice" {:timeline (:id tl) :title "Place"
-                                                                   :kind "state_change" :index 0})))
+                                                                   :slice-type "state_change" :index 0})))
           cmd    (:result (body-json (post "/authoring/create-element" {:name "PlaceOrder"
-                                                                        :kind "command"})))
+                                                                        :element-type "command"})))
           _      (post "/authoring/place-element" {:slice (:id sl) :element (:id cmd)})
           before (body-json (get* "/snapshot"))
           resp   (post "/import" (import-doc 2))
@@ -153,8 +153,8 @@
 (deftest resolve-endpoint
   (testing "POST /resolve batches name lookups without exposing the whole model"
     (let [tl (:result (body-json (post "/authoring/create-timeline" {:title "Checkout"})))
-          _  (post "/authoring/add-slice" {:timeline (:id tl) :title "Baz" :kind "state_change" :index 0})
-          _  (post "/authoring/create-element" {:name "Snaz" :kind "read_model"})
+          _  (post "/authoring/add-slice" {:timeline (:id tl) :title "Baz" :slice-type "state_change" :index 0})
+          _  (post "/authoring/create-element" {:name "Snaz" :element-type "read_model"})
           resp (post "/resolve" {:queries [{:name "Baz"} {:name "Snaz"} {:name "Nope"}]})
           results (:results (body-json resp))]
       (is (= 200 (:status resp)))
@@ -169,9 +169,9 @@
   (testing "POST /query follows relations from a root without dumping the model"
     (let [tl  (:result (body-json (post "/authoring/create-timeline" {:title "Checkout"})))
           sl  (:result (body-json (post "/authoring/add-slice"
-                                        {:timeline (:id tl) :title "Ordering" :kind "state_change" :index 0})))
-          e1  (:result (body-json (post "/authoring/create-element" {:name "PlaceOrder" :kind "command"})))
-          e2  (:result (body-json (post "/authoring/create-element" {:name "OrderPlaced" :kind "event"})))
+                                        {:timeline (:id tl) :title "Ordering" :slice-type "state_change" :index 0})))
+          e1  (:result (body-json (post "/authoring/create-element" {:name "PlaceOrder" :element-type "command"})))
+          e2  (:result (body-json (post "/authoring/create-element" {:name "OrderPlaced" :element-type "event"})))
           _   (post "/authoring/place-element" {:slice (:id sl) :element (:id e1)})
           _   (post "/authoring/place-element" {:slice (:id sl) :element (:id e2)})
           resp (post "/query" {:query (str "slice:" (:id sl) " | elements {index}")})

@@ -21,8 +21,8 @@
           store       (:store (s/ok store r/create-timeline {:model mid :title "T"}))
           tlid        (:id (first (m/timelines store mid)))
           slice       (:result (s/ok store r/add-slice {:timeline tlid :title "S"
-                                                        :kind :state_change :index 0}))]
-      (is (= :state_change (:kind slice)))
+                                                        :slice-type :state_change :index 0}))]
+      (is (= :state_change (:slice_type slice)))
       (is (= :created (:status slice)))
       (is (= 0 (:index slice)))
       (is (= tlid (:timeline slice))))))
@@ -30,16 +30,16 @@
 (deftest element-default-context
   (testing "CreateElement defaults context to :internal and fields to []"
     (let [[store mid] (s/with-model)
-          el          (:result (s/ok store r/create-element {:model mid :name "Order" :kind :command}))]
+          el          (:result (s/ok store r/create-element {:model mid :name "Order" :element-type :command}))]
       (is (= :internal (:context el)))
       (is (= [] (:fields el)))
-      (is (= :command (:kind el))))))
+      (is (= :command (:element_type el))))))
 
 ;; --- entity_optional -------------------------------------------------------
 
 (deftest element-optionals-absent-by-default
   (let [[store mid] (s/with-model)
-        el          (:result (s/ok store r/create-element {:model mid :name "Order" :kind :screen}))]
+        el          (:result (s/ok store r/create-element {:model mid :name "Order" :element-type :screen}))]
     (is (nil? (:swimlane el)))
     (is (nil? (:image_url el)))))
 
@@ -48,7 +48,7 @@
     (let [[store mid] (s/with-model)
           store       (:store (s/ok store r/create-timeline {:model mid :title "T"}))
           tlid        (:id (first (m/timelines store mid)))
-          store       (:store (s/ok store r/add-slice {:timeline tlid :title "S" :kind :state_change :index 0}))
+          store       (:store (s/ok store r/add-slice {:timeline tlid :title "S" :slice-type :state_change :index 0}))
           slid        (:id (first (m/slices store tlid)))
           store       (:store (s/ok store r/add-specification {:slice slid :title "spec"}))
           spid        (:id (first (m/specs store slid)))
@@ -70,20 +70,20 @@
 
 ;; --- projections (Slice.commands etc.) -------------------------------------
 
-(defn- seed-slice [kind]
+(defn- seed-slice [slice-type]
   (let [[store mid] (s/with-model)
         store       (:store (s/ok store r/create-timeline {:model mid :title "T"}))
         tlid        (:id (first (m/timelines store mid)))
-        store       (:store (s/ok store r/add-slice {:timeline tlid :title "S" :kind kind :index 0}))
+        store       (:store (s/ok store r/add-slice {:timeline tlid :title "S" :slice-type slice-type :index 0}))
         slid        (:id (first (m/slices store tlid)))]
     [store mid slid]))
 
-(defn- place [store mid slid name kind]
-  (let [store (:store (s/ok store r/create-element {:model mid :name name :kind kind}))
+(defn- place [store mid slid name element-type]
+  (let [store (:store (s/ok store r/create-element {:model mid :name name :element-type element-type}))
         eid   (:id (last (m/elements store mid)))]
     [(:store (s/ok store r/place-element {:slice slid :element eid})) eid]))
 
-(deftest slice-projections-group-by-element-kind
+(deftest slice-projections-group-by-element-type
   (let [[store mid slid] (seed-slice :state_change)
         [store _]        (place store mid slid "PlaceOrder" :command)
         [store _]        (place store mid slid "OrderPlaced" :event)]
@@ -120,7 +120,7 @@
 
 (deftest spec-is-complete
   (let [[store mid slid] (seed-slice :state_change)
-        store            (:store (s/ok store r/create-element {:model mid :name "PlaceOrder" :kind :command}))
+        store            (:store (s/ok store r/create-element {:model mid :name "PlaceOrder" :element-type :command}))
         cmd              (:id (last (m/elements store mid)))
         store            (:store (s/ok store r/add-specification {:slice slid :title "spec"}))
         spid             (:id (first (m/specs store slid)))]

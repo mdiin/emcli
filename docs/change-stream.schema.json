@@ -40,12 +40,12 @@
                     "type": "array",
                     "items": {
                       "type": "object",
-                      "required": ["id", "title", "kind", "status", "index", "is_complete", "placements", "specifications"],
+                      "required": ["id", "title", "slice_type", "status", "index", "is_complete", "placements", "specifications"],
                       "additionalProperties": false,
                       "properties": {
                         "id": { "type": "integer", "description": "Slice id" },
                         "title": { "type": "string" },
-                        "kind": { "$ref": "#/$defs/sliceKind" },
+                        "slice_type": { "$ref": "#/$defs/sliceType" },
                         "status": { "$ref": "#/$defs/sliceStatus" },
                         "index": { "type": "integer" },
                         "is_complete": {
@@ -63,12 +63,12 @@
                               "index": { "type": "integer", "description": "display order within the slice" },
                               "element": {
                                 "type": "object",
-                                "required": ["id", "name", "kind", "is_information_complete", "fields"],
+                                "required": ["id", "name", "element_type", "is_information_complete", "fields"],
                                 "additionalProperties": false,
                                 "properties": {
                                   "id": { "type": "integer", "description": "Element id (correlates with element deltas)" },
                                   "name": { "type": "string" },
-                                  "kind": { "$ref": "#/$defs/elementKind" },
+                                  "element_type": { "$ref": "#/$defs/elementType" },
                                   "swimlane": { "type": ["integer", "null"], "description": "Swimlane id, or null if unassigned." },
                                   "is_information_complete": {
                                     "type": "boolean",
@@ -286,28 +286,28 @@
     },
     "Slice": {
       "type": "object",
-      "required": ["id", "type", "timeline", "title", "kind", "index", "status"],
+      "required": ["id", "type", "timeline", "title", "slice_type", "index", "status"],
       "additionalProperties": false,
       "properties": {
         "id": { "type": "integer" },
         "type": { "const": "slice" },
         "timeline": { "type": "integer", "description": "owning Timeline id" },
         "title": { "type": "string" },
-        "kind": { "$ref": "#/$defs/sliceKind" },
+        "slice_type": { "$ref": "#/$defs/sliceType" },
         "index": { "type": "integer" },
         "status": { "$ref": "#/$defs/sliceStatus" }
       }
     },
     "Element": {
       "type": "object",
-      "required": ["id", "type", "model", "name", "kind", "context", "fields", "field_origins", "is_information_complete"],
+      "required": ["id", "type", "model", "name", "element_type", "context", "fields", "field_origins", "is_information_complete"],
       "additionalProperties": false,
       "properties": {
         "id": { "type": "integer" },
         "type": { "const": "element" },
         "model": { "type": "integer" },
         "name": { "type": "string" },
-        "kind": { "$ref": "#/$defs/elementKind" },
+        "element_type": { "$ref": "#/$defs/elementType" },
         "context": { "$ref": "#/$defs/elementContext" },
         "fields": { "type": "array", "items": { "$ref": "#/$defs/Field" } },
         "swimlane": {
@@ -493,9 +493,9 @@
       "enum": ["timeline", "swimlane", "slice", "element", "placement",
                "connection", "specification", "spec-step"]
     },
-    "sliceKind": { "enum": ["state_change", "state_view", "automation"] },
+    "sliceType": { "enum": ["state_change", "state_view", "automation"] },
     "sliceStatus": { "enum": ["created", "in_progress", "done", "informational"] },
-    "elementKind": { "enum": ["command", "event", "read_model", "screen", "automation"] },
+    "elementType": { "enum": ["command", "event", "read_model", "screen", "automation"] },
     "elementContext": { "enum": ["internal", "external"] },
     "clause": { "enum": ["given_step", "when_step", "then_step"] },
     "fieldType": {
@@ -508,7 +508,7 @@
       "enum": [
         "CreateTimeline", "RenameTimeline", "DeleteTimeline",
         "CreateSwimlane", "RenameSwimlane", "ReorderSwimlane", "DeleteSwimlane",
-        "AddSlice", "ReorderSlice", "SetSliceStatus", "SetSliceKind", "DeleteSlice",
+        "AddSlice", "ReorderSlice", "SetSliceStatus", "SetSliceType", "DeleteSlice",
         "CreateElement", "SetFields", "SetElementContext", "AssignSwimlane",
         "SetImageUrl", "SetFieldOrigins", "RenameElement", "DeleteElement",
         "AddWireframeNode", "AddWireframeNodeBefore", "SetWireframeAttr",

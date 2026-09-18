@@ -14,7 +14,7 @@
     [:button {:-id "n5"} {:label "Create order" :variant :primary :command-input true}]]])
 
 (def ^:private screen-element
-  {:id 42 :kind :screen :name "OrderList"
+  {:id 42 :element_type :screen :name "OrderList"
    :fields [{:name "searchTerm" :type :string}]})
 
 ;; ---------------------------------------------------------------------------

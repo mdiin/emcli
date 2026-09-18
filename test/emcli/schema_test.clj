@@ -18,7 +18,7 @@
         store       (:store (s/ok store r/create-swimlane {:model mid :name "OrderLane" :index 0}))
         lane        (:id (first (m/swimlanes store mid)))
         ;; elements
-        mk          (fn [s name kind] (let [s (:store (s/ok s r/create-element {:model mid :name name :kind kind}))]
+        mk          (fn [s name element-type] (let [s (:store (s/ok s r/create-element {:model mid :name name :element-type element-type}))]
                                         [s (:id (last (m/elements s mid)))]))
         [store scr] (mk store "OrderScreen" :screen)
         [store cmd] (mk store "PlaceOrder" :command)
@@ -38,7 +38,7 @@
         store       (:store (s/ok store r/create-timeline {:model mid :title "Ordering"}))
         tl1         (:id (first (m/timelines store mid)))
         store       (:store (s/ok store r/add-slice {:timeline tl1 :title "Place an order"
-                                                     :kind :state_change :index 0}))
+                                                     :slice-type :state_change :index 0}))
         sc1         (:id (first (m/slices store tl1)))
         store       (:store (s/ok store r/place-element {:slice sc1 :element cmd}))
         store       (:store (s/ok store r/place-element {:slice sc1 :element evt}))
@@ -54,7 +54,7 @@
         store       (:store (s/ok store r/create-timeline {:model mid :title "Viewing"}))
         tl2         (:id (second (m/timelines store mid)))
         store       (:store (s/ok store r/add-slice {:timeline tl2 :title "View orders"
-                                                     :kind :state_view :index 0}))
+                                                     :slice-type :state_view :index 0}))
         sc2         (:id (first (m/slices store tl2)))
         store       (:store (s/ok store r/place-element {:slice sc2 :element rm}))
         store       (:store (s/ok store r/place-element {:slice sc2 :element scr}))
@@ -69,7 +69,7 @@
    :swimlanes (sort (map :name (m/swimlanes store mid)))
    :elements (sort-by :name
                       (for [e (m/elements store mid)]
-                        {:name (:name e) :kind (:kind e) :context (:context e)
+                        {:name (:name e) :element_type (:element_type e) :context (:context e)
                          :swimlane (some->> (:swimlane e) (m/fetch store :swimlane) :name)
                          :image_url (:image_url e)
                          :fields (mapv #(select-keys % [:name :type :optional :cardinality]) (:fields e))}))
@@ -79,7 +79,7 @@
    :timelines (for [t (m/timelines store mid)]
                 {:title (:title t)
                  :slices (for [sl (m/slices store (:id t))]
-                           {:title (:title sl) :kind (:kind sl) :status (:status sl) :index (:index sl)
+                           {:title (:title sl) :slice_type (:slice_type sl) :status (:status sl) :index (:index sl)
                             :placements (sort (map #(:name (m/placement-element store %))
                                                    (m/placements store (:id sl))))
                             :specs (for [sp (m/specs store (:id sl))]
@@ -111,7 +111,7 @@
           store       (:store (s/ok store r/create-timeline {:model mid :title "T"}))
           tlid        (:id (first (m/timelines store mid)))
           store       (:store (s/ok store r/add-slice {:timeline tlid :title "incomplete"
-                                                       :kind :state_change :index 0}))]
+                                                       :slice-type :state_change :index 0}))]
       (is (seq (sc/export-readiness store mid)))
       (is (thrown? clojure.lang.ExceptionInfo (sc/export store mid))))))
 
@@ -121,7 +121,7 @@
           store       (:store (s/ok store r/create-timeline {:model mid :title "Notes"}))
           tlid        (:id (last (m/timelines store mid)))
           store       (:store (s/ok store r/add-slice {:timeline tlid :title "just a note"
-                                                       :kind :state_change :index 0}))
+                                                       :slice-type :state_change :index 0}))
           slid        (:id (first (m/slices store tlid)))
           store       (:store (s/ok store r/set-slice-status {:slice slid :new-status :informational}))
           doc         (sc/export store mid)]
@@ -133,7 +133,7 @@
           store       (:store (s/ok store r/create-timeline {:model mid :title "Notes"}))
           tlid        (:id (last (m/timelines store mid)))
           store       (:store (s/ok store r/add-slice {:timeline tlid :title "just a note"
-                                                       :kind :state_change :index 0}))
+                                                       :slice-type :state_change :index 0}))
           slid        (:id (first (m/slices store tlid)))
           store       (:store (s/ok store r/set-slice-status {:slice slid :new-status :informational}))
           store       (:store (s/ok store r/add-specification {:slice slid :title "half written"}))]
@@ -290,7 +290,7 @@
   "`foreign-doc` with a second command embedded in its state_change slice. The
   document is valid against eventmodeling.schema.json - a slice's arrays hold as
   many commands as they like - but the always-on authoring invariant
-  PlacementMatchesSliceKind forbids a state_change slice holding two commands."
+  PlacementMatchesSliceType forbids a state_change slice holding two commands."
   [doc]
   (let [extra {"id" "emb-cmd-2" "groupId" "grp-cmd-2" "title" "CancelOrder" "type" "COMMAND"
                "context" "INTERNAL" "aggregate" "Orders" "fields" [] "dependencies" []}]

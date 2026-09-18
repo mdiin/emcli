@@ -13,8 +13,8 @@
 
 (defn- author! [a]
   (let [tl (:result (cmd/run a "create-timeline" {:title "Ordering"}))
-        sl (:result (cmd/run a "add-slice" {:timeline (:id tl) :title "Place" :kind "state_change" :index 0}))
-        c  (:result (cmd/run a "create-element" {:name "PlaceOrder" :kind "command"}))]
+        sl (:result (cmd/run a "add-slice" {:timeline (:id tl) :title "Place" :slice-type "state_change" :index 0}))
+        c  (:result (cmd/run a "create-element" {:name "PlaceOrder" :element-type "command"}))]
     (cmd/run a "place-element" {:slice (:id sl) :element (:id c)})
     {:tl (:id tl) :sl (:id sl) :c (:id c)}))
 
@@ -57,7 +57,7 @@
           a    (app/new-app "Orders" file)]
       (try
         (let [ids (author! a)
-              ev  (:result (cmd/run a "create-element" {:name "OrderPlaced" :kind "event"}))]
+              ev  (:result (cmd/run a "create-element" {:name "OrderPlaced" :element-type "event"}))]
           (cmd/run a "place-element" {:slice (:sl ids) :element (:id ev)})
           ;; hand-edit the persisted file: duplicate the EVENT placement. `repair`
           ;; drops the later duplicate regardless of element kind, so the load
@@ -86,7 +86,7 @@
           a    (app/new-app "Orders" file)]
       (try
         (let [ids (author! a)
-              ev  (:result (cmd/run a "create-element" {:name "OrderPlaced" :kind "event"}))]
+              ev  (:result (cmd/run a "create-element" {:name "OrderPlaced" :element-type "event"}))]
           (cmd/run a "place-element" {:slice (:sl ids) :element (:id ev)})
           ;; hand-edit the file into a repairable state, as in the duplicate
           ;; placement test, then load it: the app reports the repair it made.
@@ -107,7 +107,7 @@
     (let [file (tmp-file)
           a    (app/new-app "Orders" file)]
       (try
-        (let [scr (:result (cmd/run a "create-element" {:name "OrderList" :kind "screen"}))]
+        (let [scr (:result (cmd/run a "create-element" {:name "OrderList" :element-type "screen"}))]
           (cmd/run a "add-field" {:element (:id scr) :name "searchTerm" :type "string"})
           ;; hand-edit the persisted file: give the screen a structurally sound
           ;; layout naming a field it does not declare. No wireframe rule would
@@ -134,7 +134,7 @@
     (let [file (tmp-file)
           a    (app/new-app "Orders" file)]
       (try
-        (cmd/run a "create-element" {:name "OrderPlaced" :kind "event"})
+        (cmd/run a "create-element" {:name "OrderPlaced" :element-type "event"})
         ;; hand-edit the persisted file: add an element whose name differs from an
         ;; existing one only in case. No authoring rule would install it - the
         ;; guards reject the collision - and no repair can undo one either, since
@@ -143,7 +143,7 @@
         (let [{:keys [model store]} (edn/read-string (slurp file))
               [dirty dup]           (m/create store :element {:model model
                                                               :name "orderplaced"
-                                                              :kind :event
+                                                              :element_type :event
                                                               :context :internal
                                                               :fields []
                                                               :field_origins []})]

@@ -70,13 +70,13 @@
    "reorder-swimlane"    {:rule r/reorder-swimlane    :params [[:lane :lane :int true] [:new-index :new-index :int true]]}
    "delete-swimlane"     {:rule r/delete-swimlane     :params [[:lane :lane :int true]]}
    ;; Slices
-   "add-slice"           {:rule r/add-slice           :params [[:timeline :timeline :int true] [:title :title :str true] [:kind :kind :kw true] [:index :index :int true] [:id :id :int false]]}
+   "add-slice"           {:rule r/add-slice           :params [[:timeline :timeline :int true] [:title :title :str true] [:slice-type :slice-type :kw true] [:index :index :int true] [:id :id :int false]]}
    "reorder-slice"       {:rule r/reorder-slice       :params [[:slice :slice :int true] [:new-index :new-index :int true]]}
    "set-slice-status"    {:rule r/set-slice-status    :params [[:slice :slice :int true] [:new-status :new-status :kw true]]}
-   "set-slice-kind"      {:rule r/set-slice-kind      :params [[:slice :slice :int true] [:new-kind :new-kind :kw true]]}
+   "set-slice-type"      {:rule r/set-slice-type      :params [[:slice :slice :int true] [:new-slice-type :new-slice-type :kw true]]}
    "delete-slice"        {:rule r/delete-slice        :params [[:slice :slice :int true]]}
    ;; Elements
-   "create-element"      {:rule r/create-element      :model? true  :params [[:name :name :str true] [:kind :kind :kw true] [:id :id :int false]]}
+   "create-element"      {:rule r/create-element      :model? true  :params [[:name :name :str true] [:element-type :element-type :kw true] [:id :id :int false]]}
    "set-element-context" {:rule r/set-element-context :params [[:element :element :int true] [:new-context :new-context :kw true]]}
    "assign-swimlane"     {:rule r/assign-swimlane     :params [[:element :element :int true] [:lane :lane :int true]]}
    "set-image-url"       {:rule r/set-image-url       :params [[:element :element :int true] [:url :url :str true]]}
@@ -332,7 +332,7 @@
                   {:id (:id t) :title (:title t)
                    :slices (for [sl (m/slices s (:id t))
                                  :let [sid (:id sl)]]
-                             {:id sid :title (:title sl) :kind (:kind sl) :status (:status sl)
+                             {:id sid :title (:title sl) :slice_type (:slice_type sl) :status (:status sl)
                               :index (:index sl) :is_complete (m/slice-complete? s sl)
                               :timeline_title (:title t)
                               :placements (for [p (m/placements s sid)]
@@ -355,7 +355,7 @@
                                                                        (select-keys e [:field_name :field_value]))})})})})
      :swimlanes   (for [sw (m/swimlanes s mid)] {:id (:id sw) :name (:name sw) :index (:index sw)})
      :elements    (for [e (m/elements s mid)]
-                    (cond-> {:id (:id e) :name (:name e) :kind (:kind e)
+                    (cond-> {:id (:id e) :name (:name e) :element_type (:element_type e)
                              :swimlane (:swimlane e)
                              :is_information_complete (m/information-complete? s e)}
                       (:wireframe e) (assoc :wireframe (:wireframe e))))

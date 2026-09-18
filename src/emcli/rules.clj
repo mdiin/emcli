@@ -56,11 +56,15 @@
 ;; before it is applied - and the rejection names the entity that already holds
 ;; the name, so a caller reuses or places what exists instead of inventing a
 ;; near-duplicate name.
-(defn- name-conflict [type {:keys [id kind]} entity-name]
-  {:error :name-conflict :type type :id id :name entity-name
-   :message (str "the name " (pr-str entity-name) " is already used by " (name type)
-                 " " id (when kind (str " (" (name kind) ")"))
-                 "; reuse or place it instead")})
+(defn- name-conflict [type e entity-name]
+  ;; The colliding entity's own type, whichever it has: an element carries
+  ;; :element_type, a slice :slice_type, and a timeline or swimlane neither.
+  (let [id     (:id e)
+        subtype (or (:element_type e) (:slice_type e))]
+    {:error :name-conflict :type type :id id :name entity-name
+     :message (str "the name " (pr-str entity-name) " is already used by " (name type)
+                   " " id (when subtype (str " (" (name subtype) ")"))
+                   "; reuse or place it instead")}))
 
 (defn- require-unique-name
   "Reject `entity-name` when one of `entities` - one container's worth, compared
@@ -70,8 +74,8 @@
   (when-let [e (m/name-collision entity-name entities name-key exclude)]
     (name-conflict type e entity-name)))
 
-(def ^:private element-kinds    #{:command :event :read_model :screen :automation})
-(def ^:private slice-kinds      #{:state_change :state_view :automation})
+(def ^:private element-types    #{:command :event :read_model :screen :automation})
+(def ^:private slice-types      #{:state_change :state_view :automation})
 (def ^:private slice-statuses   #{:created :in_progress :done :informational})
 (def ^:private spec-step-clauses #{:given_step :when_step :then_step})
 (def ^:private element-contexts #{:internal :external})
@@ -230,14 +234,14 @@
 ;; Slices
 ;; ---------------------------------------------------------------------------
 
-(defn add-slice [store {:keys [timeline title kind index id]}]
+(defn add-slice [store {:keys [timeline title slice-type index id]}]
   (or (require-entity store :timeline timeline)
       (require-id-available store id)
       (require-non-blank :title title)
-      (require-valid-value slice-kinds kind)
+      (require-valid-value slice-types slice-type)
       (require-unique-name :slice title (m/slices store timeline) :title nil)
       (let [[store sl] (m/create store :slice (with-id {:timeline timeline :title title
-                                                        :kind kind :index index
+                                                        :slice_type slice-type :index index
                                                         :status :created} id))]
         (commit store :AddSlice [(created :slice sl)] sl))))
 
@@ -254,24 +258,24 @@
         (commit store :SetSliceStatus [(updated store :slice slice)]
                 (m/fetch store :slice slice)))))
 
-(defn set-slice-kind [store {:keys [slice new-kind]}]
+(defn set-slice-type [store {:keys [slice new-slice-type]}]
   (or (require-entity store :slice slice)
-      (require-valid-value slice-kinds new-kind)
-      (let [store (m/set-field store :slice slice :kind new-kind)]
-        (commit store :SetSliceKind [(updated store :slice slice)]
+      (require-valid-value slice-types new-slice-type)
+      (let [store (m/set-field store :slice slice :slice_type new-slice-type)]
+        (commit store :SetSliceType [(updated store :slice slice)]
                 (m/fetch store :slice slice)))))
 
 ;; ---------------------------------------------------------------------------
 ;; Elements
 ;; ---------------------------------------------------------------------------
 
-(defn create-element [store {:keys [model name kind id]}]
+(defn create-element [store {:keys [model name element-type id]}]
   (or (require-entity store :event-model model)
       (require-id-available store id)
       (require-non-blank :name name)
-      (require-valid-value element-kinds kind)
+      (require-valid-value element-types element-type)
       (require-unique-name :element name (m/elements store model) :name nil)
-      (let [[store el] (m/create store :element (with-id {:model model :name name :kind kind
+      (let [[store el] (m/create store :element (with-id {:model model :name name :element_type element-type
                                                            :context :internal :fields []
                                                            :field_origins []} id))
             ;; DeltaPerMutation: every entity carries its full new state, so the
@@ -726,7 +730,7 @@
 (defn add-wireframe-node [store {:keys [element tag parent attrs text]}]
   (or (require-entity store :element element)
       (let [el (m/fetch store :element element)]
-        (or (when (not= :screen (:kind el))
+        (or (when (not= :screen (:element_type el))
               {:error :invalid-value
                :message (str "element " element " is not a screen")})
             (when (= :canvas tag)
@@ -758,7 +762,7 @@
 (defn add-wireframe-node-before [store {:keys [element before tag attrs text]}]
   (or (require-entity store :element element)
       (let [el (m/fetch store :element element)]
-        (or (when (not= :screen (:kind el))
+        (or (when (not= :screen (:element_type el))
               {:error :invalid-value
                :message (str "element " element " is not a screen")})
             (when (= :canvas tag)

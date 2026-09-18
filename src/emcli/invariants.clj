@@ -7,12 +7,12 @@
             [emcli.model :as m]
             [emcli.wireframe :as wf]))
 
-(defn- step-kind [store step]
-  (:kind (m/step-element store step)))
+(defn- step-element-type [store step]
+  (:element_type (m/step-element store step)))
 
-;; PlacementMatchesSliceKind ------------------------------------------------
-;; A non-informational slice may never hold an element kind that is a category
-;; error for it, nor more than one of a singleton kind.
+;; PlacementMatchesSliceType ------------------------------------------------
+;; A non-informational slice may never hold an element type that is a category
+;; error for it, nor more than one of a singleton type.
 (defn- placement-violations [store]
   (for [s     (m/all store :slice)
         :when (not= :informational (:status s))
@@ -20,15 +20,15 @@
                c  (count (m/slice-commands store id))
                r  (count (m/slice-read-models store id))
                a  (count (m/slice-automations store id))
-               ok (case (:kind s)
+               ok (case (:slice_type s)
                     :state_change (and (<= c 1) (zero? r) (zero? a))
                     :state_view   (and (<= r 1) (zero? c) (zero? a))
                     :automation   (and (<= c 1) (<= a 1) (zero? r))
                     true)]
         :when (not ok)]
-    {:invariant :PlacementMatchesSliceKind
+    {:invariant :PlacementMatchesSliceType
      :slice     id
-     :message   (str "Slice " id " (" (name (:kind s)) ") has an illegal "
+     :message   (str "Slice " id " (" (name (:slice_type s)) ") has an illegal "
                      "placement composition: commands=" c
                      " read_models=" r " automations=" a)}))
 
@@ -80,7 +80,7 @@
     {:invariant invariant
      :type      type
      :name      (get (first es) name-field)
-     :entities  (mapv #(select-keys % [:id :kind]) es)
+     :entities  (mapv #(select-keys % [:id :element_type :slice_type]) es)
      :message   (str (str/join ", " (map #(str (name type) " " (:id %)) es))
                      " share the name " (pr-str (get (first es) name-field)))}))
 
@@ -168,30 +168,30 @@
   (for [spec  (m/all store :specification)
         :let  [id         (:id spec)
                slice      (m/fetch store :slice (:slice spec))
-               slice-kind (:kind slice)
+               slice-type (:slice_type slice)
                givens     (m/spec-given-steps store id)
                whens      (m/spec-when-steps store id)
                thens      (m/spec-then-steps store id)
                ok (and
-                   (every? #(= :event (step-kind store %)) givens)
-                   (every? #(= :command (step-kind store %)) whens)
-                   (if (#{:state_change :automation} slice-kind)
+                   (every? #(= :event (step-element-type store %)) givens)
+                   (every? #(= :command (step-element-type store %)) whens)
+                   (if (#{:state_change :automation} slice-type)
                      (and (<= (count (m/spec-when-commands store id)) 1)
-                          (every? #(or (:is_error %) (= :event (step-kind store %)))
+                          (every? #(or (:is_error %) (= :event (step-element-type store %)))
                                   thens))
                      true)
-                   (if (= :state_view slice-kind)
+                   (if (= :state_view slice-type)
                      (and (zero? (count whens))
                           (<= (count (m/spec-then-read-models store id)) 1)
-                          (every? #(= :read_model (step-kind store %)) thens))
+                          (every? #(= :read_model (step-element-type store %)) thens))
                      true))]
         :when (not ok)]
     {:invariant     :SpecificationComposition
      :specification id
      :message       (str "Specification " id " violates the composition rules "
-                         "for its " (name (or slice-kind :nil)) " slice")}))
+                         "for its " (name (or slice-type :nil)) " slice")}))
 
-;; ValidConnectionKinds ------------------------------------------------------
+;; ValidConnectionElementTypes ------------------------------------------------------
 (def ^:private valid-connection-pairs
   #{[:screen :command]
     [:command :event]
@@ -204,12 +204,12 @@
   (for [c     (m/all store :connection)
         :let  [from (m/fetch store :element (:from c))
                to   (m/fetch store :element (:to c))]
-        :when (not (valid-connection-pairs [(:kind from) (:kind to)]))]
-    {:invariant  :ValidConnectionKinds
+        :when (not (valid-connection-pairs [(:element_type from) (:element_type to)]))]
+    {:invariant  :ValidConnectionElementTypes
      :connection (:id c)
      :message    (str "Connection " (:id c) " is not a valid Event Modeling "
-                      "pattern: " (some-> from :kind name) " -> "
-                      (some-> to :kind name))}))
+                      "pattern: " (some-> from :element_type name) " -> "
+                      (some-> to :element_type name))}))
 
 ;; ExamplesWellFormed ---------------------------------------------------------
 ;; Every recorded example on a spec step must carry a non-empty field_name and
@@ -237,13 +237,13 @@
 (defn- structural-wireframe-violation
   "The WireframeWellFormed violation for element `e` carrying wireframe `w`, or
   nil. A wireframe on a non-screen element is itself the violation — the
-  invariant's own statement is `e.kind = screen and wireframe_well_formed(...)`."
+  invariant's own statement is `e.element_type = screen and wireframe_well_formed(...)`."
   [e w]
-  (if (not= :screen (:kind e))
+  (if (not= :screen (:element_type e))
     {:invariant :WireframeWellFormed
      :element   (:id e)
-     :message   (str "Element " (:id e) " carries a wireframe but its kind is "
-                     (pr-str (:kind e)) ", not :screen")}
+     :message   (str "Element " (:id e) " carries a wireframe but its element_type is "
+                     (pr-str (:element_type e)) ", not :screen")}
     (let [{:keys [valid? errors]} (wf/validate w)]
       (when-not valid?
         {:invariant :WireframeWellFormed

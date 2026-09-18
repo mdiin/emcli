@@ -63,7 +63,7 @@
    "swimlane"   {"add" "create-swimlane" "rename" "rename-swimlane"
                  "reorder" "reorder-swimlane" "delete" "delete-swimlane"}
    "slice"      {"add" "add-slice" "reorder" "reorder-slice" "status" "set-slice-status"
-                 "kind" "set-slice-kind" "delete" "delete-slice"}
+                 "type" "set-slice-type" "delete" "delete-slice"}
    "element"    {"add" "create-element" "add-field" "add-field" "remove-field" "remove-field"
                  "context" "set-element-context"
                  "swimlane" "assign-swimlane" "image" "set-image-url"
@@ -230,10 +230,10 @@
 ;; Valid keyword values per (command, flag) — only listed when the rule enforces
 ;; a bounded set; free-form keyword flags are left without :values.
 (def ^:private param-enums
-  {"add-slice"        {"kind"       ["state_change" "state_view" "automation"]}
+  {"add-slice"        {"slice-type"       ["state_change" "state_view" "automation"]}
    "set-slice-status" {"new-status" ["created" "in_progress" "done" "informational"]}
-   "set-slice-kind"   {"new-kind"   ["state_change" "state_view" "automation"]}
-   "create-element"   {"kind"       ["command" "event" "read_model" "screen" "automation"]}
+   "set-slice-type"   {"new-slice-type"   ["state_change" "state_view" "automation"]}
+   "create-element"   {"element-type"       ["command" "event" "read_model" "screen" "automation"]}
    "add-spec-step"    {"clause"     ["given_step" "when_step" "then_step"]}
    "reorder-placement" {"position"  ["front" "back"]}})
 

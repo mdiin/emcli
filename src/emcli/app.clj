@@ -120,7 +120,7 @@
   Every entity carries its integer `id` — the same surrogate identity the deltas
   use — so a consumer can seed a normalised store from the snapshot and then
   patch it by id from subsequent deltas. The denormalised display fields the
-  ModelChangeStream surface exposes (element/connection names and kinds) are
+  ModelChangeStream surface exposes (element/connection names and element types) are
   nested under their sub-entity, mirroring the spec's `p.element.name` /
   `c.from.name` navigation.
 
@@ -143,13 +143,13 @@
              :timelines (for [t (m/timelines s mid)]
                           {:id (:id t) :title (:title t)
                            :slices (for [sl (m/slices s (:id t))]
-                                     {:id (:id sl) :title (:title sl) :kind (:kind sl)
+                                     {:id (:id sl) :title (:title sl) :slice_type (:slice_type sl)
                                       :status (:status sl) :index (:index sl)
                                       :is_complete (m/slice-complete? s sl)
                                       :placements (for [p (m/placements s (:id sl))
                                                         :let [el (m/placement-element s p)]]
                                                      {:id (:id p) :index (:index p)
-                                                      :element {:id (:id el) :name (:name el) :kind (:kind el)
+                                                      :element {:id (:id el) :name (:name el) :element_type (:element_type el)
                                                                 :swimlane (:swimlane el)
                                                                 :is_information_complete (m/information-complete? s el)
                                                                 :image_url (:image_url el)

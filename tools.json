@@ -17,7 +17,7 @@
     }
   },
   "emcli_element" : {
-    "description" : "Manage elements (commands, events, read models, screens, automations) and their fields.\nVerbs: add (--name --kind [--id]), add-field (--element --name --type [--cardinality] [--optional] [--subfield-of]), add-origin (--element --field --origin), context (--element --new-context), delete (--element), image (--element --url), remove-field (--element --name), remove-origin (--element --field), rename (--element --new-name), swimlane (--element --lane)",
+    "description" : "Manage elements (commands, events, read models, screens, automations) and their fields.\nVerbs: add (--name --element-type [--id]), add-field (--element --name --type [--cardinality] [--optional] [--subfield-of]), add-origin (--element --field --origin), context (--element --new-context), delete (--element), image (--element --url), remove-field (--element --name), remove-origin (--element --field), rename (--element --new-name), swimlane (--element --lane)",
     "command" : "emcli element {{verb}} {{args}}",
     "schema" : {
       "properties" : {
@@ -51,7 +51,7 @@
     }
   },
   "emcli_query" : {
-    "description" : "Read-only structural query over the Event Model. Answers relational questions - e.g. which slices an element is placed in, which elements an event derives from - and returns only the matching part of the model. Use `emcli_resolve` first if you only have names; this tool never writes.\n\nA query is a root followed by stages separated by `|`, applied left-to-right over a collection.\n\nROOT (required, first): an entity kind - timeline | swimlane | slice | element | specification | step - or a single entity as `kind:id` (e.g. `element:42`).\n\nRELATION (a target kind, singular or plural accepted; placements and connections are edges, never roots):\n  timeline -> slice\n  slice -> timeline\n  slice -> specification\n  specification -> slice\n  specification -> step\n  step -> specification\n  step -> element\n  element -> step\n  element -> swimlane\n  swimlane -> element\n  slice -> element   (via placement; project {index})\n  element -> slice   (via placement; project {index})\n  element -> element   [outgoing]   (via connection; project {derivations})\n  element -> element   [incoming]   (via connection; project {derivations})\n\nEDGE PROJECTION `{field,...}`: attach the association record under its key (placement or connection), e.g. `slice:7 | elements {index}` gives each element plus `:placement {:index n}`.\n\nSTAGES:\n  where <field> = | != | ~ | in <value>   ( ~ = regex, in = set membership )\n  order <field> | order -<field>          ( - = descending )\n  select <field,...>\n  count | limit <n> | distinct\n\nExamples:\n  timelines | slice | where status=in_progress | select id,title\n  element:42 | slice\n  slice:7 | elements {index} | where kind=command\n  element:42 | outgoing {derivations}\n\nAn invalid stage returns an error naming the valid alternatives. Run `emcli query --relations` for the live list.",
+    "description" : "Read-only structural query over the Event Model. Answers relational questions - e.g. which slices an element is placed in, which elements an event derives from - and returns only the matching part of the model. Use `emcli_resolve` first if you only have names; this tool never writes.\n\nA query is a root followed by stages separated by `|`, applied left-to-right over a collection.\n\nROOT (required, first): an entity kind - timeline | swimlane | slice | element | specification | step - or a single entity as `kind:id` (e.g. `element:42`).\n\nRELATION (a target kind, singular or plural accepted; placements and connections are edges, never roots):\n  timeline -> slice\n  slice -> timeline\n  slice -> specification\n  specification -> slice\n  specification -> step\n  step -> specification\n  step -> element\n  element -> step\n  element -> swimlane\n  swimlane -> element\n  slice -> element   (via placement; project {index})\n  element -> slice   (via placement; project {index})\n  element -> element   [outgoing]   (via connection; project {derivations})\n  element -> element   [incoming]   (via connection; project {derivations})\n\nEDGE PROJECTION `{field,...}`: attach the association record under its key (placement or connection), e.g. `slice:7 | elements {index}` gives each element plus `:placement {:index n}`.\n\nSTAGES:\n  where <field> = | != | ~ | in <value>   ( ~ = regex, in = set membership )\n  order <field> | order -<field>          ( - = descending )\n  select <field,...>\n  count | limit <n> | distinct\n\nFIELD: a stage names either a row's display field - id, kind (the entity CATEGORY, e.g. `element`), name, breadcrumb, or a projected edge's key - or an attribute the landed entity declares. So `element | select name,element_type,context,fields` reads an element's own field names, which is how you learn what the field operations address a field by (`fields` is the recursive list, subfields included). Beware that `kind` is the CATEGORY: what an element IS is its `element_type` (command | event | read_model | screen | automation), and what a slice is, is its `slice_type`. The set is per kind, and an unknown field name is REJECTED naming what that row does carry - never silently an empty result.\n\nExamples:\n  timelines | slice | where status=in_progress | select id,title\n  element:42 | slice\n  slice:7 | elements {index} | where element_type=command\n  element:42 | outgoing {derivations}\n  element | select name,fields\n\nAn invalid stage, kind, relation or field name returns an error naming the valid alternatives. Run `emcli query --relations` for the live list.",
     "command" : "emcli query --query '{{query}}'",
     "schema" : {
       "properties" : {
@@ -77,13 +77,13 @@
     }
   },
   "emcli_slice" : {
-    "description" : "Manage slices (vertical time segments) within a timeline.\nVerbs: add (--timeline --title --kind --index [--id]), delete (--slice), kind (--slice --new-kind), reorder (--slice --new-index), status (--slice --new-status)",
+    "description" : "Manage slices (vertical time segments) within a timeline.\nVerbs: add (--timeline --title --slice-type --index [--id]), delete (--slice), reorder (--slice --new-index), status (--slice --new-status), type (--slice --new-slice-type)",
     "command" : "emcli slice {{verb}} {{args}}",
     "schema" : {
       "properties" : {
         "verb" : {
           "type" : "string",
-          "enum" : [ "add", "delete", "kind", "reorder", "status" ]
+          "enum" : [ "add", "delete", "reorder", "status", "type" ]
         },
         "args" : {
           "type" : "string",

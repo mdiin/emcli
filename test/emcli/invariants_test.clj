@@ -1,7 +1,7 @@
 (ns emcli.invariants-test
-  "invariant obligations: PlacementMatchesSliceKind, PlacementElementUnique,
+  "invariant obligations: PlacementMatchesSliceType, PlacementElementUnique,
   ElementNameUnique, TimelineTitleUnique, SwimlaneNameUnique, SliceTitleUnique,
-  SpecificationTitleUnique, SpecificationComposition, ValidConnectionKinds,
+  SpecificationTitleUnique, SpecificationComposition, ValidConnectionElementTypes,
   WireframeWellFormed, WireframeReferencesResolve. Rules must reject any mutation
   that would break one."
   (:require [clojure.test :refer [deftest testing is]]
@@ -10,21 +10,21 @@
             [emcli.rules :as r]
             [emcli.support :as s]))
 
-(defn- slice-of [kind]
+(defn- slice-of [slice-type]
   (let [[store mid] (s/with-model)
         store       (:store (s/ok store r/create-timeline {:model mid :title "T"}))
         tlid        (:id (first (m/timelines store mid)))
-        store       (:store (s/ok store r/add-slice {:timeline tlid :title "S" :kind kind :index 0}))
+        store       (:store (s/ok store r/add-slice {:timeline tlid :title "S" :slice-type slice-type :index 0}))
         slid        (:id (first (m/slices store tlid)))]
     [store mid slid]))
 
-(defn- element [store mid name kind]
-  (let [store (:store (s/ok store r/create-element {:model mid :name name :kind kind}))]
+(defn- element [store mid name element-type]
+  (let [store (:store (s/ok store r/create-element {:model mid :name name :element-type element-type}))]
     [store (:id (last (m/elements store mid)))]))
 
-;; --- PlacementMatchesSliceKind --------------------------------------------
+;; --- PlacementMatchesSliceType --------------------------------------------
 
-(deftest placement-must-match-slice-kind
+(deftest placement-must-match-slice-type
   (testing "a read_model cannot be placed in a state_change slice"
     (let [[store mid slid] (slice-of :state_change)
           [store rm]       (element store mid "OrderList" :read_model)
@@ -62,7 +62,7 @@
           tlid             (:timeline (m/fetch store :slice slid))
           store            (:store (s/ok store r/add-slice {:timeline tlid
                                                             :title "S2"
-                                                            :kind :state_change
+                                                            :slice-type :state_change
                                                             :index 1}))
           slid2            (:id (second (m/slices store tlid)))
           res              (r/place-element store {:slice slid2 :element evt})]
@@ -110,14 +110,14 @@
 ;; guard (see rules-test), so a direct write is the only way left to reach the
 ;; state.
 
-(defn- element-attrs [mid name kind]
-  {:model mid :name name :kind kind :context :internal :fields [] :field_origins []})
+(defn- element-attrs [mid name element-type]
+  {:model mid :name name :element_type element-type :context :internal :fields [] :field_origins []})
 
 (defn- collision-invariants [store]
   (map :invariant (inv/check store)))
 
 (deftest element-names-are-unique-within-a-model
-  (testing "two elements may not share a name, whatever their kinds"
+  (testing "two elements may not share a name, whatever their element types"
     (let [[store mid] (s/with-model)
           [store _]   (m/create store :element (element-attrs mid "Order" :command))
           [store _]   (m/create store :element (element-attrs mid "order" :event))]
@@ -153,18 +153,18 @@
   (testing "two slices of one timeline may not share a title"
     (let [[store mid] (s/with-model)
           [store t]   (m/create store :timeline {:model mid :title "Ordering"})
-          [store _]   (m/create store :slice {:timeline (:id t) :title "Add" :kind :state_change
+          [store _]   (m/create store :slice {:timeline (:id t) :title "Add" :slice_type :state_change
                                               :index 0 :status :created})
-          [store _]   (m/create store :slice {:timeline (:id t) :title "add" :kind :state_change
+          [store _]   (m/create store :slice {:timeline (:id t) :title "add" :slice_type :state_change
                                               :index 1 :status :created})]
       (is (= [:SliceTitleUnique] (collision-invariants store)))))
   (testing "the same title in another timeline is a different slice, and legal"
     (let [[store mid] (s/with-model)
           [store t1]  (m/create store :timeline {:model mid :title "Ordering"})
           [store t2]  (m/create store :timeline {:model mid :title "Viewing"})
-          [store _]   (m/create store :slice {:timeline (:id t1) :title "Add" :kind :state_change
+          [store _]   (m/create store :slice {:timeline (:id t1) :title "Add" :slice_type :state_change
                                               :index 0 :status :created})
-          [store _]   (m/create store :slice {:timeline (:id t2) :title "Add" :kind :state_change
+          [store _]   (m/create store :slice {:timeline (:id t2) :title "Add" :slice_type :state_change
                                               :index 0 :status :created})]
       (is (empty? (inv/check store))))))
 
@@ -172,7 +172,7 @@
   (testing "two specifications of one slice may not share a title"
     (let [[store mid] (s/with-model)
           [store t]   (m/create store :timeline {:model mid :title "Ordering"})
-          [store sl]  (m/create store :slice {:timeline (:id t) :title "Add" :kind :state_change
+          [store sl]  (m/create store :slice {:timeline (:id t) :title "Add" :slice_type :state_change
                                               :index 0 :status :created})
           [store _]   (m/create store :specification {:slice (:id sl) :title "Happy path"})
           [store _]   (m/create store :specification {:slice (:id sl) :title "HAPPY PATH"})]
@@ -180,9 +180,9 @@
   (testing "the same title in another slice is a different specification, and legal"
     (let [[store mid] (s/with-model)
           [store t]   (m/create store :timeline {:model mid :title "Ordering"})
-          [store sl1] (m/create store :slice {:timeline (:id t) :title "Add" :kind :state_change
+          [store sl1] (m/create store :slice {:timeline (:id t) :title "Add" :slice_type :state_change
                                               :index 0 :status :created})
-          [store sl2] (m/create store :slice {:timeline (:id t) :title "Cancel" :kind :state_change
+          [store sl2] (m/create store :slice {:timeline (:id t) :title "Cancel" :slice_type :state_change
                                               :index 1 :status :created})
           [store _]   (m/create store :specification {:slice (:id sl1) :title "Happy path"})
           [store _]   (m/create store :specification {:slice (:id sl2) :title "Happy path"})]
@@ -280,7 +280,7 @@
       (is (not (some #(= :WireframeReferencesResolve (:invariant %))
                      (inv/check resolved)))))))
 
-;; --- ValidConnectionKinds --------------------------------------------------
+;; --- ValidConnectionElementTypes --------------------------------------------------
 
 (deftest connections-follow-event-modeling-patterns
   (let [[store mid] (s/with-model)

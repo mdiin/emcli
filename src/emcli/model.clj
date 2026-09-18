@@ -234,24 +234,24 @@
     (fetch store :element eid)))
 
 ;; ---------------------------------------------------------------------------
-;; Slice projections: placements grouped by referenced element kind
+;; Slice projections: placements grouped by referenced element type
 ;; ---------------------------------------------------------------------------
 
-(defn- placements-of-kind [store slice-id kind]
-  (filter #(= kind (:kind (placement-element store %)))
+(defn- placements-of-element-type [store slice-id element-type]
+  (filter #(= element-type (:element_type (placement-element store %)))
           (placements store slice-id)))
 
-(defn slice-commands    [store slice-id] (placements-of-kind store slice-id :command))
-(defn slice-events      [store slice-id] (placements-of-kind store slice-id :event))
-(defn slice-read-models [store slice-id] (placements-of-kind store slice-id :read_model))
-(defn slice-screens     [store slice-id] (placements-of-kind store slice-id :screen))
-(defn slice-automations [store slice-id] (placements-of-kind store slice-id :automation))
+(defn slice-commands    [store slice-id] (placements-of-element-type store slice-id :command))
+(defn slice-events      [store slice-id] (placements-of-element-type store slice-id :event))
+(defn slice-read-models [store slice-id] (placements-of-element-type store slice-id :read_model))
+(defn slice-screens     [store slice-id] (placements-of-element-type store slice-id :screen))
+(defn slice-automations [store slice-id] (placements-of-element-type store slice-id :automation))
 
 (defn slice-complete?
   "Slice.is_complete — the strict composition required before export."
   [store slice]
   (let [id (:id slice)]
-    (case (:kind slice)
+    (case (:slice_type slice)
       :state_change (= 1 (count (slice-commands store id)))
       :state_view   (= 1 (count (slice-read-models store id)))
       :automation   (and (= 1 (count (slice-commands store id)))
@@ -273,12 +273,12 @@
 
 (defn spec-when-commands [store spec-id]
   (filter #(and (= :when_step (:clause %))
-                (= :command (:kind (step-element store %))))
+                (= :command (:element_type (step-element store %))))
           (spec-steps store spec-id)))
 
 (defn spec-then-read-models [store spec-id]
   (filter #(and (= :then_step (:clause %))
-                (= :read_model (:kind (step-element store %))))
+                (= :read_model (:element_type (step-element store %))))
           (spec-steps store spec-id)))
 
 (defn spec-complete?
@@ -286,10 +286,10 @@
   [store spec]
   (let [id        (:id spec)
         slice     (fetch store :slice (:slice spec))
-        slice-kind (:kind slice)]
-    (or (and (#{:state_change :automation} slice-kind)
+        slice-type (:slice_type slice)]
+    (or (and (#{:state_change :automation} slice-type)
              (= 1 (count (spec-when-commands store id))))
-        (and (= :state_view slice-kind)
+        (and (= :state_view slice-type)
              (= 1 (count (spec-then-read-models store id)))))))
 
 ;; ---------------------------------------------------------------------------
