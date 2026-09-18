@@ -6,7 +6,9 @@
 --   - Canonical model: EventModel, Timeline, Swimlane, Slice, Element
 --     (Command / Event / ReadModel / Screen / Automation), Field,
 --     Specification (Given / When / Then)
---   - Single-source Elements, referenced from slices across timelines
+--   - Single-source Elements, referenced from slices across timelines and named
+--     uniquely within their model (compared case-insensitively), so an element's
+--     name identifies exactly one element
 --   - Information completeness / field provenance: every field on an element
 --     traces to a source (carried from an incoming connection's source element,
 --     derived from named source fields, or introduced via an operator override),
@@ -133,7 +135,10 @@ entity ElementPlacement {
 
 entity Element {
     model: EventModel
-    name: String                 -- identity for referencing; unique within model
+    name: String                 -- identity for referencing; unique within its
+                                 -- model, compared case-insensitively and ignoring
+                                 -- surrounding whitespace, so it names exactly one
+                                 -- element (see invariant ElementNameUnique)
     kind: command | event | read_model | screen | automation
     context: internal | external
 
@@ -355,7 +360,7 @@ config {
 
 -- Timelines ----------------------------------------------------------------
 
--- Two conventions hold across the operations below.
+-- Three conventions hold across the operations below.
 --
 -- Optional pre-assigned identity: every operation that creates an entity accepts
 -- an optional `id`, so a caller can name an entity before it exists. Identity is
@@ -368,16 +373,37 @@ config {
 -- blank one, so no entity can be created or renamed to an unusable, unnameable
 -- state. The guards below state this through non_blank, a black box function:
 -- true when the string has at least one non-whitespace character.
+--
+-- Unique names: a name identifies exactly one entity within the smallest
+-- container in which it has to do so. Two names are the same when they are equal
+-- apart from case and surrounding whitespace; the guards below state this through
+-- same_name(a, b), a black box function: true when `a` and `b` are that same
+-- string. An element's name, a timeline's title and a swimlane's name are unique
+-- within their model; a slice's title is unique within its timeline; a
+-- specification's title within its slice (the invariants in the Invariants
+-- section state each, with its reason). Every operation that creates or renames
+-- one of these rejects a collision instead of allowing a second entity under a
+-- name already in use, and the rejection names the entity already holding the
+-- name (its id, and its kind where it has one), so a caller reuses or places
+-- what exists rather than inventing a near-duplicate name. Where a name is unique
+-- within a model, two models may still each hold it.
 
 rule CreateTimeline {
     when: CreateTimeline(model, title, id?)
     requires: non_blank(title)
+    -- A second timeline under a title the model already uses is rejected (see
+    -- invariant TimelineTitleUnique). Beyond addressing it, the title is a group
+    -- key of the interchange format: slices export their timeline as the bare
+    -- `context` string and import groups them back by it.
+    requires: not model.timelines.any(t => same_name(t.title, title))
     ensures: Timeline.created(model: model, title: title)
 }
 
 rule RenameTimeline {
     when: RenameTimeline(timeline, new_title)
     requires: non_blank(new_title)
+    requires: not timeline.model.timelines.any(t =>
+        t != timeline and same_name(t.title, new_title))
     ensures: timeline.title = new_title
 }
 
@@ -386,12 +412,19 @@ rule RenameTimeline {
 rule CreateSwimlane {
     when: CreateSwimlane(model, name, index, id?)
     requires: non_blank(name)
+    -- A second swimlane under a name the model already uses is rejected (see
+    -- invariant SwimlaneNameUnique). The name is also the interchange format's
+    -- only handle on a swimlane (element.aggregate), so a repeat would merge the
+    -- two on import.
+    requires: not model.swimlanes.any(l => same_name(l.name, name))
     ensures: Swimlane.created(model: model, name: name, index: index)
 }
 
 rule RenameSwimlane {
     when: RenameSwimlane(lane, new_name)
     requires: non_blank(new_name)
+    requires: not lane.model.swimlanes.any(other =>
+        other != lane and same_name(other.name, new_name))
     ensures: lane.name = new_name
 }
 
@@ -403,6 +436,12 @@ rule ReorderSwimlane {
 rule RenameElement {
     when: RenameElement(element, new_name)
     requires: non_blank(new_name)
+    -- The new name must still identify exactly one element of the model (see
+    -- invariant ElementNameUnique): renaming an element onto the name another
+    -- element holds is rejected. Renaming an element to the name it already has
+    -- is no collision.
+    requires: not element.model.elements.any(e =>
+        e != element and same_name(e.name, new_name))
     ensures: element.name = new_name
 }
 
@@ -420,6 +459,10 @@ rule DeleteSwimlaneCascades {
 rule AddSlice {
     when: AddSlice(timeline, title, kind, index, id?)
     requires: non_blank(title)
+    -- The title must be unique within this timeline (see invariant
+    -- SliceTitleUnique); the same title in another timeline is a different slice
+    -- and stays legal.
+    requires: not timeline.slices.any(s => same_name(s.title, title))
     ensures: Slice.created(
         timeline: timeline,
         title: title,
@@ -486,6 +529,11 @@ rule SetSliceKind {
 rule CreateElement {
     when: CreateElement(model, name, kind, id?)
     requires: non_blank(name)
+    -- A second element under a name the model already uses is rejected rather
+    -- than allowed to exist (see invariant ElementNameUnique). The name is how
+    -- every operation that takes one addresses an element, so an element sharing
+    -- its name with another is one no caller can address unambiguously.
+    requires: not model.elements.any(e => same_name(e.name, name))
     ensures: Element.created(
         model: model,
         name: name,
@@ -624,6 +672,9 @@ rule RemoveDerivation {
 rule AddSpecification {
     when: AddSpecification(slice, title, id?)
     requires: non_blank(title)
+    -- Unique within this slice, not the model (see invariant
+    -- SpecificationTitleUnique).
+    requires: not slice.specifications.any(spec => same_name(spec.title, title))
     ensures: Specification.created(slice: slice, title: title)
 }
 
@@ -932,6 +983,72 @@ invariant PlacementElementUnique {
                 p != q implies p.element != q.element
 }
 
+-- An element's name is unique within its model, compared case-insensitively and
+-- ignoring surrounding whitespace - the same equality NameResolution's exact tier
+-- matches on, so no name can resolve as a tie between two elements. Elements are
+-- single-source and referenced by name wherever an operator or an agent names
+-- one, so a name identifying two elements would be ambiguous exactly where the
+-- model can least afford it.
+-- Creation and rename reject a collision before it is written (see CreateElement,
+-- RenameElement) rather than relying on this invariant alone; the invariant
+-- additionally refuses one arriving by any other path, import included. Nothing
+-- repairs a collision already present in a model: choosing which of two
+-- same-named elements to rename, and to what, would be guessing the author's
+-- intent, so such a collision is reported for a human to resolve by renaming one
+-- of the two.
+-- Uniqueness is per model, not global: two models may each hold an element named
+-- "Order", exactly as identity is unique per model.
+invariant ElementNameUnique {
+    for e in Elements:
+        for f in Elements:
+            (e != f and e.model = f.model) implies not same_name(e.name, f.name)
+}
+
+-- The names below are constrained for the same reason as an element's, each
+-- scoped to the smallest container in which it has to identify one entity.
+
+-- A timeline's title is unique within its model. It is a group key of the
+-- interchange format as much as a way to address a timeline: a slice exports its
+-- timeline as the bare `context` string, and import groups slices back into
+-- timelines by that string, so two same-titled timelines would collapse into one
+-- and ModelRoundtrip's exact-reproduction claim would not hold for a model whose
+-- only irregularity is a repeated title.
+invariant TimelineTitleUnique {
+    for t in Timelines:
+        for u in Timelines:
+            (t != u and t.model = u.model) implies not same_name(t.title, u.title)
+}
+
+-- A swimlane's name is unique within its model, and is likewise a group key: it
+-- exports as the bare `element.aggregate` string and import looks a swimlane up
+-- by that name, so two same-named swimlanes would collapse into one on import.
+invariant SwimlaneNameUnique {
+    for lane in Swimlanes:
+        for other in Swimlanes:
+            (lane != other and lane.model = other.model) implies
+                not same_name(lane.name, other.name)
+}
+
+-- A slice's title is unique within its timeline, which is exactly the container a
+-- slice candidate's breadcrumb names: a repeat inside one timeline is the one
+-- case NameResolution could not tell apart. The same title in another timeline is
+-- a different slice, and remains legal.
+invariant SliceTitleUnique {
+    for s in Slices:
+        for other in s.timeline.slices:
+            s != other implies not same_name(s.title, other.title)
+}
+
+-- A specification's title is unique within its slice, for the same reason: a
+-- specification candidate's breadcrumb is its slice's title and that slice's
+-- timeline's title, so a repeat inside one slice is the case resolution could not
+-- tell apart. The same title in another slice remains legal.
+invariant SpecificationTitleUnique {
+    for spec in Specifications:
+        for other in spec.slice.specifications:
+            spec != other implies not same_name(spec.title, other.title)
+}
+
 -- A specification's Given/When/Then steps must match its slice's pattern.
 -- state_change and automation share one shape; state_view has its own.
 -- Always-on (loosened for incremental authoring): given steps are events; When
@@ -1023,7 +1140,12 @@ contract SchemaCodec {
         -- For any export-ready model the CLI can author, import(export(model))
         -- reproduces the schema-representable canonical subset exactly. The
         -- canonical model is the source of truth, so everything the interchange
-        -- format can carry round-trips without loss. Fields the
+        -- format can carry round-trips without loss. The format's two grouping
+        -- keys - slice.context, which names a Timeline, and element.aggregate,
+        -- which names a Swimlane - each identify exactly one timeline/swimlane,
+        -- because those names are unique within a model (see the uniqueness
+        -- invariants), so neither key can merge two of them into one on reimport.
+        -- Fields the
         -- eventmodeling.schema.json format has no place for - Connection.derivations,
         -- Element.field_origins, Element.wireframe and Swimlane.index (see the
         -- dropped-fields guidance) - are excluded from this guarantee; they are
@@ -1097,7 +1219,9 @@ contract SchemaCodec {
         --     screen's fields still round-trip; only the layout that presents
         --     them is lost.
         -- Preserved mappings: slice.context <-> Timeline.title;
-        --   element.aggregate <-> Swimlane.name; sliceType <-> Slice.kind;
+        --   element.aggregate <-> Swimlane.name (the two grouping keys, unique per
+        --   model, so each names exactly one timeline/swimlane on reimport);
+        --   sliceType <-> Slice.kind;
         --   element.context <-> Element.context;
         --   screenImages.url <-> Element.image_url; dependencies <-> Connection;
         --   slice index/status <-> Slice.index/status.
@@ -1234,13 +1358,19 @@ contract NameResolution {
         -- mistaken for an exhaustive one.
 
     @invariant CandidateDisambiguation
-        -- Each candidate carries enough breadcrumb/location context to be told
-        -- apart from same-named siblings: a Slice candidate carries its
-        -- Timeline's title; an Element candidate carries its assigned Swimlane's
-        -- name when it has one; a Specification candidate carries its Slice's
-        -- title and that Slice's Timeline's title. (Two identically-named
-        -- entities whose breadcrumbs also tie are an accepted, unsolved edge
-        -- case.)
+        -- Each candidate carries the breadcrumb/location context that places it:
+        -- a Slice candidate carries its Timeline's title; an Element candidate
+        -- carries its assigned Swimlane's name when it has one; a Specification
+        -- candidate carries its Slice's title and that Slice's Timeline's title.
+        -- That breadcrumb is context, never a tie-breaker: two identically-named
+        -- candidates of the same kind cannot arise, because every resolvable name
+        -- is unique in the container in which it has to identify one entity - an
+        -- element's name, a timeline's title and a swimlane's name within their
+        -- model, a slice's title within its timeline, a specification's title
+        -- within its slice (see the uniqueness invariants). No two candidates can
+        -- therefore tie, and a caller never has to choose between two
+        -- indistinguishable candidates. Candidates of different kinds may still
+        -- share a name, and the candidate's kind tells them apart.
 
     @invariant BoundedByQueryCount
         -- THE core architectural property: the size of a resolve response scales
@@ -1746,3 +1876,4 @@ surface ModelChangeStream {
 -- SchemaCodec contract above.
 
 open question "NameResolution.NameQuery.kind_hint currently records only the resolvable entity kind (Timeline/Swimlane/Slice/Element/Specification). Should it also carry a finer sub-kind hint (Element.kind: command/event/read_model/screen/automation, or Slice.kind: state_change/state_view/automation) to further rank candidates? Those are inline enums on Element/Slice today; supporting them as hint fields requires promoting them to named enums (a change to existing entities) or a parallel named enum duplicating their literals. Deferred pending a decision on whether the extra ranking signal is worth that."
+
