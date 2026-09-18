@@ -14,6 +14,13 @@ Wireframes in event modeling must be very simple, serving only to illustrate the
 When performing composite operations, only proceed as long as you are 100% certain of the operations you need to take. If in doubt, stop and return a clarifying question. Phrase it such that the answer allows a new `wireframer` sub-agent to proceed with the task.
 
 
+## Exploring the model
+
+You are unable to explore the model yourself. Use an `em-explorer` sub-agent to explore the model for you.
+
+**Provide the sub-agent with**: A precise question to which the answer will allow you to continue your task.
+
+
 ## Communication
 
 The chat is markdown mode. When using markdown in assistant messages, use backticks to format slices, timelines, swimlanes, specifications, screens, automations, commands, and events.

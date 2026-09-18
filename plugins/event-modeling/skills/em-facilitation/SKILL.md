@@ -77,32 +77,6 @@ For each addition:
 4. **Report** — summarise what changed in terse and plain language; no raw JSON at the human
 
 
-## emcli_resolve
-
-```
-queries: "Name[:kind_hint],..."
-```
-
-`kind_hint` only ranks candidates, never filters them. Values: `timeline`, `swimlane`, `slice`, `element`, `specification`.
-
-Returns an array of matches with `id`, `kind`, `swimlane`, and `name`.
-
-Empty name with kind hint finds all entities of that kind. Example for finding all timelines: `queries: ":timeline"`
-
-
-## emcli_query
-
-Read-only structural query over the model: follow relations outward from a root and return the entities the question reaches. Use it when you need structure, not just ids — e.g. which slices an element is placed in, or which elements feed an event.
-
-```
-query: "element:42 | slice"            -- slices this element is placed in
-query: "slice:7 | elements {index}"    -- elements in a slice, with their placement index
-query: "element:42 | outgoing {derivations}"
-```
-
-Roots: `timeline`, `swimlane`, `slice`, `element`, `specification`, `step`. Stages: `where`, `order`, `select`, `count`, `limit`, `distinct`. An invalid stage returns an error naming the valid alternatives; run `emcli query --relations` for the full vocabulary.
-
-
 ## Begin
 
 1. Greet the human
