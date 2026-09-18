@@ -549,6 +549,10 @@ rule CreateElement {
 --   upsert_by(list, item, key_of): returns the list with `item` replacing any
 --     existing entry sharing its key (key_of(entry) = key_of(item)), or with
 --     `item` added when no entry matches; every other entry is preserved.
+--   upsert_field(list, parent_field?, item): AddField's keyed edit at either
+--     level - `upsert_by(list, item, f => f.name)` when no parent is named,
+--     otherwise `upsert_by` over the subfields of the field whose name is
+--     `parent_field`, with every other field left untouched.
 --   remove_by(list, key, key_of): returns the list with every entry whose key
 --     equals `key` removed; every other entry is preserved.
 --   next_index(list): the sort key that places a new entry after every existing
@@ -557,11 +561,20 @@ rule CreateElement {
 --     the operator reorders it.
 
 -- Upsert `field` into the element's fields, replacing any existing field with
--- the same name; the rest of the list is preserved.
+-- the same name; the rest of the list is preserved. A field list carries at most
+-- one entry per name - the key this upsert and RemoveField address an entry by -
+-- so a list holding two of a name is not a state the surface can produce, and a
+-- document whose fields repeat one is rejected on import rather than installed.
+-- With `parent_field`, the field is upserted into THAT field's subfields instead.
+-- A Field list is recursive while an operation's arguments are not, so the tree is
+-- edited one level per call: `parent_field` names a field of the element itself,
+-- and a name the element's own fields do not carry is rejected rather than
+-- inventing the level to nest under.
 rule AddField {
-    when: AddField(element, field)
+    when: AddField(element, field, parent_field?)
     requires: non_blank(field.name)
-    ensures: element.fields = upsert_by(element.fields, field, f => f.name)
+    requires: parent_field = null or element.fields.any(f => f.name = parent_field)
+    ensures: element.fields = upsert_field(element.fields, parent_field, field)
 }
 
 -- Remove the field named `name` from the element's fields; the rest is preserved.
@@ -789,8 +802,12 @@ rule SetStepExpectEmpty {
 --   wireframe_well_formed(node): the tree rooted at `node` is structurally
 --     valid: every tag is known, every node's attributes satisfy its tag's
 --     schema, leaf tags carry no children, text tags carry a text content
---     instead of child nodes, container tags carry child nodes, and the root is
---     the canvas node.
+--     instead of child nodes (the content may still be empty: a node is added
+--     first and filled by SetWireframeText), container tags carry child nodes
+--     rather than text content (a container may hold none: a tree is grown one
+--     node at a time, and every layout begins as a bare canvas), and the root is
+--     the canvas node while no node below the root is one (`canvas` is the
+--     layout's root, always its first node).
 -- Tree addressing, and the edits themselves:
 --   empty_wireframe: a layout consisting of just its canvas root.
 --   root_node_id(tree), node_exists(tree, node_id), node_tag(tree, node_id),
@@ -806,6 +823,9 @@ rule SetStepExpectEmpty {
 rule AddWireframeNode {
     when: AddWireframeNode(screen, tag, attributes, parent?, text?)
     requires: screen.kind = screen
+    -- The canvas is the layout's root, created with the layout itself (a screen
+    -- with no layout starts from empty_wireframe). No node below it may be one.
+    requires: tag != canvas
     requires: tag_schema_valid(tag, attributes)
     requires: fields_resolve(screen, attributes)
     let tree = screen.wireframe ?? empty_wireframe
@@ -829,6 +849,7 @@ rule AddWireframeNodeBefore {
     requires: screen.wireframe != null
     requires: node_exists(screen.wireframe, sibling)
     requires: sibling != root_node_id(screen.wireframe)
+    requires: tag != canvas
     requires: tag_schema_valid(tag, attributes)
     requires: fields_resolve(screen, attributes)
     let node = WireframeNode{
@@ -895,18 +916,36 @@ rule Unsubscribe {
 
 -- Deletion & rename ---------------------------------------------------------
 
--- Deleting a timeline cascades to its slices. Each slice deletion is emitted
--- as a DeleteSlice trigger, reusing the slice-deletion cascade below.
+-- Deleting a timeline cascades to its slices, and through them to their
+-- placements, specifications and steps (the removals DeleteSliceCascades
+-- states). The cascade is the deletion's EFFECT, applied as one operation: no
+-- DeleteSlice or DeleteSpecification rule fires, so exactly one delta carries
+-- every removal (see DeltaPerMutation).
 rule DeleteTimelineCascades {
     when: DeleteTimeline(timeline)
     ensures:
         for s in timeline.slices:
-            DeleteSlice(s)
+            for p in s.placements:
+                not exists p
+    ensures:
+        for s in timeline.slices:
+            for sp in s.specifications:
+                for st in sp.steps:
+                    not exists st
+    ensures:
+        for s in timeline.slices:
+            for sp in s.specifications:
+                not exists sp
+    ensures:
+        for s in timeline.slices:
+            not exists s
     ensures: not exists timeline
 }
 
--- Deleting a slice removes its placements and specifications. The single-source
--- Elements those placements referenced survive in the model's registry.
+-- Deleting a slice removes its placements, its specifications and their steps.
+-- The single-source Elements those placements referenced survive in the model's
+-- registry. Like the timeline cascade above, this is one operation that removes
+-- the whole subtree, not a DeleteSpecification call per specification.
 rule DeleteSliceCascades {
     when: DeleteSlice(slice)
     ensures:
@@ -914,7 +953,11 @@ rule DeleteSliceCascades {
             not exists p
     ensures:
         for sp in slice.specifications:
-            DeleteSpecification(sp)
+            for st in sp.steps:
+                not exists st
+    ensures:
+        for sp in slice.specifications:
+            not exists sp
     ensures: not exists slice
 }
 
@@ -984,8 +1027,10 @@ invariant PlacementElementUnique {
 }
 
 -- An element's name is unique within its model, compared case-insensitively and
--- ignoring surrounding whitespace - the same equality NameResolution's exact tier
--- matches on, so no name can resolve as a tie between two elements. Elements are
+-- ignoring surrounding whitespace, so a name identifies exactly one element.
+-- Two elements can therefore never tie in NameResolution's exact tier either:
+-- the names it matches (case-insensitive equality) are the same name here, and
+-- only one element may hold a name. Elements are
 -- single-source and referenced by name wherever an operator or an agent names
 -- one, so a name identifying two elements would be ambiguous exactly where the
 -- model can least afford it.
@@ -1130,11 +1175,13 @@ contract SchemaCodec {
 
     @invariant ExportRequiresComplete
         -- export is defined only for an export-ready model: every Slice whose
-        -- status is not 'informational' must satisfy Slice.is_complete, and
-        -- every Specification must satisfy Specification.is_complete. Incomplete
-        -- models are rejected with the offending slices/specs reported, never
-        -- silently exported. Slices tagged informational carry no actionable
-        -- content and are dropped on export.
+        -- status is not 'informational' must satisfy Slice.is_complete, and every
+        -- Specification of such a slice must satisfy Specification.is_complete.
+        -- Incomplete models are rejected with the offending slices/specs
+        -- reported, never silently exported. Slices tagged informational carry no
+        -- actionable content and are dropped on export, so neither they nor the
+        -- specifications inside them can block it: content that will not be
+        -- written is not required to be complete.
 
     @invariant ModelRoundtrip
         -- For any export-ready model the CLI can author, import(export(model))
@@ -1145,6 +1192,11 @@ contract SchemaCodec {
         -- which names a Swimlane - each identify exactly one timeline/swimlane,
         -- because those names are unique within a model (see the uniqueness
         -- invariants), so neither key can merge two of them into one on reimport.
+        -- Both keys are names, so both are compared by the model's name equality
+        -- (the same_name convention): a document whose slices name two contexts
+        -- that differ only in case describes one timeline, and its slices are
+        -- grouped into that one, rather than the document being rejected because
+        -- the model cannot hold both spellings.
         -- Fields the
         -- eventmodeling.schema.json format has no place for - Connection.derivations,
         -- Element.field_origins, Element.wireframe and Swimlane.index (see the
@@ -1186,11 +1238,22 @@ contract SchemaCodec {
     @invariant ImportRejectsForbiddenDocument
         -- import applies the same authoring operations an operator uses, so the
         -- always-on authoring invariants hold over an imported document too. A
-        -- document those invariants reject is rejected as a whole, naming the
-        -- offending slices, and nothing is installed: import is all-or-nothing,
-        -- and the running model is left unchanged.
+        -- document those invariants reject is rejected as a whole, naming what
+        -- the failing operation concerned - the slices for a slice-level step, the
+        -- elements or swimlanes for an element-level one - and nothing is
+        -- installed: import is all-or-nothing, and the running model is left
+        -- unchanged.
 
     @guidance
+        -- Tolerant enums: a document whose status, sliceType or field type falls
+        -- outside the value set this model knows is imported with that value
+        -- normalised to the default the codec documents (an unknown status to
+        -- created, an unknown sliceType to state_change, an unknown field type to
+        -- custom) rather than rejected. The interchange format's enums are
+        -- broader than this model's, and rejecting a whole document over one
+        -- unrecognised value would refuse documents whose canonical subset is
+        -- perfectly representable.
+        --
         -- Dropped fields (deliberate, documented loss in favour of a clean
         -- model): they have no canonical representation, are emitted empty/
         -- absent on export and discarded on import.
@@ -1208,6 +1271,16 @@ contract SchemaCodec {
         --     on export and not reconstructed on import. A model that relies on
         --     derivations/overrides to be information-complete will read as
         --     incomplete after a schema round-trip; this is the documented loss.
+        --   * a reference to an element the document does not embed: the format
+        --     carries a dependency's or a specification step's target as a
+        --     title/type pair (plus, for a dependency, its groupId), while the
+        --     canonical element lives in the model's registry whether or not any
+        --     slice places it. An element placed nowhere is therefore exported as
+        --     no element at all (see GroupIdIsElementIdentity), and a step or a
+        --     dependency naming one is dropped on import rather than reinstating
+        --     an element whose fields, context and swimlane the document cannot
+        --     state. The step or connection it belonged to goes with it; see the
+        --     open question on reinstating the referenced element.
         --   * Swimlane.index: author-controlled render order. The schema has no
         --     aggregate ordering (aggregates are bare names on elements), so the
         --     order is dropped on export; swimlane NAMES still round-trip via
@@ -1240,8 +1313,8 @@ contract SchemaCodec {
 -- @note Import applies a document through the same operations an operator uses,
 -- so the always-on authoring invariants hold while importing too: a document
 -- those invariants admit imports cleanly, while a document they reject is
--- rejected as a whole - naming the offending slices - and nothing is installed
--- (ImportRejectsForbiddenDocument).
+-- rejected as a whole - naming what the failing operation concerned - and nothing
+-- is installed (ImportRejectsForbiddenDocument).
 
 -- The live change stream a frontend consumes to visualise a model as it is
 -- edited. Outbound only: the frontend receives changes, never issues edits over
@@ -1261,7 +1334,11 @@ contract ChangeStream {
         -- On subscribe, the first message a client receives is exactly one
         -- snapshot of the current canonical model. Every message thereafter is
         -- a delta. The snapshot-then-delta sequence has no gap: no mutation
-        -- committed after the snapshot is taken is lost or duplicated.
+        -- committed after the snapshot is taken is lost or duplicated. The one
+        -- exception is replacing the model wholesale: an import installs a whole
+        -- document, which no per-entity delta could express without enumerating
+        -- a removal for every entity the model held, so every subscriber receives
+        -- a fresh snapshot instead and the sequence starts again from it.
 
     @invariant DeltaPerMutation
         -- Every authoring operation that mutates the model (every mutating
@@ -1273,6 +1350,18 @@ contract ChangeStream {
         -- unwiring an element re-states that element as well as creating or
         -- removing the connection. Each affected entity appears once, carrying
         -- its full new state.
+        -- A composite operation - one the surface offers as a single verb but
+        -- which edits one entry of a whole-list field (AddField, RemoveField,
+        -- AddFieldOrigin, RemoveFieldOrigin, AddDerivation, RemoveDerivation,
+        -- AddStepExample, RemoveStepExample) - reports the delta of the
+        -- operation it decomposes into and is named for it: SetFields,
+        -- SetFieldOrigins, SetConnectionDerivations or SetStepExamples, as the
+        -- change-stream schema lists. Exactly one delta per mutation holds either
+        -- way.
+        -- An operation that succeeds without changing anything - reordering an
+        -- element to where it already sits - still emits its delta, carrying no
+        -- changed entities: the stream records the operations the model accepted,
+        -- so a client sees the operation rather than silence.
 
     @invariant CanonicalShape
         -- Snapshots and deltas carry the canonical model shape - timelines,
@@ -1287,6 +1376,12 @@ contract ChangeStream {
         -- its placement and connection entries reach. (The schema projection,
         -- by contrast, embeds elements only inside slices, so it stays
         -- placement-bound - see SchemaCodec.GroupIdIsElementIdentity.)
+        -- One value travels in an encoding of its own rather than in the
+        -- declaration above: a screen's layout tree is a nested sequence of tag,
+        -- id map, attribute map and children, pinned by the change-stream schema
+        -- and doc/wireframe-dsl.md, because that is the shape the wireframe
+        -- operations edit node by node. WireframeNode declares that tree in the
+        -- model; the wire carries the tree, not a second form of it.
 }
 
 -- ---------------------------------------------------------------------------
@@ -1487,6 +1582,20 @@ contract ModelQuery {
         -- that kind in the model - or on a single entity by identity (id) or by
         -- name. Name-based roots are resolved through NameResolution; this
         -- contract performs no name matching of its own.
+        -- A root names ONE entity, so a name root takes only a candidate that
+        -- matches both the kind the root declares and NameResolution's exact
+        -- tier. The substring and near-miss tiers exist to help a caller choose
+        -- among candidates; taking one as a root would be the implicit best pick
+        -- NameResolution.NoImplicitBestPick forbids, and would answer a different
+        -- question than the one asked - `element:Order flow` must not land on a
+        -- timeline. A root whose name matches nothing of the declared kind is
+        -- rejected (see UnknownStepRejected), naming the nearest candidates of
+        -- that kind so the caller can correct the root; an empty result would read
+        -- as 'nothing is related to X' when the truth is 'there is no X'.
+        -- A name root exists for the kinds that carry a name - the ResolvableKind
+        -- set: Timeline, Swimlane, Slice, Element and Specification. A SpecStep
+        -- carries no name (see NameResolution.ResolvableScope), so a step root is
+        -- by kind or by id alone: `step:42`, never `step:Some title`.
 
     @invariant AssociationsAreNeverRoots
         -- ElementPlacement and Connection are associations (edges between
@@ -1534,9 +1643,26 @@ contract ModelQuery {
         -- filter, with comparator = as equals, != as not_equals, ~ as matches,
         -- in as in_set), order (by a field, ascending, or descending when the
         -- field is named as descending), select (a field list), count, limit N,
-        -- and distinct. No other stage exists. This contract fixes the textual
-        -- surface (how stages, fields, comparators, projections and the pipeline
-        -- separator are written) so it cannot drift from the specification.
+        -- and distinct. No other stage exists.
+        -- The textual surface is fixed too, so it cannot drift from the
+        -- specification; the engine accepts exactly these spellings:
+        --   root       kind | kind:id | kind:name - the kind singular or plural
+        --              (element = elements), the id an integer, the name the rest
+        --              of the token (quoting optional)
+        --   separator  | between the root and each stage, and between stages
+        --   follow     relation {projection}?, the projection naming edge fields
+        --              or being empty / {*} for the whole edge record
+        --   where      field = | != | ~ | in value - ~ a regular expression, in a
+        --              comma-separated set, which may be parenthesised
+        --   order      field, or -field for descending
+        --   select     field,field
+        --   count, distinct, limit N
+        -- The keyword tokens - a root's kind, a relation, and the stage words
+        -- where, order, select, count, distinct and limit - are matched
+        -- case-insensitively, and a field name keeps its case. A where comparison
+        -- is case-insensitive for =, != and in (both sides are folded), while ~
+        -- matches its regular expression against the raw text, so its case
+        -- sensitivity is the pattern's own.
 
     @invariant ResultsAreBoundedByQuestion
         -- What comes back scales with the question asked, not the size of the
@@ -1661,7 +1787,7 @@ surface ModelAuthoring {
 
         -- Elements
         CreateElement(model, name, kind, id?)
-        AddField(element, field)
+        AddField(element, field, parent_field?)
         RemoveField(element, name)
         SetElementContext(element, new_context)
         AssignSwimlane(element, lane)
@@ -1707,7 +1833,10 @@ surface ModelAuthoring {
 
     @guidance
         -- A ValidateModel operation (report slices that are not is_complete,
-        -- elements that are not is_information_complete, and any derivation whose
+        -- specifications that are not Specification.is_complete - the same check
+        -- the export gate makes, so an operator learns what would refuse an
+        -- export before attempting one - elements that are not
+        -- is_information_complete, and any derivation whose
         -- target_field or source_fields reference a field name that does not
         -- exist on the relevant element - an orphaned derivation that silently
         -- fails to source its target), the SchemaCodec import/export operations,
@@ -1876,4 +2005,6 @@ surface ModelChangeStream {
 -- SchemaCodec contract above.
 
 open question "NameResolution.NameQuery.kind_hint currently records only the resolvable entity kind (Timeline/Swimlane/Slice/Element/Specification). Should it also carry a finer sub-kind hint (Element.kind: command/event/read_model/screen/automation, or Slice.kind: state_change/state_view/automation) to further rank candidates? Those are inline enums on Element/Slice today; supporting them as hint fields requires promoting them to named enums (a change to existing entities) or a parallel named enum duplicating their literals. Deferred pending a decision on whether the extra ranking signal is worth that."
+
+open question "A dependency or a specification step naming an element the document does not embed - an element the model holds with no placement anywhere - is dropped on import, together with the connection or step that named it (see the dropped-fields guidance). Should import instead reinstate the element from the reference itself? A dependency carries the target's groupId, title and elementType, and a step its title and type, so the element could be recreated with that name and kind - no fields, no context, no swimlane, which is all the document states about it - and the connection or step would survive the round-trip. The alternative, taken here, keeps import from inventing element state the document does not carry and records the loss instead. Which loss is worse is a judgement about how far the placement-bound projection should reach."
 
