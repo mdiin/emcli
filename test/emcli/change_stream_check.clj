@@ -99,12 +99,13 @@
     (let [conn (id! a "connect"           {:from cmd :to evt})
           sp   (id! a "add-specification" {:slice sl :title "Happy path"})
           st1  (id! a "add-spec-step"     {:spec sp :clause "given_step"
-                                           :element evt :index 0})]
+                                           :element evt :index 0})
+          est  (id! a "add-error-step"    {:spec sp :error-name "AlreadyPlaced" :index 1})]
       (run! a "add-wireframe-node" {:element scr :tag "row"})
       (run! a "add-wireframe-node" {:element scr :tag "button" :parent "n2" :label "OK"})
       (run! a "add-wireframe-node" {:element scr :tag "h1" :text "Title"})
       {:app a :tl tl :sw sw :sw2 sw2 :sl sl :cmd cmd :evt evt :evt2 evt2
-       :rm rm :scr scr :conn conn :sp sp :st1 st1})))
+       :rm rm :scr scr :conn conn :sp sp :st1 st1 :est est})))
 
 (def ^:private op-cases
   "One entry per operation the change stream emits: [op command opts-fn]. The
@@ -126,6 +127,8 @@
     (fn [{:keys [sw2]}] {:lane sw2})]
    ["AddSlice"               "add-slice"
     (fn [{:keys [tl]}] {:timeline tl :title "New slice" :slice-type "state_view" :index 1})]
+   ["RenameSlice"            "rename-slice"
+    (fn [{:keys [sl]}] {:slice sl :new-title "Renamed slice"})]
    ["ReorderSlice"           "reorder-slice"
     (fn [{:keys [sl]}] {:slice sl :new-index 3})]
    ["SetSliceStatus"         "set-slice-status"
@@ -148,6 +151,8 @@
     (fn [{:keys [cmd]}] {:element cmd :field "id" :origin "user_input"})]
    ["RenameElement"          "rename-element"
     (fn [{:keys [cmd]}] {:element cmd :new-name "PlaceOrderRenamed"})]
+   ["RenameField"            "rename-field"
+    (fn [{:keys [cmd]}] {:element cmd :name "id" :new-name "identifier"})]
    ["DeleteElement"          "delete-element"
     (fn [{:keys [cmd]}] {:element cmd})]
    ["AddWireframeNode"       "add-wireframe-node"
@@ -176,10 +181,14 @@
     (fn [{:keys [sl]}] {:slice sl :title "Rejected"})]
    ["DeleteSpecification"    "delete-specification"
     (fn [{:keys [sp]}] {:spec sp})]
+   ["RenameSpecification"    "rename-specification"
+    (fn [{:keys [sp]}] {:spec sp :new-title "Renamed path"})]
    ["AddSpecStep"            "add-spec-step"
     (fn [{:keys [sp cmd]}] {:spec sp :clause "when_step" :element cmd :index 1})]
    ["AddErrorStep"           "add-error-step"
     (fn [{:keys [sp]}] {:spec sp :error-name "AlreadyPlaced" :index 2})]
+   ["RenameErrorStep"        "rename-error-step"
+    (fn [{:keys [est]}] {:step est :new-error-name "PaymentDeclined"})]
    ["RemoveSpecStep"         "remove-spec-step"
     (fn [{:keys [st1]}] {:step st1})]
    ["SetStepExamples"        "add-step-example"

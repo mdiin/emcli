@@ -305,3 +305,29 @@
     (testing "the set is per kind: a name on one entity is refused on another"
       (is (rejects? #"\"fields\" on step rows" #(run-q env "step | select fields")))
       (is (rejects? #"\"status\" on element rows" #(run-q env "element | select status"))))))
+
+;; --- every accepted name resolves: stored, derived and reverse --------------
+
+(deftest derived-and-reverse-attributes-are-reachable
+  (let [env (build)
+        e1  (:e1 env) sl1 (:sl1 env)]
+    (testing "a reverse reference resolves rather than reading a key the record lacks"
+      (let [[row] (run-q env "timelines | select slices")]
+        (is (= 2 (count (:slices row))) "the timeline's two slices")
+        (is (some? (:slices row)))))
+    (testing "derived projections and verdicts resolve the same way"
+      (is (seq (:commands (first (run-q env (str "slice:" sl1 " | select commands"))))))
+      (is (boolean? (:is_complete (first (run-q env (str "slice:" sl1 " | select is_complete"))))))
+      (is (seq (:outgoing (first (run-q env (str "element:" e1 " | select outgoing")))))))
+    (testing "a derived attribute is filterable and sortable, not just projectable"
+      (is (= 1 (count (run-q env "slice | where is_complete = true"))))
+      (is (vector? (run-q env "specification | order is_complete"))))))
+
+(deftest projections-and-terminal-stages-are-closed
+  (let [env (build)]
+    (testing "an edge projection naming an attribute the association lacks is rejected"
+      (is (rejects? #"unknown edge field \"bogus\"" #(run-q env "slice | elements {bogus}")))
+      (is (vector? (run-q env "slice | elements {index}")) "the real one still projects"))
+    (testing "count is terminal: a stage after it could never be applied"
+      (is (rejects? #"count collapses the result" #(run-q env "element | count | where name = x")))
+      (is (number? (run-q env "element | count")) "count still ends a pipeline"))))

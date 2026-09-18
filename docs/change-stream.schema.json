@@ -508,15 +508,17 @@
       "enum": [
         "CreateTimeline", "RenameTimeline", "DeleteTimeline",
         "CreateSwimlane", "RenameSwimlane", "ReorderSwimlane", "DeleteSwimlane",
-        "AddSlice", "ReorderSlice", "SetSliceStatus", "SetSliceType", "DeleteSlice",
+        "AddSlice", "RenameSlice", "ReorderSlice", "SetSliceStatus", "SetSliceType",
+        "DeleteSlice",
         "CreateElement", "SetFields", "SetElementContext", "AssignSwimlane",
-        "SetImageUrl", "SetFieldOrigins", "RenameElement", "DeleteElement",
+        "SetImageUrl", "SetFieldOrigins", "RenameElement", "RenameField",
+        "DeleteElement",
         "AddWireframeNode", "AddWireframeNodeBefore", "SetWireframeAttr",
         "SetWireframeText", "DeleteWireframeNode",
         "PlaceElement", "ReorderPlacement", "RemovePlacement",
         "Connect", "Disconnect", "SetConnectionDerivations",
-        "AddSpecification", "DeleteSpecification",
-        "AddSpecStep", "AddErrorStep", "RemoveSpecStep",
+        "AddSpecification", "RenameSpecification", "DeleteSpecification",
+        "AddSpecStep", "AddErrorStep", "RenameErrorStep", "RemoveSpecStep",
         "SetStepExamples", "SetStepExpectEmpty"
       ]
     }

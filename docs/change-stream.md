@@ -215,10 +215,12 @@ data: {"op":"DeleteTimeline","changes":[{"action":"deleted","type":"placement","
 | `RenameSwimlane` / `ReorderSwimlane` | updated | swimlane |
 | `DeleteSwimlane` | updated, deleted | element(s) re-stated with `swimlane: null`, then the swimlane |
 | `AddSlice` | created | slice |
+| `RenameSlice` | updated | slice |
 | `ReorderSlice` / `SetSliceStatus` / `SetSliceType` | updated | slice |
 | `DeleteSlice` | deleted | slice + cascaded placements, specifications, spec-steps |
 | `CreateElement` | created | element |
 | `SetFields` / `SetElementContext` / `AssignSwimlane` / `SetImageUrl` / `SetFieldOrigins` / `RenameElement` | updated | element |
+| `RenameField` | updated | the element (fields, field_origins and layout together), then each affected connection and spec-step |
 | `AddWireframeNode` / `AddWireframeNodeBefore` / `SetWireframeAttr` / `SetWireframeText` / `DeleteWireframeNode` | updated | the screen element, restated with its new layout tree |
 | `DeleteElement` | deleted, updated | element + cascaded placements, connections, then the surviving `to` element(s) whose completeness the removed connections moved |
 | `PlaceElement` | created | placement |
@@ -228,8 +230,10 @@ data: {"op":"DeleteTimeline","changes":[{"action":"deleted","type":"placement","
 | `Disconnect` | deleted, updated | connection, then the `to` element |
 | `SetConnectionDerivations` | updated, updated | connection, then its `to` element |
 | `AddSpecification` | created | specification |
+| `RenameSpecification` | updated | specification |
 | `DeleteSpecification` | deleted | specification + cascaded spec-steps |
 | `AddSpecStep` / `AddErrorStep` | created | spec-step |
+| `RenameErrorStep` | updated | spec-step |
 | `RemoveSpecStep` | deleted | spec-step |
 | `SetStepExamples` / `SetStepExpectEmpty` | updated | spec-step |
 

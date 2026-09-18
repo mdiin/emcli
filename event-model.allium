@@ -168,8 +168,9 @@ entity Element {
     image_url: String?
 
     -- A screen's layout tree (see WireframeNode). Absent until its first node is
-    -- added, and absent again once the whole tree is removed. Only screens carry
-    -- one.
+    -- added, and cleared to null once the whole tree is removed - the key is then
+    -- present with a null value, which is what the change stream carries. Only
+    -- screens carry one.
     wireframe: WireframeNode?
 
     -- Reverse references, walked by cascade-on-delete.
@@ -279,7 +280,7 @@ enum WireframeTag {
 -- operator supplies them.
 enum WireframeAttributeName {
     align | gap | width | tone | type | aspect | size | variant
-    name | label | placeholder | alt | `aria-label` | options | text
+    name | label | placeholder | alt | `aria-label` | options | text | icon
     required | default | disabled | `field-name` | `command-input`
 }
 
@@ -1898,7 +1899,10 @@ contract ModelQuery {
         -- that traverses it. Projection attaches the association to each row
         -- under its kind key (placement or connection); the association is never
         -- returned as a bare row, and without projection a row carries only the
-        -- landed entity.
+        -- landed entity. A projection naming an attribute the association does
+        -- not carry is rejected, naming what it does carry - the same treatment
+        -- UnknownFieldRejected gives a stage, and for the same reason: an
+        -- unvalidated name would attach nothing and read as an empty edge.
 
     @invariant ProjectableFieldsAreClosed
         -- The field names a select, where or order stage may name are closed, and
@@ -1943,6 +1947,8 @@ contract ModelQuery {
         -- does carry, rather than yielding an empty result. This is the field
         -- counterpart of UnknownStepRejected and takes the same posture: a
         -- misspelled or unsupported name is a mistake to correct, not an answer.
+        -- An edge projection naming an attribute the association does not carry is
+        -- rejected the same way (see EdgeAttributesAreProjected).
         -- Without it a query naming a field its row cannot answer is
         -- indistinguishable from a row whose value is genuinely empty - `select
         -- fields` returning nothing because a typo named something the row has no
@@ -1957,6 +1963,9 @@ contract ModelQuery {
         -- in as in_set), order (by a field, ascending, or descending when the
         -- field is named as descending), select (a field list), count, limit N,
         -- and distinct. No other stage exists.
+        -- count is TERMINAL: it collapses the whole result to a scalar, so a
+        -- pipeline with any stage after it is rejected rather than silently
+        -- discarding the stages it can no longer apply.
         -- The textual surface is fixed too, so it cannot drift from the
         -- specification; the engine accepts exactly these spellings:
         --   root       kind | kind:id | kind:name - the kind singular or plural

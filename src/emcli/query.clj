@@ -69,22 +69,70 @@
 ;; The attributes each kind's entity declaration carries (event-model.allium).
 ;; The model is schemaless - a canonical record IS the stored map, with no list of
 ;; its keys - so the declarations cannot be read off at run time and are written
-;; down here instead. A change to an entity declaration in the spec belongs here
-;; too: the spec's ProjectableFieldsAreClosed is the authority, and query-test
-;; covers the set, including that a name on one entity is refused on another.
-(def ^:private entity-fields
+;; down here instead, split by where the value comes from. A change to an entity
+;; declaration in the spec belongs in this pair: the spec's
+;; ProjectableFieldsAreClosed is the authority, and query-test covers the set,
+;; including that a name on one entity is refused on another.
+(def ^:private stored-fields
   {:timeline      #{"model" "title"}
    :swimlane      #{"model" "name" "index"}
-   :slice         #{"timeline" "title" "index" "slice_type" "status"
-                    "placements" "specifications" "commands" "events" "read_models"
-                    "screens" "automations" "is_complete"}
+   :slice         #{"timeline" "title" "index" "slice_type" "status"}
    :element       #{"model" "name" "element_type" "context" "fields" "swimlane"
-                    "image_url" "wireframe" "placements" "outgoing" "incoming"
-                    "field_origins" "is_information_complete"}
-   :specification #{"slice" "title" "steps" "given_steps" "when_steps" "then_steps"
-                    "when_commands" "then_read_models" "is_complete"}
+                    "image_url" "wireframe" "field_origins"}
+   :specification #{"slice" "title"}
    :step          #{"spec" "clause" "index" "element" "is_error" "error_name"
                     "expect_empty" "examples"}})
+
+;; The declared attributes a record does NOT store: reverse references (a
+;; timeline's slices), derived projections (a slice's commands) and derived
+;; verdicts (is_complete). They are as nameable as any other declared attribute -
+;; the spec returns them whole when asked - so they resolve through the model's
+;; navigation rather than by reading a key off the record.
+(def ^:private derived-fields
+  {:timeline      #{"slices"}
+   :swimlane      #{}
+   :slice         #{"placements" "specifications" "commands" "events" "read_models"
+                    "screens" "automations" "is_complete"}
+   :element       #{"placements" "outgoing" "incoming" "is_information_complete"}
+   :specification #{"steps" "given_steps" "when_steps" "then_steps" "when_commands"
+                    "then_read_models" "is_complete"}
+   :step          #{}})
+
+(def ^:private entity-fields (merge-with into stored-fields derived-fields))
+
+(defn- derived-value
+  "The value of a DERIVED attribute for an entity of `kind`, or nil when `k` is not
+  one of them."
+  [store kind entity k]
+  (let [id (:id entity)]
+    (case k
+      "slices"                  (when (= kind :timeline) (m/slices store id))
+      "placements"              (case kind
+                                  :slice   (m/placements store id)
+                                  :element (m/element-placements store id))
+      "specifications"          (when (= kind :slice) (m/specs store id))
+      "commands"                (when (= kind :slice) (m/slice-commands store id))
+      "events"                  (when (= kind :slice) (m/slice-events store id))
+      "read_models"             (when (= kind :slice) (m/slice-read-models store id))
+      "screens"                 (when (= kind :slice) (m/slice-screens store id))
+      "automations"             (when (= kind :slice) (m/slice-automations store id))
+      "is_complete"             (case kind
+                                  :slice         (m/slice-complete? store entity)
+                                  :specification (m/spec-complete? store entity))
+      "outgoing"                (when (= kind :element) (m/outgoing store id))
+      "incoming"                (when (= kind :element) (m/incoming store id))
+      "is_information_complete" (when (= kind :element)
+                                  (m/information-complete? store entity))
+      "steps"                   (when (= kind :specification) (m/spec-steps store id))
+      "given_steps"             (when (= kind :specification)
+                                  (filterv #(= :given_step (:clause %)) (m/spec-steps store id)))
+      "when_steps"              (when (= kind :specification)
+                                  (filterv #(= :when_step (:clause %)) (m/spec-steps store id)))
+      "then_steps"              (when (= kind :specification)
+                                  (filterv #(= :then_step (:clause %)) (m/spec-steps store id)))
+      "when_commands"           (when (= kind :specification) (m/spec-when-commands store id))
+      "then_read_models"        (when (= kind :specification) (m/spec-then-read-models store id))
+      nil)))
 
 (defn- accepted-fields
   "Every field name a stage may use on a row of `kind`: the row's display fields
@@ -311,6 +359,20 @@
                      (name (:kind st)) " accepts "
                      (str/join ", " (sort accepted)))))))))
 
+(defn- check-edge-fields!
+  "Reject a projection naming a field the association does not carry. An
+  unvalidated name would attach nil and read as an empty edge, which is the same
+  failure UnknownFieldRejected closes for the stages themselves."
+  [rel projection]
+  (when (vector? projection)
+    (let [carried (set (map name (:edge-fields rel)))]
+      (doseq [f projection]
+        (when-not (carried f)
+          (throw (query-error
+                  (str "unknown edge field " (pr-str f) " on the " (name (:edge-key rel))
+                       " projection; project accepts "
+                       (str/join ", " (sort carried))))))))))
+
 (defn- compile-query
   "Walk the pipeline, validating each follow against the registry and each
   field-naming stage against the closed field set; tracks the current entity kind
@@ -325,10 +387,15 @@
             (throw (query-error
                     (str "relation " (token-label current) " -> " (token-label (:to rel))
                          " is not an association; there is nothing to project with `{...}`"))))
+          (check-edge-fields! rel (:projection st))
           (recur (rest stages) (:to rel)
                  (cond-> projected (:projection st) (conj (name (:edge-key rel))))
                  (conj plan (assoc st :relation rel))))
         (do (check-fields! st current projected)
+            (when (and (= :count (:kind st)) (seq (rest stages)))
+              (throw (query-error
+                      (str "count collapses the result to a scalar, so nothing can follow it; "
+                           "the stage after it is unreachable"))))
             (recur (rest stages) current projected (conj plan st))))
       {:root (:root expr) :plan plan})))
 
@@ -339,20 +406,23 @@
 (defn- field-value
   "The value a stage sees for field `k` on a pipeline item: the row's own display
   fields first (the entity CATEGORY as `kind`, its name or title as `name`), then
-  the landed entity's declared attributes, then the item itself, which carries an
+  the landed entity's declared attributes - a stored one read off the record, a
+  derived one resolved through the model - then the item itself, which carries an
   edge key when a projection attached one. Resolving exactly the names
   accepted-fields admits is what keeps an accepted name from resolving to nothing
   - the failure UnknownFieldRejected exists to prevent, since an unresolvable name
   and a genuinely empty value would otherwise read the same."
-  [item k]
-  (let [e (:entity item)]
+  [store item k]
+  (let [e    (:entity item)
+        kind (kind-of (:type e))]
     (cond
       (= (keyword k) (:edge-key item)) (:edge item)
       (= k "id")   (:id e)
-      (= k "kind") (kind-of (:type e))
+      (= k "kind") kind
       (= k "name") (or (:name e) (:title e))
-      :else        (let [kk (keyword k)]
-                     (if (and (map? e) (contains? e kk)) (get e kk) (get item kk))))))
+      (contains? (get derived-fields kind) k) (derived-value store kind e k)
+      :else (let [kk (keyword k)]
+              (if (and (map? e) (contains? e kk)) (get e kk) (get item kk))))))
 
 (defn- text
   "A comparable textual form of a field value. Keynote: in Clojure/Babashka
@@ -362,9 +432,9 @@
         (nil? v)     ""
         :else        (str v)))
 
-(defn- where-pred [{:keys [field comparator operand]}]
+(defn- where-pred [store {:keys [field comparator operand]}]
   (fn [item]
-    (let [raw (text (field-value item field))
+    (let [raw (text (field-value store item field))
           v   (str/lower-case raw)]
       (case comparator
         :equals     (= v (str/lower-case (text operand)))
@@ -412,11 +482,11 @@
     (if-let [st (first stages)]
       (case (:kind st)
         :follow   (recur items (comp xf (follow-xf store st)) (rest stages) selected)
-        :where    (recur items (comp xf (filter (where-pred st))) (rest stages) selected)
+        :where    (recur items (comp xf (filter (where-pred store st))) (rest stages) selected)
         :distinct (recur items (comp xf (distinct)) (rest stages) selected)
         :limit    (recur items (comp xf (take (:limit st))) (rest stages) selected)
         :order    (let [f (into [] xf items)]
-                    (recur (vec (sort-by #(field-value % (:field st)) (order-cmp (:descending st)) f))
+                    (recur (vec (sort-by #(field-value store % (:field st)) (order-cmp (:descending st)) f))
                            identity (rest stages) selected))
         :select   (recur items xf (rest stages) (:fields st))
         :count    (count (into [] xf items)))
@@ -430,7 +500,7 @@
                   (into {}
                         (map (fn [f]
                                (let [k (keyword f)]
-                                 [k (if (contains? r k) (get r k) (field-value item f))])))
+                                 [k (if (contains? r k) (get r k) (field-value store item f))])))
                         selected))
                 final rows)
           rows)))))

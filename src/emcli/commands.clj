@@ -71,6 +71,7 @@
    "delete-swimlane"     {:rule r/delete-swimlane     :params [[:lane :lane :int true]]}
    ;; Slices
    "add-slice"           {:rule r/add-slice           :params [[:timeline :timeline :int true] [:title :title :str true] [:slice-type :slice-type :kw true] [:index :index :int true] [:id :id :int false]]}
+   "rename-slice"        {:rule r/rename-slice        :params [[:slice :slice :int true] [:new-title :new-title :str true]]}
    "reorder-slice"       {:rule r/reorder-slice       :params [[:slice :slice :int true] [:new-index :new-index :int true]]}
    "set-slice-status"    {:rule r/set-slice-status    :params [[:slice :slice :int true] [:new-status :new-status :kw true]]}
    "set-slice-type"      {:rule r/set-slice-type      :params [[:slice :slice :int true] [:new-slice-type :new-slice-type :kw true]]}
@@ -81,6 +82,7 @@
    "assign-swimlane"     {:rule r/assign-swimlane     :params [[:element :element :int true] [:lane :lane :int true]]}
    "set-image-url"       {:rule r/set-image-url       :params [[:element :element :int true] [:url :url :str true]]}
    "rename-element"      {:rule r/rename-element      :params [[:element :element :int true] [:new-name :new-name :str true]]}
+   "rename-field"        {:rule r/rename-field        :params [[:element :element :int true] [:name :name :str true] [:new-name :new-name :str true]]}
    "delete-element"      {:rule r/delete-element      :params [[:element :element :int true]]}
    ;; Placements
    "place-element"       {:rule r/place-element       :params [[:slice :slice :int true] [:element :element :int true] [:id :id :int false]]}
@@ -91,9 +93,11 @@
    "disconnect"          {:rule r/disconnect          :params [[:connection :connection :int true]]}
    ;; Specifications
    "add-specification"   {:rule r/add-specification   :params [[:slice :slice :int true] [:title :title :str true] [:id :id :int false]]}
+   "rename-specification"{:rule r/rename-specification :params [[:spec :spec :int true] [:new-title :new-title :str true]]}
    "delete-specification"{:rule r/delete-specification :params [[:spec :spec :int true]]}
    "add-spec-step"       {:rule r/add-spec-step       :params [[:spec :spec :int true] [:clause :clause :kw true] [:element :element :int true] [:index :index :int true] [:id :id :int false]]}
    "add-error-step"      {:rule r/add-error-step      :params [[:spec :spec :int true] [:error-name :error-name :str true] [:index :index :int true] [:id :id :int false]]}
+   "rename-error-step"   {:rule r/rename-error-step   :params [[:step :step :int true] [:new-error-name :new-error-name :str true]]}
    "remove-spec-step"    {:rule r/remove-spec-step    :params [[:step :step :int true]]}
    "set-step-expect-empty" {:rule r/set-step-expect-empty :params [[:step :step :int true] [:value :value :bool true]]}
    ;; Wireframe — delete is scalar-only (node id is a string)
@@ -568,10 +572,10 @@
                                   :unsourced (m/unsourced-fields s e)}))
      :orphaned-derivations (vec (for [c (m/connections s mid)
                                       :let [to-names   (set (map :name (:fields (m/fetch s :element (:to c)))))
-                                            from-names (set (map :name (:fields (m/fetch s :element (:from c)))))]
+                                            from-names (map :name (:fields (m/fetch s :element (:from c))))]
                                       d (:derivations c)
-                                      :let [missing-sources (vec (remove from-names (:source_fields d)))
-                                            target-missing  (not (contains? to-names (:target_field d)))]
+                                      :let [missing-sources (vec (remove #(m/same-name-in? from-names %) (:source_fields d)))
+                                            target-missing  (not (m/same-name-in? to-names (:target_field d)))]
                                       :when (or target-missing (seq missing-sources))]
                                   {:connection (:id c) :target_field (:target_field d)
                                    :target_exists (not target-missing)

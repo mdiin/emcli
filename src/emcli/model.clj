@@ -136,6 +136,27 @@
         kb (same-name-key b)]
     (and (some? ka) (= ka kb))))
 
+(defn duplicate-field-name
+  "The first field name that is the same name as an earlier field in the same
+  list, at any depth, or nil. A field list is keyed by name - AddField upserts by
+  it, RemoveField removes by it, RenameField moves it - and names are compared by
+  the model's name equality, so two entries a name apart from case would make
+  every one of those edits address both (invariant FieldNameUnique). Wrong
+  spelling of a name and all, so the caller can report the name the author used."
+  [fields]
+  (let [repeated (->> fields
+                      (map #(same-name-key (:name %)))
+                      frequencies
+                      (keep (fn [[k n]] (when (< 1 n) k)))
+                      set)]
+    (or (some #(when (contains? repeated (same-name-key (:name %))) (:name %)) fields)
+        (some (fn [f] (when (seq (:subfields f)) (duplicate-field-name (:subfields f)))) fields))))
+
+(defn same-name-in?
+  "True when `names` holds a name that is the same name as `name`."
+  [names name]
+  (boolean (some #(same-name? % name) names)))
+
 (defn name-collision
   "The first entity in `entities` whose `name-key` field is the same name as
   `name`, ignoring the entity whose id is `exclude` (an entity's own id on a
@@ -158,12 +179,16 @@
 ;; the end; only a genuinely new entry is appended.
 
 (defn upsert-by
-  "`entries` with `item` replacing the entry whose `key-of` equals `key-of(item)`,
-  at that entry's position, or appended when no entry matches."
+  "`entries` with `item` replacing the entry that is the SAME NAME as it on
+  `key-of`, at that entry's position, or appended when no entry matches. The key
+  is always a name, so it is compared by the model's name equality (see
+  same-name?): 'id' and 'ID' are one name, and a list keyed by them holds one
+  entry, not two."
   [entries item key-of]
-  (let [k (key-of item)]
-    (if (some #(= k (key-of %)) entries)
-      (mapv #(if (= k (key-of %)) item %) entries)
+  (let [k      (key-of item)
+        match? (fn [e] (same-name? (key-of e) k))]
+    (if (some match? entries)
+      (mapv #(if (match? %) item %) entries)
       (conj (vec entries) item))))
 
 ;; ---------------------------------------------------------------------------
@@ -301,7 +326,7 @@
   [store element-id field-name]
   (boolean (some (fn [c]
                    (let [from (fetch store :element (:from c))]
-                     (some #(= field-name (:name %)) (:fields from))))
+                     (some #(same-name? field-name (:name %)) (:fields from))))
                  (incoming store element-id))))
 
 (defn- field-derived?
@@ -309,17 +334,17 @@
   source field exists on that connection's `from` element."
   [store element-id field-name]
   (boolean (some (fn [c]
-                   (let [from-names (set (map :name (:fields (fetch store :element (:from c)))))]
+                   (let [from-names (map :name (:fields (fetch store :element (:from c))))]
                      (some (fn [d]
-                             (and (= field-name (:target_field d))
-                                  (every? from-names (:source_fields d))))
+                             (and (same-name? field-name (:target_field d))
+                                  (every? #(same-name-in? from-names %) (:source_fields d))))
                            (:derivations c))))
                  (incoming store element-id))))
 
 (defn- field-introduced?
   "The element carries a field-origin override for this field."
   [element field-name]
-  (boolean (some #(= field-name (:field %)) (:field_origins element))))
+  (boolean (some #(same-name? field-name (:field %)) (:field_origins element))))
 
 (defn field-sourced?
   "Whether a field of `element` is sourced — carried, derived, or introduced."

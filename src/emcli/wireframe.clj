@@ -2,7 +2,8 @@
   "Wireframe DSL for screen elements: schema, validation, navigation, mutation,
   and rendering. Wireframes are hiccup-like EDN vectors embedded in screen
   element maps under the :wireframe key."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [emcli.model :as m]))
 
 ;; ---------------------------------------------------------------------------
 ;; Tag schema
@@ -290,10 +291,10 @@
   "Semantic validation: all :field-name values must exist in the screen's
   :fields array. Returns {:valid? true} or {:valid? false :errors [...]}."
   [wireframe screen-element]
-  (let [field-set (set (map :name (:fields screen-element)))
-        refs      (field-references wireframe)
-        errs      (for [{:keys [node-id field-name]} refs
-                        :when (not (contains? field-set field-name))]
+  (let [field-names (map :name (:fields screen-element))
+        refs        (field-references wireframe)
+        errs        (for [{:keys [node-id field-name]} refs
+                          :when (not (m/same-name-in? field-names field-name))]
                     {:node-id node-id
                      :message (str "Field '" field-name "' does not exist on screen")})]
     (if (seq errs)
@@ -360,6 +361,21 @@
                        children  (if has-attrs (rest rest-) rest-)
                        new-attrs (assoc attrs attr-kw value)]
                    (into [tag id-map new-attrs] children))))))
+
+(defn rename-field-references
+  "`wireframe` with the value of every :field-name attribute that is the same name
+  as `old` set to `new`. The tree's structure, its node ids and every other
+  attribute are untouched, and a null tree (a screen carrying no layout) comes
+  back null. Renaming a field moves the reference with it, so the layout never has
+  to be retargeted by hand (see WireframeReferencesResolve)."
+  [wireframe old new]
+  (when (some? wireframe)
+    (reduce (fn [wf {:keys [node-id field-name]}]
+              (if (m/same-name? field-name old)
+                (assoc-attr-at wf node-id :field-name new)
+                wf))
+            wireframe
+            (field-references wireframe))))
 
 (defn set-text-child-at
   "Set the string child of the node identified by `node-id` to `text`.

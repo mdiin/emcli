@@ -164,13 +164,13 @@
             }
         },
         "emcli_element" : {
-            "description" : "Manage elements (commands, events, read models, screens, automations) and their fields.\nVerbs: add (--name --element-type [--id]), add-field (--element --name --type [--cardinality] [--optional] [--subfield-of]), add-origin (--element --field --origin), context (--element --new-context), delete (--element), image (--element --url), remove-field (--element --name), remove-origin (--element --field), rename (--element --new-name), swimlane (--element --lane)",
+            "description" : "Manage elements (commands, events, read models, screens, automations) and their fields.\nVerbs: add (--name --element-type [--id]), add-field (--element --name --type [--cardinality] [--optional] [--subfield-of]), add-origin (--element --field --origin), context (--element --new-context), delete (--element), image (--element --url), remove-field (--element --name), remove-origin (--element --field), rename (--element --new-name), rename-field (--element --name --new-name), swimlane (--element --lane)",
             "command" : "emcli element {{verb}} {{args}}",
             "schema" : {
                 "properties" : {
                     "verb" : {
                         "type" : "string",
-                        "enum" : [ "add", "add-field", "add-origin", "context", "delete", "image", "remove-field", "remove-origin", "rename", "swimlane" ]
+                        "enum" : [ "add", "add-field", "add-origin", "context", "delete", "image", "remove-field", "remove-origin", "rename", "rename-field", "swimlane" ]
                     },
                     "args" : {
                         "type" : "string",
@@ -224,13 +224,13 @@
             }
         },
         "emcli_slice" : {
-            "description" : "Manage slices (vertical time segments) within a timeline.\nVerbs: add (--timeline --title --slice-type --index [--id]), delete (--slice), reorder (--slice --new-index), status (--slice --new-status), type (--slice --new-slice-type)",
+            "description" : "Manage slices (vertical time segments) within a timeline.\nVerbs: add (--timeline --title --slice-type --index [--id]), delete (--slice), rename (--slice --new-title), reorder (--slice --new-index), status (--slice --new-status), type (--slice --new-slice-type)",
             "command" : "emcli slice {{verb}} {{args}}",
             "schema" : {
                 "properties" : {
                     "verb" : {
                         "type" : "string",
-                        "enum" : [ "add", "delete", "reorder", "status", "type" ]
+                        "enum" : [ "add", "delete", "rename", "reorder", "status", "type" ]
                     },
                     "args" : {
                         "type" : "string",
@@ -241,13 +241,13 @@
             }
         },
         "emcli_spec" : {
-            "description" : "Manage specifications attached to slices.\nVerbs: add (--slice --title [--id]), delete (--spec)",
+            "description" : "Manage specifications attached to slices.\nVerbs: add (--slice --title [--id]), delete (--spec), rename (--spec --new-title)",
             "command" : "emcli spec {{verb}} {{args}}",
             "schema" : {
                 "properties" : {
                     "verb" : {
                         "type" : "string",
-                        "enum" : [ "add", "delete" ]
+                        "enum" : [ "add", "delete", "rename" ]
                     },
                     "args" : {
                         "type" : "string",
@@ -258,13 +258,13 @@
             }
         },
         "emcli_step" : {
-            "description" : "Manage steps and examples within a specification.\nVerbs: add (--spec --clause --element --index [--id]), add-example (--step --field-name --field-value), error (--spec --error-name --index [--id]), expect-empty (--step --value), remove (--step), remove-example (--step --field-name)",
+            "description" : "Manage steps and examples within a specification.\nVerbs: add (--spec --clause --element --index [--id]), add-example (--step --field-name --field-value), error (--spec --error-name --index [--id]), expect-empty (--step --value), remove (--step), remove-example (--step --field-name), rename-error (--step --new-error-name)",
             "command" : "emcli step {{verb}} {{args}}",
             "schema" : {
                 "properties" : {
                     "verb" : {
                         "type" : "string",
-                        "enum" : [ "add", "add-example", "error", "expect-empty", "remove", "remove-example" ]
+                        "enum" : [ "add", "add-example", "error", "expect-empty", "remove", "remove-example", "rename-error" ]
                     },
                     "args" : {
                         "type" : "string",

@@ -2,7 +2,7 @@
   "invariant obligations: PlacementMatchesSliceType, PlacementElementUnique,
   ElementNameUnique, TimelineTitleUnique, SwimlaneNameUnique, SliceTitleUnique,
   SpecificationTitleUnique, SpecificationComposition, ValidConnectionElementTypes,
-  WireframeWellFormed, WireframeReferencesResolve. Rules must reject any mutation
+  FieldNameUnique, WireframeWellFormed, WireframeReferencesResolve. Rules must reject any mutation
   that would break one."
   (:require [clojure.test :refer [deftest testing is]]
             [emcli.invariants :as inv]
@@ -320,3 +320,34 @@
         spid             (:id (first (m/specs store slid)))]
     (testing "a when step is rejected for a state_view spec"
       (is (r/error? (r/add-spec-step store {:spec spid :clause :when_step :element cmd :index 0}))))))
+
+(deftest field-names-are-unique-within-a-field-list
+  (testing "two fields of one list may not be a name apart from case"
+    (let [[store mid] (s/with-model)
+          [store _]   (m/create store :element
+                                (assoc (element-attrs mid "E" :command)
+                                       :fields [{:name "id"} {:name "ID"}]))]
+      (is (= [:FieldNameUnique] (collision-invariants store)))))
+  (testing "the same holds inside a field's subfields, however deep"
+    (let [[store mid] (s/with-model)
+          [store _]   (m/create store :element
+                                (assoc (element-attrs mid "E" :command)
+                                       :fields [{:name "line"
+                                                 :subfields [{:name "item"} {:name "ITEM"}]}]))]
+      (is (= [:FieldNameUnique] (collision-invariants store)))))
+  (testing "a collision wedges the model: every later field edit is refused"
+    (let [[store mid] (s/with-model)
+          [s1 e]      (m/create store :element (element-attrs mid "E" :command))
+          [s2 f]      (m/create s1 :element (element-attrs mid "F" :event))
+          ;; injected after both elements exist, since a wedged store refuses
+          ;; the creation of anything, including the escape hatch
+          s3          (m/set-field s2 :element (:id e) :fields [{:name "a"} {:name "A"}])
+          res         (r/add-field s3 {:element (:id f) :field {:name "b" :type :string}})]
+      (is (= :invariant-violation (:error res)))))
+  (testing "distinct names are fine, in one list and across lists"
+    (let [[store mid] (s/with-model)
+          [store _]   (m/create store :element
+                                (assoc (element-attrs mid "E" :command)
+                                       :fields [{:name "id"} {:name "amount"}
+                                                {:name "line" :subfields [{:name "item"}]}]))]
+      (is (empty? (inv/check store))))))

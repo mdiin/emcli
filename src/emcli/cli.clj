@@ -62,9 +62,10 @@
   {"timeline"   {"add" "create-timeline" "rename" "rename-timeline" "delete" "delete-timeline"}
    "swimlane"   {"add" "create-swimlane" "rename" "rename-swimlane"
                  "reorder" "reorder-swimlane" "delete" "delete-swimlane"}
-   "slice"      {"add" "add-slice" "reorder" "reorder-slice" "status" "set-slice-status"
+   "slice"      {"add" "add-slice" "rename" "rename-slice" "reorder" "reorder-slice" "status" "set-slice-status"
                  "type" "set-slice-type" "delete" "delete-slice"}
    "element"    {"add" "create-element" "add-field" "add-field" "remove-field" "remove-field"
+                 "rename-field" "rename-field"
                  "context" "set-element-context"
                  "swimlane" "assign-swimlane" "image" "set-image-url"
                  "add-origin" "add-field-origin" "remove-origin" "remove-field-origin"
@@ -77,8 +78,9 @@
    "placement"  {"add" "place-element" "reorder" "reorder-placement" "remove" "remove-placement"}
    "connection" {"add" "connect" "remove" "disconnect"
                  "add-derivation" "add-derivation" "remove-derivation" "remove-derivation"}
-   "spec"       {"add" "add-specification" "delete" "delete-specification"}
+   "spec"       {"add" "add-specification" "rename" "rename-specification" "delete" "delete-specification"}
    "step"       {"add" "add-spec-step" "error" "add-error-step" "remove" "remove-spec-step"
+                 "rename-error" "rename-error-step"
                  "add-example" "add-step-example" "remove-example" "remove-step-example"
                  "expect-empty" "set-step-expect-empty"}})
 

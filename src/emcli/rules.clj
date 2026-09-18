@@ -123,18 +123,10 @@
          (str/join ", " (map name field-cardinalities)))
     (seq (:subfields f)) (some invalid-field (:subfields f))))
 
-(defn- duplicate-field-name
-  "The first field name appearing twice in one field list, at any depth, or nil. A
-  field list is keyed by name - AddField upserts by it, RemoveField removes by it -
-  so two entries sharing a name would make both edits address both."
-  [fields]
-  (or (some (fn [[k n]] (when (< 1 n) k)) (frequencies (map :name fields)))
-      (some (fn [f] (when (seq (:subfields f)) (duplicate-field-name (:subfields f)))) fields)))
-
 (defn- require-valid-fields [fields]
   (or (when-let [msg (some invalid-field fields)]
         {:error :invalid-value :message msg})
-      (when-let [dup (duplicate-field-name fields)]
+      (when-let [dup (m/duplicate-field-name fields)]
         {:error :invalid-value
          :message (str "field " (pr-str dup) " appears twice in one field list")})))
 
@@ -245,6 +237,18 @@
                                                         :status :created} id))]
         (commit store :AddSlice [(created :slice sl)] sl))))
 
+;; Rename a slice's title, unique within its timeline (invariant SliceTitleUnique).
+;; Nothing references a slice by title - a slice is addressed by identity, and the
+;; title only travels as a resolution breadcrumb - so there is nothing to cascade.
+(defn rename-slice [store {:keys [slice new-title]}]
+  (let [sl (m/fetch store :slice slice)]
+    (or (require-entity store :slice slice)
+        (require-non-blank :new-title new-title)
+        (require-unique-name :slice new-title (m/slices store (:timeline sl)) :title slice)
+        (let [store (m/set-field store :slice slice :title new-title)]
+          (commit store :RenameSlice [(updated store :slice slice)]
+                  (m/fetch store :slice slice))))))
+
 (defn reorder-slice [store {:keys [slice new-index]}]
   (or (require-entity store :slice slice)
       (let [store (m/set-field store :slice slice :index new-index)]
@@ -293,16 +297,16 @@
   holds a stranded reference stays editable, since its guard bites only when
   this edit would create one."
   [el fields]
-  (let [proposed (set (map :name fields))
+  (let [proposed (map :name fields)
         refs     (wf/field-references (:wireframe el))]
     (some (fn [name]
             (let [nodes (->> refs
-                             (filter #(= name (:field-name %)))
+                             (filter #(m/same-name? name (:field-name %)))
                              (map :node-id)
                              distinct
                              vec)]
               (when (seq nodes) {:field name :nodes nodes})))
-          (remove proposed (map :name (:fields el))))))
+          (remove #(m/same-name-in? proposed %) (map :name (:fields el))))))
 
 (defn- referenced-field-error [{:keys [field nodes]}]
   {:error :field-referenced :field field :nodes nodes
@@ -330,8 +334,94 @@
 (defn remove-field [store {:keys [element name]}]
   (or (require-entity store :element element)
       (let [current (:fields (m/fetch store :element element))
-            fields  (vec (remove #(= name (:name %)) current))]
+            fields  (vec (remove #(m/same-name? name (:name %)) current))]
         (set-fields store {:element element :fields fields}))))
+
+;; RenameField's cascade (see RenameField in event-model.allium). A field name is
+;; the model's one TEXTUAL reference, so a rename respells every entry holding it
+;; rather than being blocked by one. Two helpers express the keyed rewrites; the
+;; layout's attributes are rewritten by the wireframe module.
+(defn- rename-keyed
+  "`entries` with the value at `key` set to `new` on every entry where it is the
+  same name as `old`; every other entry, and every other part of a matched entry,
+  is preserved."
+  [entries key old new]
+  (mapv (fn [e] (if (m/same-name? (get e key) old) (assoc e key new) e)) entries))
+
+(defn- rename-source-fields
+  "`derivations` with every source_fields entry that is the same name as `old`
+  respelled to `new`; the derivations and their targets are otherwise preserved."
+  [derivations old new]
+  (mapv (fn [d] (update d :source_fields
+                        (fn [fs] (mapv #(if (m/same-name? % old) new %) fs))))
+        derivations))
+
+;; Rename the field `name` on `element` to `new-name`, carrying every reference
+;; with it: the declaration, the element's own field-origin override, the
+;; derivations of every connection that touches the element, the examples of every
+;; step that asserts about it, and the element's own layout. The two connection
+;; sides are distinct - a derivation's target_field names a field of the
+;; connection's `to` and its source_fields fields of its `from` - so an incoming
+;; connection is rewritten on the target side and an outgoing one on the source
+;; side, never the far one.
+;; A name the element's fields do not carry is rejected rather than a silent
+;; no-op, and the new name must not be one another field of the same list already
+;; holds: like RemoveField this moves an existing field, so a collision would
+;; destroy the sibling holding it. That is the deliberate contrast with AddField,
+;; which upserts because it is how a field is edited (invariant FieldNameUnique).
+(defn rename-field [store {:keys [element name new-name]}]
+  (or (require-entity store :element element)
+      (require-non-blank :new-name new-name)
+      (let [el       (m/fetch store :element element)
+            fields   (:fields el)
+            incoming (m/incoming store element)
+            outgoing (m/outgoing store element)
+            steps    (m/by-field store :spec-step :element element)]
+        (or (when-not (some #(m/same-name? (:name %) name) fields)
+              {:error :invalid-value
+               :message (str "element " element " has no field named " (pr-str name))})
+            (when-let [clash (some #(when (and (not (m/same-name? (:name %) name))
+                                               (m/same-name? (:name %) new-name))
+                                        (:name %))
+                                   fields)]
+              {:error :name-conflict :type :field :id element :name clash
+               :message (str "the name " (pr-str new-name) " is already used by field "
+                             (pr-str clash) " of element " element
+                             "; reuse or rename it instead")})
+            (let [store (-> store
+                            (m/set-field :element element :fields
+                                         (rename-keyed fields :name name new-name))
+                            (m/set-field :element element :field_origins
+                                         (rename-keyed (:field_origins el) :field name new-name)))
+                  ;; a screen's layout names its own fields, so it moves with them;
+                  ;; an element with no layout keeps the key absent
+                  store (if (some? (:wireframe el))
+                          (m/set-field store :element element :wireframe
+                                       (wf/rename-field-references (:wireframe el) name new-name))
+                          store)
+                  store (reduce (fn [s c]
+                                  (m/set-field s :connection (:id c) :derivations
+                                               (rename-keyed (:derivations c) :target_field name new-name)))
+                                store incoming)
+                  store (reduce (fn [s c]
+                                  (m/set-field s :connection (:id c) :derivations
+                                               (rename-source-fields (:derivations c) name new-name)))
+                                store outgoing)
+                  store (reduce (fn [s st]
+                                  (m/set-field s :spec-step (:id st) :examples
+                                               (rename-keyed (:examples st) :field_name name new-name)))
+                                store steps)
+                  ;; DeltaPerMutation carries every entity whose observable state
+                  ;; changed. Rewriting an incoming target_field can move THIS
+                  ;; element's completeness, and rewriting an outgoing one can move
+                  ;; the completeness of the element at the far end, so those
+                  ;; elements ride along with the connections and the steps.
+                  element-ids (distinct (cons element (map :to outgoing)))
+                  conn-ids    (distinct (map :id (concat incoming outgoing)))
+                  changes     (concat (map #(updated store :element %) element-ids)
+                                      (map #(updated store :connection %) conn-ids)
+                                      (map #(updated store :spec-step (:id %)) steps))]
+              (commit store :RenameField (vec changes) (m/fetch store :element element)))))))
 
 (defn set-element-context [store {:keys [element new-context]}]
   (or (require-entity store :element element)
@@ -374,7 +464,7 @@
 (defn remove-field-origin [store {:keys [element field]}]
   (or (require-entity store :element element)
       (let [current (:field_origins (m/fetch store :element element))
-            origins (vec (remove #(= field (:field %)) current))]
+            origins (vec (remove #(m/same-name? field (:field %)) current))]
         (set-field-origins store {:element element :origins origins}))))
 
 (defn rename-element [store {:keys [element new-name]}]
@@ -553,7 +643,7 @@
 (defn remove-derivation [store {:keys [connection target]}]
   (or (require-entity store :connection connection)
       (let [current     (:derivations (m/fetch store :connection connection))
-            derivations (vec (remove #(= target (:target_field %)) current))]
+            derivations (vec (remove #(m/same-name? target (:target_field %)) current))]
         (set-connection-derivations store {:connection connection :derivations derivations}))))
 
 ;; ---------------------------------------------------------------------------
@@ -567,6 +657,17 @@
       (require-unique-name :specification title (m/specs store slice) :title nil)
       (let [[store spec] (m/create store :specification (with-id {:slice slice :title title} id))]
         (commit store :AddSpecification [(created :specification spec)] spec))))
+
+;; Rename a specification's title, unique within its slice (invariant
+;; SpecificationTitleUnique) and likewise referenced by nothing.
+(defn rename-specification [store {:keys [spec new-title]}]
+  (let [sp (m/fetch store :specification spec)]
+    (or (require-entity store :specification spec)
+        (require-non-blank :new-title new-title)
+        (require-unique-name :specification new-title (m/specs store (:slice sp)) :title spec)
+        (let [store (m/set-field store :specification spec :title new-title)]
+          (commit store :RenameSpecification [(updated store :specification spec)]
+                  (m/fetch store :specification spec))))))
 
 (defn add-spec-step [store {:keys [spec clause element index id]}]
   (or (require-entity store :specification spec)
@@ -586,6 +687,21 @@
                                  (with-id {:spec spec :clause :then_step :error_name error-name
                                           :index index :is_error true :expect_empty false :examples []} id))]
         (commit store :AddErrorStep [(created :spec-step st)] st))))
+
+;; Rename an error outcome. error_name is CONTENT, not an identifier - no boundary
+;; resolves a step by name - so no uniqueness is required of it. The guard is
+;; therefore the SHAPE of the target: only an error step is renamed this way.
+(defn rename-error-step [store {:keys [step new-error-name]}]
+  (let [st (m/fetch store :spec-step step)]
+    (or (require-entity store :spec-step step)
+        (when-not (:is_error st)
+          {:error :invalid-value
+           :message (str "spec-step " step " is not an error step; only an error step "
+                         "carries an error_name")})
+        (require-non-blank :new-error-name new-error-name)
+        (let [store (m/set-field store :spec-step step :error_name new-error-name)]
+          (commit store :RenameErrorStep [(updated store :spec-step step)]
+                  (m/fetch store :spec-step step))))))
 
 (defn remove-spec-step [store {:keys [step]}]
   (or (require-entity store :spec-step step)
@@ -617,7 +733,7 @@
 (defn remove-step-example [store {:keys [step field-name]}]
   (or (require-entity store :spec-step step)
       (let [current  (:examples (m/fetch store :spec-step step))
-            examples (vec (remove #(= field-name (:field_name %)) current))]
+            examples (vec (remove #(m/same-name? field-name (:field_name %)) current))]
         (set-step-examples store {:step step :examples examples}))))
 
 (defn set-step-expect-empty [store {:keys [step value]}]

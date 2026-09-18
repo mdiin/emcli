@@ -276,12 +276,28 @@
               (mapcat wireframe-element-violations))
         (m/all store :element)))
 
+(defn- field-name-violations
+  "FieldNameUnique: no field list - an element's, or any field's subfields -
+  holds two fields under one name. The guards on the field edits reject one
+  before it is written; this refuses one arriving by any other path, import
+  included."
+  [store]
+  (for [e (m/all store :element)
+        :let [dupe (m/duplicate-field-name (:fields e))]
+        :when dupe]
+    {:invariant :FieldNameUnique
+     :type      :element
+     :id        (:id e)
+     :message   (str "Element " (:id e) " declares a field named " (pr-str dupe)
+                     " more than once, so a reference to that name is ambiguous")}))
+
 (defn check
   "Return every invariant violation in `store` (empty when the store is valid)."
   [store]
   (vec (concat (placement-violations store)
                (duplicate-placement-violations store)
                (uniqueness-violations store)
+               (field-name-violations store)
                (spec-violations store)
                (connection-violations store)
                (example-violations store)

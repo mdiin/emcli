@@ -762,3 +762,174 @@
                                                        :field {:name "a" :type :string}})]
       (is (= {:name "a" :type :string :optional false :cardinality :single :subfields []}
              (first (:fields (:result res))))))))
+
+;; --- field names compare by the model's name equality (FieldNameUnique) ------
+
+(deftest field-names-are-the-same-name-when-they-differ-only-in-case
+  (let [[store mid]            (s/with-model)
+        {s1 :store el :result} (s/ok store r/create-element {:model mid :name "E" :element-type :command})
+        eid                    (:id el)]
+    (testing "a field list cannot hold two fields under one name, however spelled"
+      (is (= :invalid-value
+             (:error (s/err s1 r/set-fields {:element eid
+                                             :fields [{:name "id" :type :string}
+                                                      {:name "ID" :type :string}]})))))
+    (testing "AddField updates a name it already finds rather than adding a second"
+      (let [{s2 :store} (s/ok s1 r/add-field {:element eid :field {:name "id" :type :string}})
+            {s3 :store} (s/ok s2 r/add-field {:element eid :field {:name "ID" :type :string}})]
+        (is (= ["ID"] (mapv :name (:fields (m/fetch s3 :element eid)))))))
+    (testing "RemoveField matches by name equality, so either spelling removes it"
+      (let [{s2 :store} (s/ok s1 r/add-field {:element eid :field {:name "id" :type :string}})
+            {s3 :store} (s/ok s2 r/remove-field {:element eid :name "ID"})]
+        (is (= [] (:fields (m/fetch s3 :element eid))))))
+    (testing "field-origin overrides are keyed the same way"
+      (let [{s2 :store} (s/ok s1 r/add-field {:element eid :field {:name "amount" :type :string}})
+            {s3 :store} (s/ok s2 r/add-field-origin {:element eid :field "amount" :origin :generated})
+            {s4 :store} (s/ok s3 r/add-field-origin {:element eid :field "AMOUNT" :origin :user_input})]
+        (is (= ["AMOUNT"] (mapv :field (:field_origins (m/fetch s4 :element eid)))))))))
+
+(deftest provenance-and-layouts-resolve-field-names-by-that-equality
+  (testing "a field is CARRIED across a connection whose far side spells it differently"
+    (let [[store mid]              (s/with-model)
+          {s1 :store src :result}  (s/ok store r/create-element {:model mid :name "Src" :element-type :event})
+          {s2 :store dst :result}  (s/ok s1 r/create-element {:model mid :name "Dst" :element-type :read_model})
+          {s3 :store}              (s/ok s2 r/add-field {:element (:id src) :field {:name "Amount" :type :string}})
+          {s4 :store}              (s/ok s3 r/add-field {:element (:id dst) :field {:name "amount" :type :string}})
+          {s5 :store}              (s/ok s4 r/connect {:from (:id src) :to (:id dst)})]
+      (is (m/information-complete? s5 (m/fetch s5 :element (:id dst))))))
+  (testing "a derivation's target and source fields are keyed the same way"
+    (let [[store mid]              (s/with-model)
+          {s1 :store cmd :result}  (s/ok store r/create-element {:model mid :name "Cmd" :element-type :command})
+          {s2 :store evt :result}  (s/ok s1 r/create-element {:model mid :name "Evt" :element-type :event})
+          {s3 :store}              (s/ok s2 r/add-field {:element (:id cmd) :field {:name "orderId" :type :string}})
+          {s4 :store}              (s/ok s3 r/add-field {:element (:id evt) :field {:name "total" :type :decimal}})
+          {s5 :store cn :result}   (s/ok s4 r/connect {:from (:id cmd) :to (:id evt)})
+          {s6 :store}              (s/ok s5 r/add-derivation {:connection (:id cn) :target "total" :from ["orderId"]})
+          {s7 :store}              (s/ok s6 r/add-derivation {:connection (:id cn) :target "TOTAL" :from ["orderId"]})]
+      (is (= ["TOTAL"] (mapv :target_field (:derivations (m/fetch s7 :connection (:id cn))))))
+      (let [{s8 :store} (s/ok s7 r/remove-derivation {:connection (:id cn) :target "total"})]
+        (is (= [] (:derivations (m/fetch s8 :connection (:id cn))))
+            "removing by the other spelling removes the same name"))))
+  (testing "a layout node resolves a field the screen declares under another spelling"
+    (let [[store mid]             (s/with-model)
+          {s1 :store scr :result} (s/ok store r/create-element {:model mid :name "S" :element-type :screen})
+          {s2 :store}             (s/ok s1 r/set-fields {:element (:id scr)
+                                                         :fields [{:name "searchTerm" :type :string}]})]
+      (is (= {:valid? true}
+             (wf/validate-semantics [:canvas {:-id "n1"} {}
+                                     [:input {:-id "n2"} {:field-name "SearchTerm"}]]
+                                    (m/fetch s2 :element (:id scr))))))))
+
+;; --- the renames (RenameSlice / RenameSpecification / RenameErrorStep / RenameField) --
+
+(deftest slice-and-specification-titles-rename-under-their-uniqueness-guards
+  (let [[store mid]              (s/with-model)
+        {s1 :store tl :result}   (s/ok store r/create-timeline {:model mid :title "T"})
+        {s2 :store sl :result}   (s/ok s1 r/add-slice {:timeline (:id tl) :title "Place"
+                                                       :slice-type :state_change :index 0})
+        {s3 :store other :result}(s/ok s2 r/add-slice {:timeline (:id tl) :title "Confirm"
+                                                       :slice-type :state_change :index 1})]
+    (testing "a slice's title can be changed, within its timeline"
+      (let [{s4 :store} (s/ok s3 r/rename-slice {:slice (:id sl) :new-title "Confirmed"})]
+        (is (= "Confirmed" (:title (m/fetch s4 :slice (:id sl)))))))
+    (testing "but not onto one its timeline already holds, nor to a blank"
+      (is (= :name-conflict (:error (s/err s3 r/rename-slice {:slice (:id sl) :new-title "Confirm"}))))
+      (is (= :invalid-value (:error (s/err s3 r/rename-slice {:slice (:id sl) :new-title "  "})))))
+    (testing "a specification's title renames within its slice"
+      (let [{s4 :store sp :result}  (s/ok s3 r/add-specification {:slice (:id sl) :title "Happy"})
+            {s5 :store sp2 :result} (s/ok s4 r/add-specification {:slice (:id sl) :title "Sad"})
+            {s6 :store}             (s/ok s5 r/rename-specification {:spec (:id sp) :new-title "Glad"})]
+        (is (= "Glad" (:title (m/fetch s6 :specification (:id sp)))))
+        (is (= :name-conflict (:error (s/err s6 r/rename-specification {:spec (:id sp) :new-title "Sad"}))))))))
+
+(deftest an-error-step-renames-its-outcome-without-a-uniqueness-rule
+  (let [[store mid]              (s/with-model)
+        {s1 :store cmd :result}  (s/ok store r/create-element {:model mid :name "Cmd" :element-type :command})
+        {s2 :store tl :result}   (s/ok s1 r/create-timeline {:model mid :title "T"})
+        {s3 :store sl :result}   (s/ok s2 r/add-slice {:timeline (:id tl) :title "S"
+                                                       :slice-type :state_change :index 0})
+        {s4 :store sp :result}   (s/ok s3 r/add-specification {:slice (:id sl) :title "spec"})
+        {s5 :store est :result}  (s/ok s4 r/add-error-step {:spec (:id sp) :error-name "Declined" :index 0})]
+    (testing "the outcome name is content, so two error steps may carry the same one"
+      (let [{s6 :store} (s/ok s5 r/rename-error-step {:step (:id est) :new-error-name "PaymentDeclined"})]
+        (is (= "PaymentDeclined" (:error_name (m/fetch s6 :spec-step (:id est)))))))
+    (testing "only an error step is renamed this way"
+      (let [{s6 :store st :result} (s/ok s5 r/add-spec-step {:spec (:id sp) :clause :when_step
+                                                             :element (:id cmd) :index 1})]
+        (is (= :invalid-value (:error (s/err s6 r/rename-error-step {:step (:id st) :new-error-name "X"}))))))))
+
+(deftest renaming-a-field-carries-every-reference-with-it
+  (let [[store mid]             (s/with-model)
+        {s1 :store cmd :result} (s/ok store r/create-element {:model mid :name "Cmd" :element-type :command})
+        {s2 :store evt :result} (s/ok s1 r/create-element {:model mid :name "Evt" :element-type :event})
+        {s3 :store}             (s/ok s2 r/add-field {:element (:id cmd) :field {:name "orderId" :type :uuid}})
+        {s4 :store}             (s/ok s3 r/add-field {:element (:id evt) :field {:name "total" :type :decimal}})
+        {s5 :store}             (s/ok s4 r/add-field-origin {:element (:id evt) :field "total" :origin :generated})
+        {s6 :store cn :result}  (s/ok s5 r/connect {:from (:id cmd) :to (:id evt)})
+        {s7 :store}             (s/ok s6 r/add-derivation {:connection (:id cn) :target "total" :from ["orderId"]})
+        {s8 :store tl :result}  (s/ok s7 r/create-timeline {:model mid :title "T"})
+        {s9 :store sl :result}  (s/ok s8 r/add-slice {:timeline (:id tl) :title "S"
+                                                      :slice-type :state_change :index 0})
+        {s10 :store sp :result} (s/ok s9 r/add-specification {:slice (:id sl) :title "spec"})
+        {s11 :store st :result} (s/ok s10 r/add-spec-step {:spec (:id sp) :clause :then_step
+                                                           :element (:id evt) :index 0})
+        {s12 :store}            (s/ok s11 r/add-step-example {:step (:id st) :field-name "total" :field-value "1"})
+        {s13 :store}            (s/ok s12 r/rename-field {:element (:id evt) :name "total" :new-name "amount"})]
+    (testing "the declaration moves, keeping the field's shape"
+      (is (= ["amount"] (mapv :name (:fields (m/fetch s13 :element (:id evt))))))
+      (is (= :decimal (:type (first (:fields (m/fetch s13 :element (:id evt))))))))
+    (testing "the element's own field-origin override moves"
+      (is (= ["amount"] (mapv :field (:field_origins (m/fetch s13 :element (:id evt)))))))
+    (testing "an INCOMING connection's target moves; its source side is untouched"
+      (let [d (first (:derivations (m/fetch s13 :connection (:id cn))))]
+        (is (= "amount" (:target_field d)))
+        (is (= ["orderId"] (:source_fields d)) "the far side names a field of the other element")))
+    (testing "a step example about the element moves"
+      (is (= ["amount"] (mapv :field_name (:examples (m/fetch s13 :spec-step (:id st)))))))
+    (testing "one delta carries the element, the connection and the step"
+      (let [{:keys [delta]} (s/ok s12 r/rename-field {:element (:id evt) :name "total" :new-name "amount"})]
+        (is (= :RenameField (:op delta)))
+        (is (= #{(:id evt) (:id cn) (:id st)}
+               (set (map :id (:changes delta)))))
+        (is (= #{:element :connection :spec-step} (set (map :type (:changes delta)))))))))
+
+(deftest renaming-a-field-on-the-outgoing-side-and-in-a-layout
+  (testing "an OUTGOING connection's source_fields move; its target side is untouched"
+    (let [[store mid]             (s/with-model)
+          {s1 :store cmd :result} (s/ok store r/create-element {:model mid :name "Cmd" :element-type :command})
+          {s2 :store evt :result} (s/ok s1 r/create-element {:model mid :name "Evt" :element-type :event})
+          {s3 :store}             (s/ok s2 r/add-field {:element (:id cmd) :field {:name "orderId" :type :uuid}})
+          {s4 :store}             (s/ok s3 r/add-field {:element (:id evt) :field {:name "total" :type :decimal}})
+          {s5 :store cn :result}  (s/ok s4 r/connect {:from (:id cmd) :to (:id evt)})
+          {s6 :store}             (s/ok s5 r/add-derivation {:connection (:id cn) :target "total" :from ["orderId"]})
+          {s7 :store}             (s/ok s6 r/rename-field {:element (:id cmd) :name "orderId" :new-name "orderRef"})
+          d                       (first (:derivations (m/fetch s7 :connection (:id cn))))]
+      (is (= ["orderRef"] (:source_fields d)))
+      (is (= "total" (:target_field d)) "the far side names a field of the other element")))
+  (testing "a screen's layout moves with the field it names"
+    (let [[store mid]             (s/with-model)
+          {s1 :store scr :result} (s/ok store r/create-element {:model mid :name "S" :element-type :screen})
+          {s2 :store}             (s/ok s1 r/set-fields {:element (:id scr)
+                                                         :fields [{:name "searchTerm" :type :string}]})
+          {s3 :store}             (s/ok s2 r/add-wireframe-node {:element (:id scr) :tag :input
+                                                                 :attrs {:field-name "searchTerm"}})
+          {s4 :store}             (s/ok s3 r/rename-field {:element (:id scr) :name "searchTerm"
+                                                           :new-name "query"})
+          refs                    (wf/field-references (:wireframe (m/fetch s4 :element (:id scr))))]
+      (is (= ["query"] (mapv :field-name refs)))
+      (is (= {:valid? true} (wf/validate-semantics (:wireframe (m/fetch s4 :element (:id scr)))
+                                                  (m/fetch s4 :element (:id scr))))))))
+
+(deftest renaming-a-field-refuses-what-it-cannot-move
+  (let [[store mid]             (s/with-model)
+        {s1 :store el :result}  (s/ok store r/create-element {:model mid :name "E" :element-type :event})
+        {s2 :store}             (s/ok s1 r/add-field {:element (:id el) :field {:name "amount" :type :decimal}})
+        {s3 :store}             (s/ok s2 r/add-field {:element (:id el) :field {:name "total" :type :decimal}})]
+    (testing "a name the element does not carry is rejected, not a silent no-op"
+      (is (= :invalid-value (:error (s/err s3 r/rename-field {:element (:id el) :name "nope" :new-name "x"})))))
+    (testing "and so is a name another field of the list already holds"
+      (is (= :name-conflict (:error (s/err s3 r/rename-field {:element (:id el)
+                                                              :name "amount" :new-name "total"})))))
+    (testing "while a case-only respelling is a rename, not a collision"
+      (let [{s4 :store} (s/ok s3 r/rename-field {:element (:id el) :name "amount" :new-name "AMOUNT"})]
+        (is (= ["AMOUNT" "total"] (mapv :name (:fields (m/fetch s4 :element (:id el))))))))))

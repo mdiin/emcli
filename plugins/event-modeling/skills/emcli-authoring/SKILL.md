@@ -22,13 +22,13 @@ description: >
 
 ### emcli_slice
 
-Slice `--kind` values: `state_change`, `state_view`, `automation`
+Slice `--slice-type` values: `state_change`, `state_view`, `automation`
 
 Slice `--new-status` values: `created`, `in_progress`, `done`, `informational`
 
 ### emcli_element
 
-Element `--kind` values: `command`, `event`, `read_model`, `screen`, `automation`
+Element `--element-type` values: `command`, `event`, `read_model`, `screen`, `automation`
 
 Field `--type` values: `string`, `boolean`, `double`, `decimal`, `long`, `custom`, `date`, `date_time`, `uuid`, `int`
 
