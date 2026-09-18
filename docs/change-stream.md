@@ -223,19 +223,20 @@ data: {"op":"DeleteTimeline","changes":[{"action":"deleted","type":"placement","
 | `SetElementContext` / `AssignSwimlane` / `SetImageUrl` / `SetFieldOrigins` / `RenameElement` | updated | element |
 | `RenameField` | updated | the element (fields, field_origins and layout together), then each connection or spec-step the respelling reached, then any far-end element whose completeness moved |
 | `AddWireframeNode` / `AddWireframeNodeBefore` / `SetWireframeAttr` / `SetWireframeText` / `DeleteWireframeNode` | updated | the screen element, restated with its new layout tree |
-| `DeleteElement` | deleted, updated | cascaded placements, spec-steps and connections, then the element, then the surviving `to` element(s) whose completeness the removed connections moved |
-| `PlaceElement` | created | placement |
+| `DeleteElement` | deleted, updated | cascaded placements, spec-steps and connections, then the element, then the slices and specifications whose `is_complete` those removals moved, then the surviving `to` element(s) whose completeness the removed connections moved |
+| `PlaceElement` | created, updated | placement, then the slice whose `is_complete` the new placement moved |
 | `ReorderPlacement` | updated (one per placement whose index moved, in new-index order; an empty `changes` list when the move changes nothing) | placement |
-| `RemovePlacement` | deleted | placement |
+| `RemovePlacement` | deleted, updated | placement, then the slice whose `is_complete` the removal moved |
 | `Connect` | created, updated | connection, then the `to` element (wiring it may have changed its completeness) |
 | `Disconnect` | deleted, updated | connection, then the `to` element |
 | `SetConnectionDerivations` | updated, updated | connection, then its `to` element |
 | `AddSpecification` | created | specification |
 | `RenameSpecification` | updated | specification |
 | `DeleteSpecification` | deleted | specification + cascaded spec-steps |
-| `AddSpecStep` / `AddErrorStep` | created | spec-step |
+| `AddSpecStep` | created, updated | spec-step, then the specification whose `is_complete` the new step moved |
+| `AddErrorStep` | created | spec-step (an error step is not a singleton, so no specification verdict moves) |
 | `RenameErrorStep` | updated | spec-step |
-| `RemoveSpecStep` | deleted | spec-step |
+| `RemoveSpecStep` | deleted, updated | spec-step, then the specification whose `is_complete` the removal moved |
 | `SetStepExamples` / `SetStepExpectEmpty` | updated | spec-step |
 
 Within one delta the `changes` are ordered: for an operation aimed at a single
@@ -258,11 +259,11 @@ All entities carry integer `id` and `type`; relationships are integer ids.
 |------|--------|
 | `timeline` | `id, type, model, title` |
 | `swimlane` | `id, type, model, name, index` |
-| `slice` | `id, type, timeline, title, slice_type, index, status` |
+| `slice` | `id, type, timeline, title, slice_type, index, status, is_complete` |
 | `element` | `id, type, model, name, element_type, context, fields[], field_origins[], is_information_complete, swimlane?, image_url?, wireframe?` |
 | `placement` | `id, type, slice, element, index` |
 | `connection` | `id, type, model, from, to, derivations[]` |
-| `specification` | `id, type, slice, title` |
+| `specification` | `id, type, slice, title, is_complete` |
 | `spec-step` | `id, type, spec, clause, index, element?, is_error, error_name?, expect_empty, examples[]` |
 
 `swimlane?`, `image_url?`, `wireframe?`, `element?` and `error_name?` are

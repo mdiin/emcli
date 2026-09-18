@@ -971,3 +971,30 @@
         (is (true? (m/information-complete? store (m/fetch store :element (:id evt)))))
         (is (= [(:id cmd) (:id evt)] (mapv :id (:changes delta)))
             "the command, then the element whose verdict moved")))))
+
+(deftest a-verdict-move-restates-the-slice-or-specification-it-belonged-to
+  (testing "a placement restates the slice whose is_complete it moved"
+    (let [[store mid]             (s/with-model)
+          {s1 :store cmd :result} (s/ok store r/create-element {:model mid :name "Cmd" :element-type :command})
+          {s2 :store tl :result}  (s/ok s1 r/create-timeline {:model mid :title "T"})
+          {s3 :store sl :result}  (s/ok s2 r/add-slice {:timeline (:id tl) :title "S"
+                                                        :slice-type :state_change :index 0})]
+      (is (false? (:is_complete (m/canonical-entity s3 :slice (:id sl))))
+          "an empty slice is not complete")
+      (let [{:keys [delta store]} (s/ok s3 r/place-element {:slice (:id sl) :element (:id cmd)})]
+        (is (true? (:is_complete (m/canonical-entity store :slice (:id sl)))))
+        (is (= [:placement :slice] (mapv :type (:changes delta))))
+        (is (true? (get-in (second (:changes delta)) [:entity :is_complete]))
+            "the slice change carries its new verdict"))))
+  (testing "a step restates the specification whose is_complete it moved"
+    (let [[store mid]             (s/with-model)
+          {s1 :store cmd :result} (s/ok store r/create-element {:model mid :name "Cmd" :element-type :command})
+          {s2 :store tl :result}  (s/ok s1 r/create-timeline {:model mid :title "T"})
+          {s3 :store sl :result}  (s/ok s2 r/add-slice {:timeline (:id tl) :title "S"
+                                                        :slice-type :state_change :index 0})
+          {s4 :store sp :result}  (s/ok s3 r/add-specification {:slice (:id sl) :title "spec"})]
+      (is (false? (:is_complete (m/canonical-entity s4 :specification (:id sp)))))
+      (let [{:keys [delta store]} (s/ok s4 r/add-spec-step {:spec (:id sp) :clause :when_step
+                                                            :element (:id cmd) :index 0})]
+        (is (true? (:is_complete (m/canonical-entity store :specification (:id sp)))))
+        (is (= [:spec-step :specification] (mapv :type (:changes delta))))))))

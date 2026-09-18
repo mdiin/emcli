@@ -235,7 +235,10 @@
       (let [[store sl] (m/create store :slice (with-id {:timeline timeline :title title
                                                         :slice_type slice-type :index index
                                                         :status :created} id))]
-        (commit store :AddSlice [(created :slice sl)] sl))))
+        ;; the CREATED delta carries the canonical record too, derived verdict
+        ;; included, so a consumer seeding from a snapshot and patching by id sees
+        ;; one shape either way (CreateElement builds its change the same way)
+        (commit store :AddSlice [(created :slice (m/canonical-entity store :slice (:id sl)))] sl))))
 
 ;; Rename a slice's title, unique within its timeline (invariant SliceTitleUnique).
 ;; Nothing references a slice by title - a slice is addressed by identity, and the
@@ -307,6 +310,20 @@
                              vec)]
               (when (seq nodes) {:field name :nodes nodes})))
           (remove #(m/same-name-in? proposed %) (map :name (:fields el))))))
+
+(defn- restated-if-verdict-moved
+  "The `id` of `type`, as one `updated` change, when a DERIVED verdict the wire
+  carries moved between `pre` and `store` - else nothing. DeltaPerMutation
+  restates an entity whose observable state changed; a verdict recomputed without
+  moving is not a change, so an operation that touched the entity without moving
+  it does not restate it."
+  [pre store type id]
+  (let [before (m/fetch pre type id)
+        after  (m/fetch store type id)]
+    (when (and before after
+               (not= (m/canonical-entity pre type id)
+                     (m/canonical-entity store type id)))
+      [(updated store type id)])))
 
 (defn- referenced-field-error [{:keys [field nodes]}]
   {:error :field-referenced :field field :nodes nodes
@@ -512,12 +529,17 @@
   (or (require-entity store :slice slice)
       (require-entity store :element element)
       (require-id-available store id)
-      (let [existing  (m/placements store slice)
+      (let [pre       store
+            existing  (m/placements store slice)
             next-idx  (if (seq existing)
                         (inc (apply max (map #(or (:index %) 0) existing)))
                         0)
-            [store p] (m/create store :placement (with-id {:slice slice :element element :index next-idx} id))]
-        (commit store :PlaceElement [(created :placement p)] p))))
+            [store p] (m/create store :placement (with-id {:slice slice :element element :index next-idx} id))
+            ;; a placement is what Slice.is_complete is read from, so the slice
+            ;; rides along when its verdict moved
+            changes   (concat [(created :placement p)]
+                              (restated-if-verdict-moved pre store :slice slice))]
+        (commit store :PlaceElement (vec changes) p))))
 
 ;; A reorder moves a placement by one relative selector: --position front|back
 ;; takes it to an end, --before <element> / --after <element> take it next to a
@@ -622,8 +644,11 @@
   (or (require-entity store :slice slice)
       (require-entity store :element element)
       (or (when-let [target (m/placement-of store slice element)]
-            (let [store (m/delete store :placement (:id target))]
-              (commit store :RemovePlacement [(deleted :placement (:id target))] target)))
+            (let [pre     store
+                  store   (m/delete store :placement (:id target))
+                  changes (concat [(deleted :placement (:id target))]
+                                  (restated-if-verdict-moved pre store :slice slice))]
+              (commit store :RemovePlacement (vec changes) target)))
           (no-placement slice element))))
 
 ;; ---------------------------------------------------------------------------
@@ -683,7 +708,9 @@
       (require-non-blank :title title)
       (require-unique-name :specification title (m/specs store slice) :title nil)
       (let [[store spec] (m/create store :specification (with-id {:slice slice :title title} id))]
-        (commit store :AddSpecification [(created :specification spec)] spec))))
+        (commit store :AddSpecification
+                [(created :specification (m/canonical-entity store :specification (:id spec)))]
+                spec))))
 
 ;; Rename a specification's title, unique within its slice (invariant
 ;; SpecificationTitleUnique) and likewise referenced by nothing.
@@ -701,10 +728,14 @@
       (require-entity store :element element)
       (require-id-available store id)
       (require-valid-value spec-step-clauses clause)
-      (let [[store st] (m/create store :spec-step
+      (let [pre       store
+            [store st] (m/create store :spec-step
                                  (with-id {:spec spec :clause clause :element element :index index
-                                          :is_error false :expect_empty false :examples []} id))]
-        (commit store :AddSpecStep [(created :spec-step st)] st))))
+                                          :is_error false :expect_empty false :examples []} id))
+            ;; a step is what Specification.is_complete is read from
+            changes   (concat [(created :spec-step st)]
+                              (restated-if-verdict-moved pre store :specification spec))]
+        (commit store :AddSpecStep (vec changes) st))))
 
 (defn add-error-step [store {:keys [spec error-name index id]}]
   (or (require-entity store :specification spec)
@@ -732,8 +763,12 @@
 
 (defn remove-spec-step [store {:keys [step]}]
   (or (require-entity store :spec-step step)
-      (let [store (m/delete store :spec-step step)]
-        (commit store :RemoveSpecStep [(deleted :spec-step step)] step))))
+      (let [spec    (:spec (m/fetch store :spec-step step))
+            pre     store
+            store   (m/delete store :spec-step step)
+            changes (concat [(deleted :spec-step step)]
+                            (restated-if-verdict-moved pre store :specification spec))]
+        (commit store :RemoveSpecStep (vec changes) step))))
 
 (defn set-step-examples [store {:keys [step examples]}]
   (or (require-entity store :spec-step step)
@@ -827,14 +862,18 @@
                        (map :to)
                        (remove #{element-id})
                        distinct)
-        acc       (reduce (fn [a p] (del a :placement (:id p)))
-                          acc (m/element-placements store element-id))
+        placements (m/element-placements store element-id)
+        steps      (m/by-field store :spec-step :element element-id)
+        ;; the slices and specifications whose verdicts those removals may move
+        slice-ids  (distinct (map :slice placements))
+        spec-ids   (distinct (map :spec steps))
+        acc       (reduce (fn [a p] (del a :placement (:id p))) acc placements)
         ;; A specification step asserts ABOUT an element, so a step naming this one
         ;; cannot outlive it - SpecificationComposition would describe a step about
         ;; nothing. It goes with the element, as its placements and connections do;
-        ;; the specifications those steps belonged to stay.
-        acc       (reduce (fn [a st] (del a :spec-step (:id st)))
-                          acc (m/by-field store :spec-step :element element-id))
+        ;; the specifications those steps belonged to stay, with their verdicts
+        ;; restated if losing the step moved them.
+        acc       (reduce (fn [a st] (del a :spec-step (:id st))) acc steps)
         acc       (reduce (fn [a c] (del a :connection (:id c))) acc conns)
         [store changes] (del acc :element element-id)
         ;; DeltaPerMutation restates entities whose observable state CHANGED. A
@@ -843,8 +882,10 @@
         moved     (filter (fn [id]
                             (not= (m/information-complete? pre (m/fetch pre :element id))
                                   (m/information-complete? store (m/fetch store :element id))))
-                          survivors)]
-    [store (into changes (map #(updated store :element %)) moved)]))
+                          survivors)
+        verdicts  (concat (mapcat #(restated-if-verdict-moved pre store :slice %) slice-ids)
+                          (mapcat #(restated-if-verdict-moved pre store :specification %) spec-ids))]
+    [store (into (into changes (map #(updated store :element %)) moved) verdicts)]))
 
 (defn delete-specification [store {:keys [spec]}]
   (or (require-entity store :specification spec)

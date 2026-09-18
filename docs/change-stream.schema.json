@@ -286,7 +286,7 @@
     },
     "Slice": {
       "type": "object",
-      "required": ["id", "type", "timeline", "title", "slice_type", "index", "status"],
+      "required": ["id", "type", "timeline", "title", "slice_type", "index", "status", "is_complete"],
       "additionalProperties": false,
       "properties": {
         "id": { "type": "integer" },
@@ -295,7 +295,11 @@
         "title": { "type": "string" },
         "slice_type": { "$ref": "#/$defs/sliceType" },
         "index": { "type": "integer" },
-        "status": { "$ref": "#/$defs/sliceStatus" }
+        "status": { "$ref": "#/$defs/sliceStatus" },
+        "is_complete": {
+          "type": "boolean",
+          "description": "True iff the slice holds the composition its slice_type requires. Recomputed whenever a placement joins or leaves it, so a delta restates the slice exactly when its verdict moved."
+        }
       }
     },
     "Element": {
@@ -367,13 +371,17 @@
     },
     "Specification": {
       "type": "object",
-      "required": ["id", "type", "slice", "title"],
+      "required": ["id", "type", "slice", "title", "is_complete"],
       "additionalProperties": false,
       "properties": {
         "id": { "type": "integer" },
         "type": { "const": "specification" },
         "slice": { "type": "integer" },
-        "title": { "type": "string" }
+        "title": { "type": "string" },
+        "is_complete": {
+          "type": "boolean",
+          "description": "True iff the specification holds the singleton its slice's shape requires. Recomputed whenever a step joins or leaves it, so a delta restates the specification exactly when its verdict moved."
+        }
       }
     },
     "SpecStep": {
