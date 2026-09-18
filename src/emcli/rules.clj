@@ -318,8 +318,21 @@
       (require-valid-fields fields)
       (or (when-let [stranded (stranding-removal (m/fetch store :element element) fields)]
             (referenced-field-error stranded))
-          (let [store (m/set-field store :element element :fields (canonical-fields fields))]
-            (commit store :SetFields [(updated store :element element)]
+          (let [pre     store
+                to-ids  (distinct (map :to (m/outgoing store element)))
+                store   (m/set-field store :element element :fields (canonical-fields fields))
+                ;; DeltaPerMutation restates every entity whose observable state
+                ;; changed. A connection's far element reads THIS element's fields to
+                ;; decide whether its own are carried or derived, so a field edit here
+                ;; can move that element's completeness - the same reason Connect
+                ;; restates its target. Only the ones whose verdict actually moved.
+                moved   (filter (fn [id]
+                                  (not= (m/information-complete? pre (m/fetch pre :element id))
+                                        (m/information-complete? store (m/fetch store :element id))))
+                                to-ids)
+                changes (concat [(updated store :element element)]
+                                (map #(updated store :element %) moved))]
+            (commit store :SetFields (vec changes)
                     (m/fetch store :element element))))))
 
 ;; Convenience composite (a CLI affordance, not a domain operation): append (or

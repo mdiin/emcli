@@ -272,7 +272,14 @@
 
 (defn- parse-filter [s]
   (if-let [[_ f op val] (re-matches filter-re (str/trim s))]
-    (let [op (str/lower-case op)]
+    (let [op (str/lower-case op)
+          _  (when (= op "~")
+               ;; Compiled here so a malformed pattern is REJECTED, like every other
+               ;; bad operand, rather than thrown per row once the pipeline runs.
+               (try (re-pattern (parse-value val))
+                    (catch Exception _
+                      (throw (query-error
+                              (str "malformed regular expression: " (pr-str val)))))))]
       {:kind       :where
        :field      f
        :comparator ({"=" :equals "!=" :not_equals "~" :matches "in" :in_set} op)
@@ -327,7 +334,11 @@
       (str/blank? t)                  (throw (query-error "empty stage in the query pipeline"))
       (= lt "count")                  {:kind :count}
       (= lt "distinct")               {:kind :distinct}
-      (re-matches #"limit\s+\d+" lt)  {:kind :limit :limit (parse-long (re-find #"\d+" lt))}
+      (re-matches #"limit\s+\d+" lt)  (let [n (parse-long (re-find #"\d+" lt))]
+                                         (when (nil? n)
+                                           (throw (query-error
+                                                   (str "limit is out of range: '" t "'"))))
+                                         {:kind :limit :limit n})
       (str/starts-with? lt "where ")  (parse-filter (subs t 6))
       (str/starts-with? lt "order ")  (parse-order (subs t 6))
       (str/starts-with? lt "select ") (parse-select (subs t 7))

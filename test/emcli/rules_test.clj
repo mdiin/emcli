@@ -956,3 +956,18 @@
         {s6 :store}             (s/ok s5 r/delete-element {:element (:id cmd)})]
     (is (nil? (m/fetch s6 :spec-step (:id st))) "the step that asserted about it goes with it")
     (is (some? (m/fetch s6 :specification (:id sp))) "while the specification it belonged to stays")))
+
+(deftest a-field-edit-restates-the-far-end-whose-completeness-it-moved
+  (let [[store mid]             (s/with-model)
+        {s1 :store cmd :result} (s/ok store r/create-element {:model mid :name "Cmd" :element-type :command})
+        {s2 :store evt :result} (s/ok s1 r/create-element {:model mid :name "Evt" :element-type :event})
+        {s3 :store}             (s/ok s2 r/connect {:from (:id cmd) :to (:id evt)})
+        {s4 :store}             (s/ok s3 r/add-field {:element (:id evt) :field {:name "total" :type :decimal}})]
+    (is (false? (m/information-complete? s4 (m/fetch s4 :element (:id evt))))
+        "the event's field is sourced by nothing yet")
+    (testing "sourcing it from the command restates the event in the same delta"
+      (let [{:keys [delta store]} (s/ok s4 r/add-field {:element (:id cmd)
+                                                        :field {:name "total" :type :decimal}})]
+        (is (true? (m/information-complete? store (m/fetch store :element (:id evt)))))
+        (is (= [(:id cmd) (:id evt)] (mapv :id (:changes delta)))
+            "the command, then the element whose verdict moved")))))

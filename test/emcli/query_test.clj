@@ -360,3 +360,13 @@
       (is (vector? (run-q env "element | order swimlane")))
       (is (vector? (run-q env "element | order -swimlane")))
       (is (vector? (run-q env "step | order element"))))))
+
+(deftest a-bad-stage-operand-is-rejected-not-thrown
+  (let [env (build)]
+    (testing "an out-of-range limit is a query rejection"
+      (is (rejects? #"limit is out of range" #(run-q env "element | limit 99999999999999999999"))))
+    (testing "a malformed pattern is a query rejection, not a per-row throw"
+      (is (rejects? #"malformed regular expression" #(run-q env "element | where name ~ (A"))))
+    (testing "and a good operand of either form still works"
+      (is (vector? (run-q env "element | limit 2")))
+      (is (vector? (run-q env "element | where name ~ ^Place"))))))
