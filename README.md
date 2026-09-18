@@ -46,9 +46,8 @@ Requires [bbin](https://github.com/babashka/bbin). Or grab a prebuilt binary fro
 
 ## Event Modeling plugin
 
-The Event Modeling integration is maintained as an [ECA](https://eca.dev) plugin bundle at [`plugins/event-modeling/`](plugins/event-modeling), registered in [`.eca-plugin/marketplace.json`](.eca-plugin/marketplace.json). It ships the per-group `emcli_*` custom tools (`eca.json`), the `emcli-authoring` and `em-facilitation` skills, and the `event-modeler`, `em-author` and `wireframer` prompts.
+The Event Modeling integration is maintained as an [ECA](https://eca.dev) plugin bundle at [`plugins/event-modeling/`](plugins/event-modeling), registered in [`.eca-plugin/marketplace.json`](.eca-plugin/marketplace.json). It ships the custom tools, skills and agents that are needed to have LLM's drive the CLI.
 
-The authoring skill lives at `plugins/event-modeling/skills/emcli-authoring/SKILL.md`.
 
 ## Why?
 
