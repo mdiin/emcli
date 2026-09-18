@@ -97,3 +97,18 @@
           (str tool "'s command is in sync"))
       (is (= (:schema definition) (get-in eca [tool :schema]))
           (str tool "'s schema is in sync")))))
+
+;; The emcli_query tool template must pass the pipeline as the --query flag and
+;; quote it: babashka.cli drops a bare positional (so `:query` stays nil and
+;; do-query dies), and quoting keeps spaces and `|` from being shell-split.
+(deftest emcli-query-tool-passes-pipeline-as-quoted-flag
+  (let [command (get-in (#'cli/build-tools) ["emcli_query" :command])]
+    (is (clojure.string/starts-with? command "emcli query --query"))
+    (is (clojure.string/includes? command "'{{query}}'"))))
+
+;; emcli_resolve takes one opaque value, and resolved names may contain spaces,
+;; so the placeholder must be single-quoted too.
+(deftest emcli-resolve-tool-quotes-queries-value
+  (let [command (get-in (#'cli/build-tools) ["emcli_resolve" :command])]
+    (is (clojure.string/starts-with? command "emcli resolve --queries"))
+    (is (clojure.string/includes? command "'{{queries}}'"))))

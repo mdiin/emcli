@@ -398,7 +398,8 @@
                 "required" ["verb"]}}]))
          [["emcli_resolve"
            {:description "Resolve one or more element/timeline/slice names to their integer ids. Use before authoring commands when you have names but not ids."
-            :command     "emcli resolve --queries {{queries}}"
+            ;; single-quote the value so names containing spaces stay one argument
+            :command     "emcli resolve --queries '{{queries}}'"
             :schema
             {"properties"
              {"queries" {"type"        "string"
@@ -406,7 +407,9 @@
              "required" ["queries"]}}]
           ["emcli_query"
            {:description (q/tool-description)
-            :command     "emcli query {{query}}"
+            ;; `query` takes the pipeline as the --query flag (a bare positional is
+            ;; discarded by babashka.cli); quote it so spaces and `|` survive the shell.
+            :command     "emcli query --query '{{query}}'"
             :schema
             {"properties"
              {"query" {"type"        "string"
