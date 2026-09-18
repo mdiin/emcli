@@ -456,6 +456,17 @@
         (nil? v)     ""
         :else        (str v)))
 
+(defn- order-value
+  "A value `sort-by` can compare. A scalar keeps its own type, so numbers order
+  numerically and strings lexically; a structure - a breadcrumb, a field list, a
+  reverse reference - is ordered by its printed form. The closed field set admits
+  those for projection, and a name that is accepted must not break the pipeline:
+  ordering by them is meaningless, but crashing is worse."
+  [v]
+  (cond (nil? v)                                             ""
+        (or (number? v) (string? v) (boolean? v) (keyword? v)) v
+        :else                                                (pr-str v)))
+
 (defn- where-pred [store {:keys [field comparator operand]}]
   (fn [item]
     (let [raw (text (field-value store item field))
@@ -498,7 +509,8 @@
         :distinct (recur items (comp xf (distinct)) (rest stages) selected)
         :limit    (recur items (comp xf (take (:limit st))) (rest stages) selected)
         :order    (let [f (into [] xf items)]
-                    (recur (vec (sort-by #(field-value store % (:field st)) (order-cmp (:descending st)) f))
+                    (recur (vec (sort-by #(order-value (field-value store % (:field st)))
+                                         (order-cmp (:descending st)) f))
                            identity (rest stages) selected))
         :select   (recur items xf (rest stages) (:fields st))
         :count    (count (into [] xf items)))

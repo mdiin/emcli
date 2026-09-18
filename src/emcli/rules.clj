@@ -431,10 +431,10 @@
                                         (not= (m/information-complete? pre (m/fetch pre :element id))
                                               (m/information-complete? store (m/fetch store :element id))))
                                       (distinct (map :to outgoing)))
-                  element-ids (distinct (cons element moved-far))
-                  changes     (concat (map #(updated store :element %) element-ids)
+                  changes     (concat [(updated store :element element)]
                                       (map #(updated store :connection (:id %)) moved-conns)
-                                      (map #(updated store :spec-step (:id %)) moved-steps))]
+                                      (map #(updated store :spec-step (:id %)) moved-steps)
+                                      (map #(updated store :element %) moved-far))]
               (commit store :RenameField (vec changes) (m/fetch store :element element)))))))
 
 (defn set-element-context [store {:keys [element new-context]}]

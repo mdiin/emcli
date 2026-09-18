@@ -418,8 +418,14 @@
       :breadcrumb {:slice_title (:title sl)
                    :timeline_title (:title (m/fetch s :timeline (:timeline sl)))}})))
 
-(defn- name-matches? [pred entity name] (pred (str/lower-case (:name entity)) (str/lower-case name)))
-(defn- exact-matches [entities name] (filter #(name-matches? = % name) entities))
+(defn- name-matches? [pred entity name]
+  (pred (str/lower-case (str/trim (:name entity))) (str/lower-case (str/trim name))))
+
+;; The exact tier matches the model's name equality (same_name), which ignores
+;; surrounding whitespace as well as case - the same equality ElementNameUnique
+;; makes unique, so a name written with padding still lands on the entity holding
+;; it rather than falling through to the substring tier.
+(defn- exact-matches [entities name] (filter #(m/same-name? (:name %) name) entities))
 (defn- substring-matches [entities name] (filter #(name-matches? str/includes? % name) entities))
 
 (defn- near-miss-matches [entities name cap]

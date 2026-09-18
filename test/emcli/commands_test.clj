@@ -426,3 +426,9 @@
     (testing "while a level the element does not carry is still rejected"
       (is (some? (:error (cmd/run a "add-field" {:element eid :name "x" :type "uuid"
                                                  :subfield-of "nosuchfield"})))))))
+
+(deftest a-padded-name-still-resolves-exactly
+  (let [a (app/new-app "M")]
+    (cmd/run a "create-element" {:name " Order" :element-type "event"})
+    (is (= 1 (count (cmd/query-model a "element:Order")))
+        "a name root matches by the model's name equality, surrounding whitespace included")))

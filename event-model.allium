@@ -1687,7 +1687,9 @@ contract NameResolution {
     @invariant MatchTiersWithFallback
         -- For each queried name, matching proceeds in tiers against the relevant
         -- name/title field:
-        --   exact     - case-insensitive equality;
+        --   exact     - the model's name equality (same_name: equal apart from
+        --               case and surrounding whitespace), so the names it matches
+        --               are exactly the ones ElementNameUnique makes unique;
         --   substring - case-insensitive containment, used only as a fallback;
         --   near_miss - the config.resolve_candidate_cap nearest candidates by
         --               edit distance ("did you mean"), produced if and ONLY if

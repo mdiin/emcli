@@ -343,3 +343,13 @@
       (is (rejects? #"\"placement\" on slice rows"
                     #(run-q env "slice | elements {index} | slice | select placement"))
           "but a further follow produced new rows, which carry no edge"))))
+
+(deftest ordering-by-a-structural-field-does-not-crash
+  (let [env (build)]
+    (testing "a field the closed set admits for projection can also be ordered by"
+      (is (vector? (run-q env "slice | elements {index} | order placement")))
+      (is (vector? (run-q env "element | order outgoing")))
+      (is (vector? (run-q env "timeline | order breadcrumb")))
+      (is (vector? (run-q env "element | order fields"))))
+    (testing "while a scalar still orders by its own type, not its printed form"
+      (is (= [0 1] (mapv :index (run-q env "slice | order index | select index")))))))
