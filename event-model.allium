@@ -1201,7 +1201,12 @@ contract SchemaCodec {
         -- eventmodeling.schema.json format has no place for - Connection.derivations,
         -- Element.field_origins, Element.wireframe and Swimlane.index (see the
         -- dropped-fields guidance) - are excluded from this guarantee; they are
-        -- dropped on export like the other unrepresentable fields.
+        -- dropped on export like the other unrepresentable fields. So are the
+        -- references the projection cannot carry in full: an element that no slice
+        -- places is exported as no element, so a dependency or a step naming one
+        -- (and the connection or step itself) is not reconstructed on import (see
+        -- the dropped-fields guidance and the placement-bound limit stated under
+        -- GroupIdIsElementIdentity).
 
     @invariant SchemaRoundtrip
         -- Round-tripping a foreign document is semantic, not byte-lossless. For
@@ -1281,6 +1286,16 @@ contract SchemaCodec {
         --     an element whose fields, context and swimlane the document cannot
         --     state. The step or connection it belonged to goes with it; see the
         --     open question on reinstating the referenced element.
+        --   * a specification step whose type is absent or outside the format's
+        --     step types (SPEC_EVENT, SPEC_COMMAND, SPEC_READMODEL, SPEC_ERROR):
+        --     a step asserts about an element of a kind, and an unrecognised type
+        --     names no kind the model could map it to, so the step is dropped
+        --     rather than guessed at. Unlike the enum values above, this is not a
+        --     tolerated value with a default: there is no sensible default step.
+        --   * a screenImages entry whose elementId names no element the slice
+        --     embeds: the image url has no element to attach to, so it is dropped
+        --     with it. An image on an element the document does embed is applied
+        --     (screenImages.url <-> Element.image_url, below).
         --   * Swimlane.index: author-controlled render order. The schema has no
         --     aggregate ordering (aggregates are bare names on elements), so the
         --     order is dropped on export; swimlane NAMES still round-trip via
@@ -1457,15 +1472,17 @@ contract NameResolution {
         -- a Slice candidate carries its Timeline's title; an Element candidate
         -- carries its assigned Swimlane's name when it has one; a Specification
         -- candidate carries its Slice's title and that Slice's Timeline's title.
-        -- That breadcrumb is context, never a tie-breaker: two identically-named
-        -- candidates of the same kind cannot arise, because every resolvable name
-        -- is unique in the container in which it has to identify one entity - an
-        -- element's name, a timeline's title and a swimlane's name within their
-        -- model, a slice's title within its timeline, a specification's title
-        -- within its slice (see the uniqueness invariants). No two candidates can
-        -- therefore tie, and a caller never has to choose between two
-        -- indistinguishable candidates. Candidates of different kinds may still
-        -- share a name, and the candidate's kind tells them apart.
+        -- That breadcrumb is context: one name may be held by candidates of
+        -- several kinds at once, and by several of ONE kind - a slice's title is
+        -- unique within its timeline, not within the model, so two slices of
+        -- different timelines may be titled alike (see the uniqueness
+        -- invariants). What cannot arise is two candidates whose breadcrumbs also
+        -- agree, because the container that makes a name unique is part of the
+        -- breadcrumb itself: the candidates for one name never tie. A caller
+        -- therefore never has to choose between two indistinguishable candidates.
+        -- When a caller must land on ONE of them - a query's name root, see
+        -- ModelQuery.RootsAreEntityKinds - the candidates are named back and the
+        -- choice of id is the caller's.
 
     @invariant BoundedByQueryCount
         -- THE core architectural property: the size of a resolve response scales
@@ -1657,12 +1674,12 @@ contract ModelQuery {
         --   order      field, or -field for descending
         --   select     field,field
         --   count, distinct, limit N
-        -- The keyword tokens - a root's kind, a relation, and the stage words
-        -- where, order, select, count, distinct and limit - are matched
-        -- case-insensitively, and a field name keeps its case. A where comparison
-        -- is case-insensitive for =, != and in (both sides are folded), while ~
-        -- matches its regular expression against the raw text, so its case
-        -- sensitivity is the pattern's own.
+        -- The keyword tokens - a root's kind, a relation, the stage words where,
+        -- order, select, count, distinct and limit, and the comparator word in -
+        -- are matched case-insensitively, while a field name keeps its case. A
+        -- where comparison folds both sides for =, != and in, while ~ matches its
+        -- regular expression against the raw text, so its case sensitivity is the
+        -- pattern's own.
 
     @invariant ResultsAreBoundedByQuestion
         -- What comes back scales with the question asked, not the size of the
