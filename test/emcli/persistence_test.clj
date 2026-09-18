@@ -129,6 +129,35 @@
                      (distinct (map :invariant (:violations (ex-data ex)))))))))
         (finally (fs/delete-if-exists file))))))
 
+(deftest load-app-refuses-a-duplicate-name
+  (testing "a hand-edited file holding two same-named elements is refused, not loaded"
+    (let [file (tmp-file)
+          a    (app/new-app "Orders" file)]
+      (try
+        (cmd/run a "create-element" {:name "OrderPlaced" :kind "event"})
+        ;; hand-edit the persisted file: add an element whose name differs from an
+        ;; existing one only in case. No authoring rule would install it - the
+        ;; guards reject the collision - and no repair can undo one either, since
+        ;; renaming one of the two same-named elements would be guessing the
+        ;; author's intent. So the load must fail fast rather than wedge the model.
+        (let [{:keys [model store]} (edn/read-string (slurp file))
+              [dirty dup]           (m/create store :element {:model model
+                                                              :name "orderplaced"
+                                                              :kind :event
+                                                              :context :internal
+                                                              :fields []
+                                                              :field_origins []})]
+          (is (m/exists? dirty :element (:id dup)))
+          (spit file (pr-str {:model model :store dirty}))
+          (let [ex (try (app/load-app file) nil (catch Exception e e))]
+            (is (instance? clojure.lang.ExceptionInfo ex)
+                "load-app throws instead of loading the invalid store")
+            (is (= :invalid-store (:error (ex-data ex))))
+            (is (= file (:file (ex-data ex))))
+            (is (= [:ElementNameUnique]
+                   (distinct (map :invariant (:violations (ex-data ex))))))))
+        (finally (fs/delete-if-exists file))))))
+
 (deftest open-app-loads-or-creates
   (let [file (tmp-file)]
     (try

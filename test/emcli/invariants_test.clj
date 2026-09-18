@@ -1,8 +1,9 @@
 (ns emcli.invariants-test
   "invariant obligations: PlacementMatchesSliceKind, PlacementElementUnique,
-  SpecificationComposition, ValidConnectionKinds, WireframeWellFormed,
-  WireframeReferencesResolve. Rules must reject any mutation that would break
-  one."
+  ElementNameUnique, TimelineTitleUnique, SwimlaneNameUnique, SliceTitleUnique,
+  SpecificationTitleUnique, SpecificationComposition, ValidConnectionKinds,
+  WireframeWellFormed, WireframeReferencesResolve. Rules must reject any mutation
+  that would break one."
   (:require [clojure.test :refer [deftest testing is]]
             [emcli.invariants :as inv]
             [emcli.model :as m]
@@ -100,6 +101,102 @@
           [store' repairs] (inv/repair store)]
       (is (empty? repairs))
       (is (= store store')))))
+
+;; --- name uniqueness -------------------------------------------------------
+;; An element's name, a timeline's title and a swimlane's name are unique within
+;; their model, a slice's title within its timeline and a specification's title
+;; within its slice. Collisions are injected through `m/create`, the way a
+;; hand-edited or older file holds them: the authoring rules now reject one at the
+;; guard (see rules-test), so a direct write is the only way left to reach the
+;; state.
+
+(defn- element-attrs [mid name kind]
+  {:model mid :name name :kind kind :context :internal :fields [] :field_origins []})
+
+(defn- collision-invariants [store]
+  (map :invariant (inv/check store)))
+
+(deftest element-names-are-unique-within-a-model
+  (testing "two elements may not share a name, whatever their kinds"
+    (let [[store mid] (s/with-model)
+          [store _]   (m/create store :element (element-attrs mid "Order" :command))
+          [store _]   (m/create store :element (element-attrs mid "order" :event))]
+      (is (= [:ElementNameUnique] (collision-invariants store)))))
+  (testing "the collision wedges the model: every later mutation is refused"
+    (let [[store mid] (s/with-model)
+          [store _]   (m/create store :element (element-attrs mid "Order" :command))
+          [store _]   (m/create store :element (element-attrs mid "ORDER" :event))
+          res         (r/create-timeline store {:model mid :title "T"})]
+      (is (= :invariant-violation (:error res)))))
+  (testing "uniqueness is per model: two models may each name an element \"Order\""
+    (let [[store mid] (s/with-model)
+          [store _]   (m/create store :element (element-attrs mid "Order" :command))
+          [store m2]  (m/create store :event-model {:name "Other"})
+          [store _]   (m/create store :element (element-attrs (:id m2) "Order" :command))]
+      (is (empty? (inv/check store))))))
+
+(deftest timeline-titles-are-unique-within-a-model
+  (testing "two timelines may not share a title, case and spacing aside"
+    (let [[store mid] (s/with-model)
+          [store _]   (m/create store :timeline {:model mid :title "Ordering"})
+          [store _]   (m/create store :timeline {:model mid :title " ordering "})]
+      (is (= [:TimelineTitleUnique] (collision-invariants store))))))
+
+(deftest swimlane-names-are-unique-within-a-model
+  (testing "two swimlanes may not share a name"
+    (let [[store mid] (s/with-model)
+          [store _]   (m/create store :swimlane {:model mid :name "Orders" :index 0})
+          [store _]   (m/create store :swimlane {:model mid :name "orders" :index 1})]
+      (is (= [:SwimlaneNameUnique] (collision-invariants store))))))
+
+(deftest slice-titles-are-unique-within-a-timeline
+  (testing "two slices of one timeline may not share a title"
+    (let [[store mid] (s/with-model)
+          [store t]   (m/create store :timeline {:model mid :title "Ordering"})
+          [store _]   (m/create store :slice {:timeline (:id t) :title "Add" :kind :state_change
+                                              :index 0 :status :created})
+          [store _]   (m/create store :slice {:timeline (:id t) :title "add" :kind :state_change
+                                              :index 1 :status :created})]
+      (is (= [:SliceTitleUnique] (collision-invariants store)))))
+  (testing "the same title in another timeline is a different slice, and legal"
+    (let [[store mid] (s/with-model)
+          [store t1]  (m/create store :timeline {:model mid :title "Ordering"})
+          [store t2]  (m/create store :timeline {:model mid :title "Viewing"})
+          [store _]   (m/create store :slice {:timeline (:id t1) :title "Add" :kind :state_change
+                                              :index 0 :status :created})
+          [store _]   (m/create store :slice {:timeline (:id t2) :title "Add" :kind :state_change
+                                              :index 0 :status :created})]
+      (is (empty? (inv/check store))))))
+
+(deftest specification-titles-are-unique-within-a-slice
+  (testing "two specifications of one slice may not share a title"
+    (let [[store mid] (s/with-model)
+          [store t]   (m/create store :timeline {:model mid :title "Ordering"})
+          [store sl]  (m/create store :slice {:timeline (:id t) :title "Add" :kind :state_change
+                                              :index 0 :status :created})
+          [store _]   (m/create store :specification {:slice (:id sl) :title "Happy path"})
+          [store _]   (m/create store :specification {:slice (:id sl) :title "HAPPY PATH"})]
+      (is (= [:SpecificationTitleUnique] (collision-invariants store)))))
+  (testing "the same title in another slice is a different specification, and legal"
+    (let [[store mid] (s/with-model)
+          [store t]   (m/create store :timeline {:model mid :title "Ordering"})
+          [store sl1] (m/create store :slice {:timeline (:id t) :title "Add" :kind :state_change
+                                              :index 0 :status :created})
+          [store sl2] (m/create store :slice {:timeline (:id t) :title "Cancel" :kind :state_change
+                                              :index 1 :status :created})
+          [store _]   (m/create store :specification {:slice (:id sl1) :title "Happy path"})
+          [store _]   (m/create store :specification {:slice (:id sl2) :title "Happy path"})]
+      (is (empty? (inv/check store))))))
+
+(deftest name-collisions-are-not-repairable
+  (testing "repair leaves a collision alone: renaming one of the two would be guessing intent"
+    (let [[store mid] (s/with-model)
+          [store _]   (m/create store :element (element-attrs mid "Order" :command))
+          [store _]   (m/create store :element (element-attrs mid "Order" :event))
+          [store' repairs] (inv/repair store)]
+      (is (empty? repairs))
+      (is (= store store'))
+      (is (= [:ElementNameUnique] (collision-invariants store'))))))
 
 ;; --- WireframeWellFormed / WireframeReferencesResolve ----------------------
 

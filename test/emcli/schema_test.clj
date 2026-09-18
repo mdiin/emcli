@@ -302,3 +302,35 @@
       (is (some? mid))
       (is (= #{"PlaceOrder" "OrderPlaced" "OrderList" "OrderScreen"}
              (set (map :name (m/elements store mid))))))))
+
+(defn- foreign-doc-with-duplicate-element-name
+  "`foreign-doc` with a further slice whose event reuses the title of an element
+  the document already embeds - two groupIds, one name. The document is valid
+  against eventmodeling.schema.json, which has no notion of unique element names,
+  while ElementNameUnique gives a name to exactly one element: the collision is
+  the document's only irregularity, and import is all-or-nothing."
+  [doc]
+  (let [extra {"id" "sl-3" "title" "Cancel order" "index" 1 "status" "Created"
+               "context" "Ordering" "sliceType" "STATE_CHANGE"
+               "commands" [{"id" "emb-cmd-3" "groupId" "grp-cmd-3" "title" "CancelOrder"
+                            "type" "COMMAND" "context" "INTERNAL" "aggregate" "Orders"
+                            "fields" [] "dependencies" []}]
+               "events" [{"id" "emb-evt-3" "groupId" "grp-evt-3" "title" "OrderPlaced"
+                          "type" "EVENT" "context" "INTERNAL" "fields" [] "dependencies" []}]}]
+    (update doc "slices" conj extra)))
+
+(deftest import-rejects-a-document-that-reuses-an-element-name
+  (testing "a document naming two elements alike is rejected as a whole"
+    (let [e (import-failure (foreign-doc-with-duplicate-element-name foreign-doc))]
+      (is (some? e) "the import is refused, not silently collapsed by name")
+      (is (= :import-rejected (:error (ex-data e))))
+      (is (= ["OrderPlaced"] (:elements (ex-data e))) "the name at fault is named")
+      (is (= :name-conflict (:error (:rule-error (ex-data e))))
+          "the underlying rule error is carried out")))
+  (testing "the collision is the document's only irregularity: rename it and it imports"
+    (let [renamed     (update-in (foreign-doc-with-duplicate-element-name foreign-doc)
+                                 ["slices" 2 "events" 0 "title"]
+                                 (constantly "OrderCancelled"))
+          [store mid] (sc/import-model renamed)]
+      (is (some? mid))
+      (is (contains? (set (map :name (m/elements store mid))) "OrderCancelled")))))

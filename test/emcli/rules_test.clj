@@ -1,7 +1,9 @@
 (ns emcli.rules-test
-  "rule_success, rule_entity_creation, transition_edge, transition_rejected and
-  cascade obligations from event-model.allium."
-  (:require [clojure.test :refer [deftest testing is]]
+  "rule_success, rule_entity_creation, transition_edge, transition_rejected,
+  name uniqueness (the same_name guards) and cascade obligations from
+  event-model.allium."
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest testing is]]
             [emcli.model :as m]
             [emcli.rules :as r]
             [emcli.support :as s]
@@ -611,3 +613,81 @@
       (let [res (r/remove-field store {:element eid :name "page"})]
         (is (r/error? res))
         (is (= :invariant-violation (:error res)))))))
+
+;; --- name uniqueness (the guards) -------------------------------------------
+;; Every name a caller resolves must identify exactly one entity of its container,
+;; so the operations that create or rename one reject a collision - and name the
+;; entity already holding the name, so a caller reuses what exists rather than
+;; inventing a near-duplicate. The invariants behind the guards are covered in
+;; invariants-test; here the guard's own shape is.
+
+(defn- unique-name-fixture
+  "A store holding one timeline, element, swimlane, slice and specification, with
+  each entity and the model id, for the collision guards to be exercised against."
+  []
+  (let [[store mid]              (s/with-model)
+        {s1 :store tl :result}   (s/ok store r/create-timeline {:model mid :title "Ordering"})
+        {s2 :store el :result}   (s/ok s1 r/create-element {:model mid :name "PlaceOrder" :kind :command})
+        {s3 :store ln :result}   (s/ok s2 r/create-swimlane {:model mid :name "Orders" :index 0})
+        {s4 :store sl :result}   (s/ok s3 r/add-slice {:timeline (:id tl) :title "Place order"
+                                                       :kind :state_change :index 0})
+        {s5 :store sp :result}   (s/ok s4 r/add-specification {:slice (:id sl) :title "Places order"})]
+    {:store s5 :model mid :timeline tl :element el :lane ln :slice sl :spec sp}))
+
+(deftest a-colliding-name-is-rejected-and-names-the-incumbent
+  (let [{:keys [store model timeline element lane slice spec]} (unique-name-fixture)]
+    (testing "element: a name is not reused, whatever the kind of either"
+      (let [err (s/err store r/create-element {:model model :name "placeorder" :kind :event})]
+        (is (= :name-conflict (:error err)))
+        (is (= (:id element) (:id err)) "the rejection names the element that holds it")
+        (is (= :element (:type err)))
+        (is (str/includes? (:message err) (str (:id element))))
+        (is (str/includes? (:message err) "command") "its kind is named too, for reuse")))
+    (testing "element: renaming onto another element's name is rejected"
+      (let [{s :store other :result} (s/ok store r/create-element {:model model
+                                                                  :name "CancelOrder"
+                                                                  :kind :command})
+            err                      (s/err s r/rename-element {:element (:id other)
+                                                                :new-name "PlaceOrder"})]
+        (is (= :name-conflict (:error err)))
+        (is (= (:id element) (:id err)))))
+    (testing "timeline title"
+      (let [err (s/err store r/create-timeline {:model model :title " ordering "})]
+        (is (= :name-conflict (:error err)))
+        (is (= (:id timeline) (:id err)))))
+    (testing "timeline: renaming onto another timeline's title is rejected"
+      (let [{s :store t2 :result} (s/ok store r/create-timeline {:model model :title "Viewing"})
+            err                   (s/err s r/rename-timeline {:timeline (:id t2)
+                                                              :new-title "ORDERING"})]
+        (is (= :name-conflict (:error err)))))
+    (testing "swimlane name"
+      (let [err (s/err store r/create-swimlane {:model model :name "ORDERS" :index 1})]
+        (is (= :name-conflict (:error err)))
+        (is (= (:id lane) (:id err)))))
+    (testing "slice title, within its timeline"
+      (let [err (s/err store r/add-slice {:timeline (:id timeline) :title "place order"
+                                          :kind :state_change :index 1})]
+        (is (= :name-conflict (:error err)))
+        (is (= (:id slice) (:id err)))))
+    (testing "specification title, within its slice"
+      (let [err (s/err store r/add-specification {:slice (:id slice) :title "PLACES ORDER"})]
+        (is (= :name-conflict (:error err)))
+        (is (= (:id spec) (:id err)))))))
+
+(deftest names-that-are-not-collisions-are-accepted
+  (let [{:keys [store model timeline element lane]} (unique-name-fixture)]
+    (testing "renaming an entity to the name it already holds"
+      (is (not (r/error? (r/rename-element store {:element (:id element)
+                                                  :new-name "PlaceOrder"}))))
+      (is (not (r/error? (r/rename-timeline store {:timeline (:id timeline)
+                                                   :new-title "Ordering"}))))
+      (is (not (r/error? (r/rename-swimlane store {:lane (:id lane) :new-name "Orders"})))))
+    (testing "the same name in a different container"
+      (let [{s :store t2 :result} (s/ok store r/create-timeline {:model model :title "Viewing"})]
+        (is (not (r/error? (r/add-slice s {:timeline (:id t2) :title "Place order"
+                                           :kind :state_change :index 0}))))
+        (is (not (r/error? (r/create-swimlane s {:model model :name "Customers" :index 1})))))
+      (let [{s :store m2 :result} (s/ok store r/create-model {:name "Other"})]
+        (is (not (r/error? (r/create-element s {:model (:id m2) :name "PlaceOrder"
+                                                :kind :command})))
+            "a name is unique within its model, not globally")))))
