@@ -2,7 +2,7 @@
 
 ## Nodes and their attributes
 
-All nodes except `:canvas` and `:divider` accept `command-input` (bool), and all except those two and the action and navigation tags `:button`, `:icon-button` and `:link` accept `field-name` (string), in addition to their own attrs listed below.
+All nodes except `:canvas` and `:divider` accept `field-name` (string) and `command-input` (bool) in addition to their own attrs listed below.
 
 ### Layout nodes
 

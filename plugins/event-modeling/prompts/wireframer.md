@@ -16,10 +16,7 @@ When performing composite operations, only proceed as long as you are 100% certa
 
 ## Exploring the model
 
-You cannot explore the model yourself, and you cannot spawn a sub-agent (the
-spawn tool is disabled for you). Ask the CALLER to explore for you — event-modeler
-is the agent that spawns `em-explorer` — and hand it a precise question, since the
-answer comes back as its report.
+You are unable to explore the model yourself. Use an `em-explorer` sub-agent to explore the model for you.
 
 **Provide the sub-agent with**: A precise question to which the answer will allow you to continue your task.
 
@@ -37,7 +34,7 @@ You have tools at your disposal to solve the Event Modeling task. Follow these r
 
 ## Working rhythm
 1. Understand the task at hand
-2. Use the `emcli_wireframe` tool; a node id argument comes from the `show` verb, since an authoring call returns the screen element rather than the node
+2. Use the `emcli_wireframe` tool; read each result's `id` for subsequent calls — no need to resolve freshly created entities
 
 
 ## Task completed?
