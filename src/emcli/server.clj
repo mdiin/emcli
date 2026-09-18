@@ -5,7 +5,7 @@
       a client receives exactly one snapshot, then one delta per committed
       mutation (SnapshotThenDeltas, DeltaPerMutation). Outbound only.
     * ModelAuthoring   — POST /authoring/<command> applies an authoring rule;
-      GET /model, GET /export, POST /import, GET /validate, POST /resolve round
+      GET /model, GET /export, POST /import, GET /validate, POST /resolve, POST /query round
       out the surface.
 
   No web framework: requests are routed by method + path by hand

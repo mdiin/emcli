@@ -20,8 +20,8 @@ Wireframe nodes have stable ID's (e.g. `"n1"`, `"n2"`, ...).
 
 ## Notes
 
-- All wireframe node id arguments come from `emcli_wireframe` with the `show` verb or from the result of a prior authoring call. Every wireframe authoring command returns the created/modified node, so you can read the node id directly from that result — no need to call `emcli_wireframe` with `show` verb immediately after creating something.
-- A tool result on success is the created/modified node. On error it returns an `Error:` prefixed string with the server's message.
+- All wireframe node id arguments come from `emcli_wireframe` with the `show` verb, which prints the screen's whole layout tree with each node's `-id`. Every wireframe authoring command returns the **screen element**, not the node, so read the new node id from a `show` — the element's own `id` is the element's integer id and is NOT a node id.
+- A tool result on success is the modified screen element. On error it returns an `Error:` prefixed string with the server's message.
 
 ## Gotchas
 

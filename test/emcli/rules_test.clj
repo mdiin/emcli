@@ -1002,16 +1002,21 @@
 (deftest delete-element-lists-its-groups-in-the-documented-order
   (let [[store mid]             (s/with-model)
         {s1 :store cmd :result} (s/ok store r/create-element {:model mid :name "Cmd" :element-type :command})
-        {s2 :store tl :result}  (s/ok s1 r/create-timeline {:model mid :title "T"})
-        {s3 :store sl :result}  (s/ok s2 r/add-slice {:timeline (:id tl) :title "S"
+        {s2 :store evt :result} (s/ok s1 r/create-element {:model mid :name "Evt" :element-type :event})
+        {s3 :store tl :result}  (s/ok s2 r/create-timeline {:model mid :title "T"})
+        {s4 :store sl :result}  (s/ok s3 r/add-slice {:timeline (:id tl) :title "S"
                                                       :slice-type :state_change :index 0})
-        {s4 :store sp :result}  (s/ok s3 r/add-specification {:slice (:id sl) :title "spec"})
-        {s5 :store}             (s/ok s4 r/place-element {:slice (:id sl) :element (:id cmd)})
-        {s6 :store}             (s/ok s5 r/add-spec-step {:spec (:id sp) :clause :when_step
+        {s5 :store sp :result}  (s/ok s4 r/add-specification {:slice (:id sl) :title "spec"})
+        {s6 :store}             (s/ok s5 r/add-field {:element (:id cmd) :field {:name "total" :type :decimal}})
+        {s7 :store}             (s/ok s6 r/add-field {:element (:id evt) :field {:name "total" :type :decimal}})
+        {s8 :store}             (s/ok s7 r/connect {:from (:id cmd) :to (:id evt)})
+        {s9 :store}             (s/ok s8 r/place-element {:slice (:id sl) :element (:id cmd)})
+        {s10 :store}            (s/ok s9 r/add-spec-step {:spec (:id sp) :clause :when_step
                                                           :element (:id cmd) :index 0})]
-    ;; both verdicts move: the slice loses its only command, the spec its only when-step
-    (let [{:keys [delta]} (s/ok s6 r/delete-element {:element (:id cmd)})]
-      (is (= [[:deleted :placement] [:deleted :spec-step] [:deleted :element]
-              [:updated :slice] [:updated :specification]]
+    ;; every group moves at once: the slice loses its only command, the spec its only
+    ;; when-step, and the event loses the field it was carrying from the command
+    (let [{:keys [delta]} (s/ok s10 r/delete-element {:element (:id cmd)})]
+      (is (= [[:deleted :placement] [:deleted :spec-step] [:deleted :connection] [:deleted :element]
+              [:updated :slice] [:updated :specification] [:updated :element]]
              (mapv (juxt :action :type) (:changes delta)))
-          "deletions, then the element, then the verdicts those removals moved"))))
+          "deletions, then the element, then the verdicts those removals moved, then the surviving far ends"))))

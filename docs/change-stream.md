@@ -15,11 +15,14 @@ machine-readable schema for the event payloads is
 | `GET`  | `/model`    | A *different*, richer authoring projection (slice/spec `is_complete`, spec steps, element list). NOT part of the stream — see note below. |
 | `GET`  | `/health`   | Liveness check (`{"ok":true}`); carries no model data. |
 
+`POST /query` (the ModelQuery structural query) also runs in this process but,
+like the authoring endpoints below, is not part of the stream.
+
 The stream is **outbound only**: the consumer receives changes and can only
 disconnect. All editing happens through `POST /authoring/<command>` on the
 separate ModelAuthoring boundary, which shares the same process and the same
-in-memory model; `GET /validate`, `POST /resolve`, `GET /export` and
-`POST /import` round out that boundary. None of them appear on the stream except
+in-memory model; `GET /validate`, `POST /resolve`, `POST /query`, `GET /export`
+and `POST /import` round out that boundary. None of them appear on the stream except
 indirectly: an import re-snapshots every connected client rather than sending a
 delta.
 

@@ -885,10 +885,10 @@
                           survivors)
         verdicts  (concat (mapcat #(restated-if-verdict-moved pre store :slice %) slice-ids)
                           (mapcat #(restated-if-verdict-moved pre store :specification %) spec-ids))
-        ;; the document order is deletions, the element, the verdicts those
+        ;; the documented order is deletions, the element, the verdicts those
         ;; removals moved, then the surviving far ends
         updated-el (map #(updated store :element %) moved)]
-    [store (-> changes (into updated-el) (into verdicts))]))
+    [store (-> changes (into verdicts) (into updated-el))]))
 
 (defn delete-specification [store {:keys [spec]}]
   (or (require-entity store :specification spec)
