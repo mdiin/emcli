@@ -368,6 +368,9 @@
                                 (:store (check-step {:step :set-image-url :slices [(get ss "id")]}
                                                     (r/set-image-url s {:element (group->el (get e "groupId" (str "anon-" (get e "id"))))
                                                                         :url (get img "url")})))
+                                ;; an image whose elementId names no element this
+                                ;; slice embeds has nothing to attach to and is
+                                ;; dropped with it (dropped-fields guidance)
                                 s))
                             s3 (get ss "screenImages" []))]
              [s4 pmap2 (assoc smap (get ss "id") slid)]))
@@ -417,10 +420,13 @@
                                 (let [kind (spectype->elkind (get st "type"))
                                       el   (name->el [kind (get st "title")])]
                                   (if-not el
-                                    ;; A reference to an element the document does
-                                    ;; not embed - one the model holds unplaced, so
-                                    ;; the format had no element to carry it in (see
-                                    ;; the dropped-fields guidance).
+                                    ;; A step the document's own reference cannot
+                                    ;; resolve: either it names an element the
+                                    ;; document does not embed - one the model holds
+                                    ;; unplaced, so the format had no element to
+                                    ;; carry it in - or its type is one this model
+                                    ;; cannot map to a step kind. Both are
+                                    ;; documented losses (dropped-fields guidance).
                                     s
                                     (let [{s2 :store res :result}
                                           (check-step {:step :add-spec-step :slices [(get ss "id")]}

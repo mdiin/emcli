@@ -485,6 +485,17 @@
                             (str/join ", " (map describe-candidate other)))
            :else       (str "; the model has no " (name kind) " with that name")))))
 
+(defn- ambiguous-root-message
+  "The rejection for a name that answers with several entities of the declared
+  kind: it names them, and says so when resolve's own candidate list was cut
+  short - a capped list must never be mistaken for an exhaustive one
+  (NameResolution.NoImplicitBestPick)."
+  [kind entity-name exacts capped?]
+  (str "several " (name kind) "s are named " (pr-str entity-name) ": "
+       (str/join ", " (map describe-candidate exacts))
+       (when capped? " - and the candidate list is capped, so more may match")
+       " - use the id, since a name root names one entity"))
+
 (defn- query-root
   "The single entity a name-based query root denotes, or a thrown query error.
 
@@ -498,23 +509,25 @@
   A name that answers with SEVERAL entities of that kind - slice titles are unique
   per timeline, not per model, so two slices in different timelines may share one -
   is rejected too, naming them: the caller disambiguates by id, exactly as resolve
-  leaves the choice to the caller."
+  leaves the choice to the caller. A step carries no name at all, so it is rejected
+  before any of that with the roots it does have."
   [entities kind entity-name]
-  (let [candidates (->> (resolve-one entities {:name entity-name :kind_hint kind})
-                        :candidates)
-        same-kind  (filter #(= kind (:kind %)) candidates)
-        exacts     (filter #(= :exact (:match_type %)) same-kind)]
-    (cond
-      (= 1 (count exacts))
-      (first exacts)
+  (if (= :step kind)
+    (throw (q/query-error (str "a step has no name to root on: steps are addressed by id "
+                               "(`step:42`) or by the kind alone (`steps`)")))
+    (let [{:keys [candidates truncated]} (resolve-one entities {:name entity-name
+                                                                :kind_hint kind})
+          same-kind (filter #(= kind (:kind %)) candidates)
+          exacts    (filter #(= :exact (:match_type %)) same-kind)]
+      (cond
+        (= 1 (count exacts))
+        (first exacts)
 
-      (seq exacts)
-      (throw (q/query-error (str "several " (name kind) "s are named " (pr-str entity-name) ": "
-                                 (str/join ", " (map describe-candidate exacts))
-                                 " - use the id, since a name root names one entity")))
+        (seq exacts)
+        (throw (q/query-error (ambiguous-root-message kind entity-name exacts truncated)))
 
-      :else
-      (throw (q/query-error (no-root-message kind entity-name same-kind candidates))))))
+        :else
+        (throw (q/query-error (no-root-message kind entity-name same-kind candidates)))))))
 
 (defn query-model
   [app query-string]

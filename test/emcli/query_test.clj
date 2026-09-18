@@ -196,6 +196,30 @@
       (is (= [s1] (map :id (cmd/query-model a (str "slice:" s1))))
           "the id root is the caller's disambiguator"))))
 
+(deftest an-ambiguous-name-root-says-when-the-list-is-capped
+  (testing "a capped candidate list is never presented as exhaustive"
+    (let [a (app/new-app "M")]
+      (dotimes [i 6]
+        (let [tl (:id (:result (cmd/run a "create-timeline" {:title (str "T" i)})))]
+          (cmd/run a "add-slice" {:timeline tl :title "Ordering" :kind "state_change" :index 0})))
+      (let [msg (try (cmd/query-model a "slice:\"Ordering\"") nil
+                     (catch Exception e (ex-message e)))]
+        (is (re-find #"several slices are named" msg))
+        (is (re-find #"capped" msg))))))
+
+(deftest a-step-root-cannot-be-named
+  (let [env (build)]
+    (is (rejects? #"a step has no name to root on" #(run-q env "step:\"Any title\"")))
+    (is (vector? (run-q env "step")) "by kind it still roots")))
+
+(deftest keyword-case-never-changes-the-question
+  (let [env (build)]
+    (testing "a comparator word is case-insensitive, like the other keywords"
+      (is (= (ids (run-q env "element | where kind in (command,event)"))
+             (ids (run-q env "ELEMENT | WHERE kind IN command,event")))))
+    (testing "a field name is not: an unknown field simply matches nothing"
+      (is (= [] (run-q env "element | where KIND=command"))))))
+
 ;; --- value types, enums, and introspection ---------------------------------
 
 (deftest parsed-shape-and-value-equality

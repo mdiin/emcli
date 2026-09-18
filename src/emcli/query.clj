@@ -174,19 +174,22 @@
       v)))
 
 (def ^:private filter-re
-  #"(?s)^([A-Za-z_][A-Za-z0-9_]*)\s*(!=|=|~|\bin\b)\s*(.*)$")
+  ;; The comparator word is matched case-insensitively, like every other keyword
+  ;; in the language (`IN` = `in`); a field name and an operand keep their case.
+  #"(?si)^([A-Za-z_][A-Za-z0-9_]*)\s*(!=|=|~|\bin\b)\s*(.*)$")
 
 (defn- parse-filter [s]
   (if-let [[_ f op val] (re-matches filter-re (str/trim s))]
-    {:kind       :where
-     :field      f
-     :comparator ({"=" :equals "!=" :not_equals "~" :matches "in" :in_set} op)
-     :operand    (if (= op "in")
-                   (->> (str/split (str/replace (str/trim val) #"^\(|\)$" "") #",")
-                        (map (comp parse-value str/trim))
-                        (remove str/blank?)
-                        vec)
-                   (parse-value val))}
+    (let [op (str/lower-case op)]
+      {:kind       :where
+       :field      f
+       :comparator ({"=" :equals "!=" :not_equals "~" :matches "in" :in_set} op)
+       :operand    (if (= op "in")
+                     (->> (str/split (str/replace (str/trim val) #"^\(|\)$" "") #",")
+                          (map (comp parse-value str/trim))
+                          (remove str/blank?)
+                          vec)
+                     (parse-value val))})
     (throw (query-error
             (str "malformed where stage: '" s "' (expected `where <field> <op> <value>`)")))))
 

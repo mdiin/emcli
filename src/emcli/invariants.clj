@@ -143,6 +143,11 @@
   choosing which of two same-named entities to rename, and what to rename it to,
   is the author's decision, so a store holding one is reported - and therefore
   refuses to load (see `load-app` in emcli.app) - rather than silently renamed.
+  So is a malformed layout (the wireframe invariants): dropping the offending node
+  would delete a subtree the author wrote, and a tree the layout rules would never
+  have installed can only have reached the store by a hand edit or an older build.
+  The refusal names the element and the node, so the operator can fix that one
+  node by hand.
 
   Repairing is a best-effort normalisation, NOT validation: callers MUST
   re-check the returned store with `check` and decide what to do with whatever
