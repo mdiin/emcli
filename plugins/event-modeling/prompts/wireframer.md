@@ -16,7 +16,10 @@ When performing composite operations, only proceed as long as you are 100% certa
 
 ## Exploring the model
 
-You are unable to explore the model yourself. Use an `em-explorer` sub-agent to explore the model for you.
+You cannot explore the model yourself, and you cannot spawn a sub-agent (the
+spawn tool is disabled for you). Ask the CALLER to explore for you — event-modeler
+is the agent that spawns `em-explorer` — and hand it a precise question, since the
+answer comes back as its report.
 
 **Provide the sub-agent with**: A precise question to which the answer will allow you to continue your task.
 
