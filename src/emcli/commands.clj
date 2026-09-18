@@ -50,7 +50,7 @@
   only a whole list can carry a nested one."
   [fields parent field]
   (mapv (fn [f]
-          (if (= parent (:name f))
+          (if (m/same-name? parent (:name f))
             (assoc f :subfields (m/upsert-by (:subfields f) field :name))
             f))
         fields))
@@ -171,7 +171,7 @@
               {:error :not-found :type :element :id eid
                :message (str "element " eid " does not exist")}
 
-              (not (some #(= parent (:name %)) (:fields el)))
+              (not (some #(m/same-name? parent (:name %)) (:fields el)))
               {:error :not-found :type :field :name parent
                :message (str "element " eid " has no field " (pr-str parent))}
 

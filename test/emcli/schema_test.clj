@@ -400,3 +400,15 @@
       (is (some? e) "the step is not silently dropped")
       (is (= :import-rejected (:error (ex-data e))))
       (is (= :invariant-violation (:error (:rule-error (ex-data e))))))))
+
+;; --- a reference is a name, so import matches it by name equality ------------
+
+(deftest import-matches-a-step-reference-by-name-equality
+  (testing "a step whose title differs only in case from an embedded element still lands"
+    (let [doc         (update-in foreign-doc ["slices" 0 "specifications" 0 "when" 0 "title"]
+                                 str/lower-case)
+          [store mid] (sc/import-model doc)
+          spec        (first (m/model-specs store mid))]
+      (is (some? spec))
+      (is (= 2 (count (m/spec-steps store (:id spec))))
+          "both steps survive: the case-variant one re-attaches rather than being dropped"))))

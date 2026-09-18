@@ -220,7 +220,7 @@ data: {"op":"DeleteTimeline","changes":[{"action":"deleted","type":"placement","
 | `DeleteSlice` | deleted | slice + cascaded placements, specifications, spec-steps |
 | `CreateElement` | created | element |
 | `SetFields` / `SetElementContext` / `AssignSwimlane` / `SetImageUrl` / `SetFieldOrigins` / `RenameElement` | updated | element |
-| `RenameField` | updated | the element (fields, field_origins and layout together), then each affected connection and spec-step |
+| `RenameField` | updated | the element (fields, field_origins and layout together), then each connection or spec-step the respelling reached, then any far-end element whose completeness moved |
 | `AddWireframeNode` / `AddWireframeNodeBefore` / `SetWireframeAttr` / `SetWireframeText` / `DeleteWireframeNode` | updated | the screen element, restated with its new layout tree |
 | `DeleteElement` | deleted, updated | element + cascaded placements, connections, then the surviving `to` element(s) whose completeness the removed connections moved |
 | `PlaceElement` | created | placement |

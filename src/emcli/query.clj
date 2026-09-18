@@ -64,7 +64,15 @@
 ;; location. `kind` is the category (element, slice, ...), NOT what an element is
 ;; - that is the element's own `element_type` attribute, below. The two words are
 ;; kept apart deliberately.
-(def ^:private row-fields #{"id" "kind" "name" "breadcrumb"})
+(defn- row-fields
+  "The row's own display fields. Every row carries its identity, its CATEGORY and
+  its breadcrumb; `name` only where the entity has a name or title to show - a
+  SpecStep has neither, so `name` is refused on a step row rather than accepted and
+  resolving to nil."
+  [kind]
+  (if (= kind :step)
+    #{"id" "kind" "breadcrumb"}
+    #{"id" "kind" "name" "breadcrumb"}))
 
 ;; The attributes each kind's entity declaration carries (event-model.allium).
 ;; The model is schemaless - a canonical record IS the stored map, with no list of
@@ -139,7 +147,7 @@
   and the entity's declared attributes, plus any edge key a projection upstream
   attached (an association is projected under its own key)."
   [kind projected]
-  (into (into row-fields (get entity-fields kind)) projected))
+  (into (into (row-fields kind) (get entity-fields kind)) projected))
 
 (defn query-error
   "A rejected query: the one error shape the engine raises, and the shape a
@@ -389,7 +397,10 @@
                          " is not an association; there is nothing to project with `{...}`"))))
           (check-edge-fields! rel (:projection st))
           (recur (rest stages) (:to rel)
-                 (cond-> projected (:projection st) (conj (name (:edge-key rel))))
+                 ;; A follow produces NEW rows: they carry an edge only when
+                 ;; THIS follow projected one, so a key an earlier follow
+                 ;; attached is no longer on them.
+                 (if (:projection st) #{(name (:edge-key rel))} #{})
                  (conj plan (assoc st :relation rel))))
         (do (check-fields! st current projected)
             (when (and (= :count (:kind st)) (seq (rest stages)))
@@ -402,6 +413,18 @@
 ;; ---------------------------------------------------------------------------
 ;; Execution
 ;; ---------------------------------------------------------------------------
+
+(defn- breadcrumb [store type e]
+  (case type
+    :slice         {:timeline_title (:title (m/fetch store :timeline (:timeline e)))}
+    :element       (if-let [l (:swimlane e)]
+                     {:swimlane_name (:name (m/fetch store :swimlane l))}
+                     {})
+    :specification (let [sl (m/fetch store :slice (:slice e))]
+                     {:slice_title (:title sl)
+                      :timeline_title (:title (m/fetch store :timeline (:timeline sl)))})
+    :spec-step     {:spec_title (:title (m/fetch store :specification (:spec e)))}
+    {}))
 
 (defn- field-value
   "The value a stage sees for field `k` on a pipeline item: the row's own display
@@ -420,6 +443,7 @@
       (= k "id")   (:id e)
       (= k "kind") kind
       (= k "name") (or (:name e) (:title e))
+      (= k "breadcrumb") (breadcrumb store (:type e) e)
       (contains? (get derived-fields kind) k) (derived-value store kind e k)
       :else (let [kk (keyword k)]
               (if (and (map? e) (contains? e kk)) (get e kk) (get item kk))))))
@@ -454,18 +478,6 @@
                 (if projection
                   {:entity (:entity r) :edge-key edge-key :edge (edge-view (:edge r) projection)}
                   {:entity (:entity r)}))))))
-
-(defn- breadcrumb [store type e]
-  (case type
-    :slice         {:timeline_title (:title (m/fetch store :timeline (:timeline e)))}
-    :element       (if-let [l (:swimlane e)]
-                     {:swimlane_name (:name (m/fetch store :swimlane l))}
-                     {})
-    :specification (let [sl (m/fetch store :slice (:slice e))]
-                     {:slice_title (:title sl)
-                      :timeline_title (:title (m/fetch store :timeline (:timeline sl)))})
-    :spec-step     {:spec_title (:title (m/fetch store :specification (:spec e)))}
-    {}))
 
 (defn- row [store item]
   (let [e (:entity item)

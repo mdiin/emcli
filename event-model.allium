@@ -1611,10 +1611,13 @@ contract ChangeStream {
         -- touches it and the examples of every step that asserts about it. It is
         -- a named operation in its own right, and its ONE delta carries every
         -- entity whose observable state changed: the element (fields,
-        -- field_origins and wireframe together, appearing once), each affected
-        -- connection and each affected spec-step. Renaming a field that nothing
-        -- references still emits its delta, with the element alone in the
-        -- changes. The other renames - RenameSlice, RenameSpecification,
+        -- field_origins and wireframe together, appearing once), each connection
+        -- whose derivations named the field, each step whose examples did, and any
+        -- element at the far end of an outgoing connection whose completeness
+        -- followed the source field's respelling - the same reason Connect
+        -- restates its target. An entity the respelling did not reach is NOT in
+        -- the changes, so renaming a field nothing references emits the element
+        -- alone. The other renames - RenameSlice, RenameSpecification,
         -- RenameErrorStep, alongside the longer-standing RenameTimeline,
         -- RenameSwimlane and RenameElement - are single-entity deltas.
         -- An operation that succeeds without changing anything - reordering an

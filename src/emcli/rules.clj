@@ -372,7 +372,8 @@
 (defn rename-field [store {:keys [element name new-name]}]
   (or (require-entity store :element element)
       (require-non-blank :new-name new-name)
-      (let [el       (m/fetch store :element element)
+      (let [pre      store
+            el       (m/fetch store :element element)
             fields   (:fields el)
             incoming (m/incoming store element)
             outgoing (m/outgoing store element)
@@ -412,15 +413,28 @@
                                                (rename-keyed (:examples st) :field_name name new-name)))
                                 store steps)
                   ;; DeltaPerMutation carries every entity whose observable state
-                  ;; changed. Rewriting an incoming target_field can move THIS
-                  ;; element's completeness, and rewriting an outgoing one can move
-                  ;; the completeness of the element at the far end, so those
-                  ;; elements ride along with the connections and the steps.
-                  element-ids (distinct (cons element (map :to outgoing)))
-                  conn-ids    (distinct (map :id (concat incoming outgoing)))
+                  ;; CHANGED, not every entity the operation touched: a connection
+                  ;; is restated only when a derivation naming the field moved, a
+                  ;; step only when an example naming it did, and an element at the
+                  ;; far end of an outgoing connection only when its completeness
+                  ;; followed the source field's respelling. Renaming a field
+                  ;; nothing references therefore emits the element alone.
+                  moved-conns (filter (fn [c]
+                                        (not= (:derivations c)
+                                              (:derivations (m/fetch store :connection (:id c)))))
+                                      (concat incoming outgoing))
+                  moved-steps (filter (fn [st]
+                                        (not= (:examples st)
+                                              (:examples (m/fetch store :spec-step (:id st)))))
+                                      steps)
+                  moved-far   (filter (fn [id]
+                                        (not= (m/information-complete? pre (m/fetch pre :element id))
+                                              (m/information-complete? store (m/fetch store :element id))))
+                                      (distinct (map :to outgoing)))
+                  element-ids (distinct (cons element moved-far))
                   changes     (concat (map #(updated store :element %) element-ids)
-                                      (map #(updated store :connection %) conn-ids)
-                                      (map #(updated store :spec-step (:id %)) steps))]
+                                      (map #(updated store :connection (:id %)) moved-conns)
+                                      (map #(updated store :spec-step (:id %)) moved-steps))]
               (commit store :RenameField (vec changes) (m/fetch store :element element)))))))
 
 (defn set-element-context [store {:keys [element new-context]}]
@@ -788,6 +802,7 @@
 
 (defn- cascade-element [acc element-id]
   (let [[store _] acc
+        pre       store
         conns     (vals (into {} (map (juxt :id identity))
                               (concat (m/outgoing store element-id)
                                       (m/incoming store element-id))))
@@ -802,8 +817,15 @@
         acc       (reduce (fn [a p] (del a :placement (:id p)))
                           acc (m/element-placements store element-id))
         acc       (reduce (fn [a c] (del a :connection (:id c))) acc conns)
-        [store changes] (del acc :element element-id)]
-    [store (into changes (map #(updated store :element %)) survivors)]))
+        [store changes] (del acc :element element-id)
+        ;; DeltaPerMutation restates entities whose observable state CHANGED. A
+        ;; survivor that was complete by some other route before the removal is
+        ;; still complete after it, and is not restated.
+        moved     (filter (fn [id]
+                            (not= (m/information-complete? pre (m/fetch pre :element id))
+                                  (m/information-complete? store (m/fetch store :element id))))
+                          survivors)]
+    [store (into changes (map #(updated store :element %)) moved)]))
 
 (defn delete-specification [store {:keys [spec]}]
   (or (require-entity store :specification spec)

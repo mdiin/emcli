@@ -933,3 +933,13 @@
     (testing "while a case-only respelling is a rename, not a collision"
       (let [{s4 :store} (s/ok s3 r/rename-field {:element (:id el) :name "amount" :new-name "AMOUNT"})]
         (is (= ["AMOUNT" "total"] (mapv :name (:fields (m/fetch s4 :element (:id el))))))))))
+
+(deftest renaming-an-unreferenced-field-emits-the-element-alone
+  (let [[store mid]             (s/with-model)
+        {s1 :store cmd :result} (s/ok store r/create-element {:model mid :name "Cmd" :element-type :command})
+        {s2 :store evt :result} (s/ok s1 r/create-element {:model mid :name "Evt" :element-type :event})
+        {s3 :store}             (s/ok s2 r/add-field {:element (:id evt) :field {:name "note" :type :string}})
+        {s4 :store}             (s/ok s3 r/connect {:from (:id cmd) :to (:id evt)})
+        {:keys [delta]}         (s/ok s4 r/rename-field {:element (:id evt) :name "note" :new-name "memo"})]
+    (is (= [(:id evt)] (mapv :id (:changes delta)))
+        "the connection derives no field, so the respelling never reached it and it is not restated")))

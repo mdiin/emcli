@@ -256,9 +256,9 @@
   "Resolve a dependency's far-end element to a canonical element id. Prefers the
   groupId the exporter writes into the dependency `id`; falls back to matching a
   foreign document's dependency by (elementType, title) against element names."
-  [group->el name->el dep]
+  [group->el find-el dep]
   (or (group->el (get dep "id"))
-      (name->el [(schema-type->element-type (get dep "elementType")) (get dep "title")])))
+      (find-el (schema-type->element-type (get dep "elementType")) (get dep "title"))))
 
 (defn- apply-step-extras
   "Re-attach a step's expectEmptyList and examples after creation, so both
@@ -335,8 +335,17 @@
                                       {:store s2})]
                     [s2 (assoc acc g eid)]))
                 [store {}] by-group)
-        ;; [element-type name] -> element id, for resolving foreign dep/step references.
-        name->el (into {} (for [e (m/elements store mid)] [[(:element_type e) (:name e)] (:id e)]))
+        ;; Resolving a foreign dep/step reference to an element of the model by its
+        ;; (element_type, title). Matched by the model's name equality, not by string:
+        ;; a document that spells an element's title differently from the element it
+        ;; embeds describes the same element, so a step or dependency naming it is
+        ;; re-attached rather than dropped as unresolvable (see SchemaRoundtrip).
+        find-el (fn [element-type title]
+                  (->> (m/elements store mid)
+                       (filter #(and (= element-type (:element_type %))
+                                     (m/same-name? title (:name %))))
+                       first
+                       :id))
         ;; --- slices, placements, screenImages, specifications --------------
         [store embedid->placement slice-id-map]
         (reduce
@@ -380,7 +389,7 @@
                (fn [acc e]
                  (let [near (group->el (get e "groupId" (str "anon-" (get e "id"))))]
                    (reduce (fn [a d]
-                             (let [far (resolve-far group->el name->el d)]
+                             (let [far (resolve-far group->el find-el d)]
                                (cond
                                  (or (nil? near) (nil? far)) a
                                  (= "OUTBOUND" (get d "type")) (conj a [near far])
@@ -418,7 +427,7 @@
                                                                        :index (get st "index" 0)}))]
                                   (apply-step-extras s2 res st spid))
                                 (let [element-type (spec-type->element-type (get st "type"))
-                                      el   (name->el [element-type (get st "title")])]
+                                      el   (find-el element-type (get st "title"))]
                                   (if-not el
                                     ;; A step the document's own reference cannot
                                     ;; resolve: either it names an element the

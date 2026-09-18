@@ -331,3 +331,15 @@
     (testing "count is terminal: a stage after it could never be applied"
       (is (rejects? #"count collapses the result" #(run-q env "element | count | where name = x")))
       (is (number? (run-q env "element | count")) "count still ends a pipeline"))))
+
+(deftest rows-only-accept-names-they-can-answer
+  (let [env (build)]
+    (testing "a step row has no name, so `name` is refused rather than resolving to nil"
+      (is (rejects? #"\"name\" on step rows" #(run-q env "step | select name")))
+      (is (vector? (run-q env "step | select clause")) "its real fields still project"))
+    (testing "a projected edge key belongs to the rows that follow produced"
+      (is (vector? (run-q env "slice | elements {index} | select placement"))
+          "the follow that projected it still sees it")
+      (is (rejects? #"\"placement\" on slice rows"
+                    #(run-q env "slice | elements {index} | slice | select placement"))
+          "but a further follow produced new rows, which carry no edge"))))

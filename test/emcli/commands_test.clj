@@ -410,3 +410,19 @@
     (testing "naming a field the element does not have is rejected"
       (is (= :not-found (:error (cmd/run a "add-field" {:element el :name "x" :type "int"
                                                         :subfield-of "nope"})))))))
+
+;; --- a nesting level is a name, so it resolves by name equality ---------------
+
+(deftest add-field-resolves-subfield-of-by-name-equality
+  (let [a   (app/new-app "M")
+        eid (:id (:result (cmd/run a "create-element" {:name "E" :element-type "command"})))]
+    (cmd/run a "add-field" {:element eid :name "orderId" :type "uuid"})
+    (testing "a differently-spelled nesting level names the field that exists"
+      (let [res (cmd/run a "add-field" {:element eid :name "placedAt" :type "date_time"
+                                        :subfield-of "ORDERID"})
+            el  (:result res)]
+        (is (not (:error res)))
+        (is (= ["placedAt"] (mapv :name (:subfields (first (:fields el))))))))
+    (testing "while a level the element does not carry is still rejected"
+      (is (some? (:error (cmd/run a "add-field" {:element eid :name "x" :type "uuid"
+                                                 :subfield-of "nosuchfield"})))))))
