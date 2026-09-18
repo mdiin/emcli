@@ -2,6 +2,7 @@
     "defaultAgent": "event-modeler",
     "agent": {
         "event-modeler": {
+            "mode": "primary",
             "description": "Event Modeling facilitator",
             "disabledTools": [
                 "eca__grep",
