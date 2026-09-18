@@ -48,6 +48,28 @@
   (when (str/blank? value)
     {:error :invalid-value :message (str (name field) " must not be blank")}))
 
+;; A name that identifies an entity to a caller must identify exactly one entity
+;; of its container (see the uniqueness invariants in event-model.allium: element
+;; names, timeline titles and swimlane names are unique within their model, a
+;; slice's title within its timeline, a specification's title within its slice).
+;; Unlike the invariant, which reports the collision, these guards reject the edit
+;; before it is applied - and the rejection names the entity that already holds
+;; the name, so a caller reuses or places what exists instead of inventing a
+;; near-duplicate name.
+(defn- name-conflict [type {:keys [id kind]} entity-name]
+  {:error :name-conflict :type type :id id :name entity-name
+   :message (str "the name " (pr-str entity-name) " is already used by " (name type)
+                 " " id (when kind (str " (" (name kind) ")"))
+                 "; reuse or place it instead")})
+
+(defn- require-unique-name
+  "Reject `entity-name` when one of `entities` - one container's worth, compared
+  on `name-key` - already holds it. `exclude` is the entity's own id on a rename,
+  so renaming an entity to the name it already holds is no collision."
+  [type entity-name entities name-key exclude]
+  (when-let [e (m/name-collision entity-name entities name-key exclude)]
+    (name-conflict type e entity-name)))
+
 (def ^:private element-kinds    #{:command :event :read_model :screen :automation})
 (def ^:private slice-kinds      #{:state_change :state_view :automation})
 (def ^:private slice-statuses   #{:created :in_progress :done :informational})
@@ -136,15 +158,19 @@
   (or (require-entity store :event-model model)
       (require-id-available store id)
       (require-non-blank :title title)
+      (require-unique-name :timeline title (m/timelines store model) :title nil)
       (let [[store tl] (m/create store :timeline (with-id {:model model :title title} id))]
         (commit store :CreateTimeline [(created :timeline tl)] tl))))
 
 (defn rename-timeline [store {:keys [timeline new-title]}]
-  (or (require-entity store :timeline timeline)
-      (require-non-blank :new-title new-title)
-      (let [store (m/set-field store :timeline timeline :title new-title)]
-        (commit store :RenameTimeline [(updated store :timeline timeline)]
-                (m/fetch store :timeline timeline)))))
+  (let [tl (m/fetch store :timeline timeline)]
+    (or (require-entity store :timeline timeline)
+        (require-non-blank :new-title new-title)
+        (require-unique-name :timeline new-title
+                             (m/timelines store (:model tl)) :title timeline)
+        (let [store (m/set-field store :timeline timeline :title new-title)]
+          (commit store :RenameTimeline [(updated store :timeline timeline)]
+                  (m/fetch store :timeline timeline))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Swimlanes
@@ -154,15 +180,19 @@
   (or (require-entity store :event-model model)
       (require-id-available store id)
       (require-non-blank :name name)
+      (require-unique-name :swimlane name (m/swimlanes store model) :name nil)
       (let [[store lane] (m/create store :swimlane (with-id {:model model :name name :index index} id))]
         (commit store :CreateSwimlane [(created :swimlane lane)] lane))))
 
 (defn rename-swimlane [store {:keys [lane new-name]}]
-  (or (require-entity store :swimlane lane)
-      (require-non-blank :new-name new-name)
-      (let [store (m/set-field store :swimlane lane :name new-name)]
-        (commit store :RenameSwimlane [(updated store :swimlane lane)]
-                (m/fetch store :swimlane lane)))))
+  (let [current (m/fetch store :swimlane lane)]
+    (or (require-entity store :swimlane lane)
+        (require-non-blank :new-name new-name)
+        (require-unique-name :swimlane new-name
+                             (m/swimlanes store (:model current)) :name lane)
+        (let [store (m/set-field store :swimlane lane :name new-name)]
+          (commit store :RenameSwimlane [(updated store :swimlane lane)]
+                  (m/fetch store :swimlane lane))))))
 
 (defn reorder-swimlane [store {:keys [lane new-index]}]
   (or (require-entity store :swimlane lane)
@@ -179,6 +209,7 @@
       (require-id-available store id)
       (require-non-blank :title title)
       (require-valid-value slice-kinds kind)
+      (require-unique-name :slice title (m/slices store timeline) :title nil)
       (let [[store sl] (m/create store :slice (with-id {:timeline timeline :title title
                                                         :kind kind :index index
                                                         :status :created} id))]
@@ -213,6 +244,7 @@
       (require-id-available store id)
       (require-non-blank :name name)
       (require-valid-value element-kinds kind)
+      (require-unique-name :element name (m/elements store model) :name nil)
       (let [[store el] (m/create store :element (with-id {:model model :name name :kind kind
                                                            :context :internal :fields []
                                                            :field_origins []} id))
@@ -317,11 +349,14 @@
         (set-field-origins store {:element element :origins origins}))))
 
 (defn rename-element [store {:keys [element new-name]}]
-  (or (require-entity store :element element)
-      (require-non-blank :new-name new-name)
-      (let [store (m/set-field store :element element :name new-name)]
-        (commit store :RenameElement [(updated store :element element)]
-                (m/fetch store :element element)))))
+  (let [current (m/fetch store :element element)]
+    (or (require-entity store :element element)
+        (require-non-blank :new-name new-name)
+        (require-unique-name :element new-name
+                             (m/elements store (:model current)) :name element)
+        (let [store (m/set-field store :element element :name new-name)]
+          (commit store :RenameElement [(updated store :element element)]
+                  (m/fetch store :element element))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Placements
@@ -499,6 +534,7 @@
   (or (require-entity store :slice slice)
       (require-id-available store id)
       (require-non-blank :title title)
+      (require-unique-name :specification title (m/specs store slice) :title nil)
       (let [[store spec] (m/create store :specification (with-id {:slice slice :title title} id))]
         (commit store :AddSpecification [(created :specification spec)] spec))))
 

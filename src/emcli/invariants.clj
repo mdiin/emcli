@@ -49,6 +49,60 @@
      :message   (str "Slice " (:id s) " places element(s) "
                      (str/join ", " dups) " more than once")}))
 
+;; Name uniqueness ------------------------------------------------------------
+;; Within one container no two entities may share a name: an element's name, a
+;; timeline's title and a swimlane's name are unique within their model, a
+;; slice's title within its timeline and a specification's title within its slice
+;; (see the uniqueness invariants in event-model.allium). All five are the same
+;; property over the same comparison (m/same-name?), so they share one
+;; implementation and differ only in the container they are checked within.
+;; A collision is deliberately NOT repaired (unlike a duplicate placement):
+;; choosing which of two same-named entities to rename, and to what, would be
+;; guessing the author's intent, so it is reported for a human to resolve.
+(defn- name-collisions
+  "The groups of `entities` that share a name under m/same-name?, as non-empty
+  seqs of the colliding entities. Each group is reported once, whether two
+  entities share a name or ten."
+  [entities name-field]
+  (->> entities
+       (map (fn [e] [(m/same-name-key (get e name-field)) e]))
+       (filter (fn [[k _]] k))
+       (group-by first)
+       (sort-by key)
+       (keep (fn [[_ pairs]] (when (< 1 (count pairs)) (map second pairs))))))
+
+(defn- collision-violations
+  "The violations of `invariant` for every name shared by two or more of
+  `entities` (one container's worth, compared on `name-field`). Each message
+  names the entities that collide, since that is what a human has to rename."
+  [invariant type name-field entities]
+  (for [es (name-collisions entities name-field)]
+    {:invariant invariant
+     :type      type
+     :name      (get (first es) name-field)
+     :entities  (mapv #(select-keys % [:id :kind]) es)
+     :message   (str (str/join ", " (map #(str (name type) " " (:id %)) es))
+                     " share the name " (pr-str (get (first es) name-field)))}))
+
+(defn- uniqueness-violations
+  "Every violation of the five name-uniqueness invariants, each checked within
+  its own container."
+  [store]
+  (let [across (fn [invariant type name-field containers]
+                 (mapcat #(collision-violations invariant type name-field %)
+                         containers))]
+    (vec (concat
+          (across :ElementNameUnique :element :name
+                  (for [m (m/all store :event-model)] (m/elements store (:id m))))
+          (across :TimelineTitleUnique :timeline :title
+                  (for [m (m/all store :event-model)] (m/timelines store (:id m))))
+          (across :SwimlaneNameUnique :swimlane :name
+                  (for [m (m/all store :event-model)] (m/swimlanes store (:id m))))
+          (across :SliceTitleUnique :slice :title
+                  (for [t (m/all store :timeline)] (m/slices store (:id t))))
+          (across :SpecificationTitleUnique :specification :title
+                  (for [s (m/all store :slice)] (m/specs store (:id s))))))))
+
 ;; repair ---------------------------------------------------------------------
 ;; A store loaded from disk must never leave the model wedged: rules/commit
 ;; re-checks the WHOLE store on every mutation, so one bad entity from a
@@ -84,6 +138,11 @@
   Anything else, such as a category error like a read_model placed in a
   state_change slice, is left alone, because repairing it would mean guessing
   what the author meant.
+
+  A name collision (the uniqueness invariants) is left alone for the same reason:
+  choosing which of two same-named entities to rename, and what to rename it to,
+  is the author's decision, so a store holding one is reported - and therefore
+  refuses to load (see `load-app` in emcli.app) - rather than silently renamed.
 
   Repairing is a best-effort normalisation, NOT validation: callers MUST
   re-check the returned store with `check` and decide what to do with whatever
@@ -217,6 +276,7 @@
   [store]
   (vec (concat (placement-violations store)
                (duplicate-placement-violations store)
+               (uniqueness-violations store)
                (spec-violations store)
                (connection-violations store)
                (example-violations store)

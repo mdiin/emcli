@@ -6,7 +6,8 @@
   The store is an ordinary map (a value, never mutated in place). Every entity
   lives in a collection keyed by its integer id; relationships are stored as
   foreign-key ids and reverse relationships are computed by filtering. This
-  mirrors the canonical model in event-model.allium one-to-one.")
+  mirrors the canonical model in event-model.allium one-to-one."
+  (:require [clojure.string :as str]))
 
 ;; ---------------------------------------------------------------------------
 ;; Store primitives
@@ -105,6 +106,46 @@
   "All entities of `type` whose field `k` equals `v`."
   [store type k v]
   (where store type #(= v (get % k))))
+
+;; ---------------------------------------------------------------------------
+;; Names (the spec's `same_name` and the uniqueness invariants built on it)
+;; ---------------------------------------------------------------------------
+;; A name is the human handle a caller resolves to an entity, so every name a
+;; caller can resolve is unique within the container in which it has to identify
+;; one entity - an element's name, a timeline's title and a swimlane's name
+;; within their model, a slice's title within its timeline, a specification's
+;; title within its slice (see the uniqueness invariants in event-model.allium).
+;; Two names are the same name when they differ only in case and surrounding
+;; whitespace, so "Order", "order" and "Order " are one name and cannot resolve
+;; as a tie (NameResolution's exact tier compares the same way).
+
+(defn same-name-key
+  "The comparison key of a name: its characters folded to the form two names
+  match on, or nil when `name` is not a string. Two names are the same name
+  exactly when their keys are both present and equal."
+  [name]
+  (when (string? name)
+    (str/lower-case (str/trim name))))
+
+(defn same-name?
+  "True when `a` and `b` are the same name: equal apart from case and surrounding
+  whitespace."
+  [a b]
+  (let [ka (same-name-key a)
+        kb (same-name-key b)]
+    (and (some? ka) (= ka kb))))
+
+(defn name-collision
+  "The first entity in `entities` whose `name-key` field is the same name as
+  `name`, ignoring the entity whose id is `exclude` (an entity's own id on a
+  rename, so renaming an entity to the name it already holds is no collision).
+  Nil when `name` still identifies exactly one entity."
+  [name entities name-key exclude]
+  (some (fn [e]
+          (when (and (not= exclude (:id e))
+                     (same-name? (get e name-key) name))
+            e))
+        entities))
 
 ;; ---------------------------------------------------------------------------
 ;; Relationship navigation (matches the `with` reverse references in the spec)
