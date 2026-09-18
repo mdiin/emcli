@@ -943,3 +943,16 @@
         {:keys [delta]}         (s/ok s4 r/rename-field {:element (:id evt) :name "note" :new-name "memo"})]
     (is (= [(:id evt)] (mapv :id (:changes delta)))
         "the connection derives no field, so the respelling never reached it and it is not restated")))
+
+(deftest deleting-an-element-removes-the-steps-that-assert-about-it
+  (let [[store mid]             (s/with-model)
+        {s1 :store cmd :result} (s/ok store r/create-element {:model mid :name "Cmd" :element-type :command})
+        {s2 :store tl :result}  (s/ok s1 r/create-timeline {:model mid :title "T"})
+        {s3 :store sl :result}  (s/ok s2 r/add-slice {:timeline (:id tl) :title "S"
+                                                      :slice-type :state_change :index 0})
+        {s4 :store sp :result}  (s/ok s3 r/add-specification {:slice (:id sl) :title "spec"})
+        {s5 :store st :result}  (s/ok s4 r/add-spec-step {:spec (:id sp) :clause :when_step
+                                                          :element (:id cmd) :index 0})
+        {s6 :store}             (s/ok s5 r/delete-element {:element (:id cmd)})]
+    (is (nil? (m/fetch s6 :spec-step (:id st))) "the step that asserted about it goes with it")
+    (is (some? (m/fetch s6 :specification (:id sp))) "while the specification it belonged to stays")))

@@ -816,6 +816,12 @@
                        distinct)
         acc       (reduce (fn [a p] (del a :placement (:id p)))
                           acc (m/element-placements store element-id))
+        ;; A specification step asserts ABOUT an element, so a step naming this one
+        ;; cannot outlive it - SpecificationComposition would describe a step about
+        ;; nothing. It goes with the element, as its placements and connections do;
+        ;; the specifications those steps belonged to stay.
+        acc       (reduce (fn [a st] (del a :spec-step (:id st)))
+                          acc (m/by-field store :spec-step :element element-id))
         acc       (reduce (fn [a c] (del a :connection (:id c))) acc conns)
         [store changes] (del acc :element element-id)
         ;; DeltaPerMutation restates entities whose observable state CHANGED. A

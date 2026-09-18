@@ -457,15 +457,21 @@
         :else        (str v)))
 
 (defn- order-value
-  "A value `sort-by` can compare. A scalar keeps its own type, so numbers order
-  numerically and strings lexically; a structure - a breadcrumb, a field list, a
-  reverse reference - is ordered by its printed form. The closed field set admits
-  those for projection, and a name that is accepted must not break the pipeline:
-  ordering by them is meaningless, but crashing is worse."
+  "A `sort-by` key for a field value. A scalar orders by its own kind - numbers
+  numerically, strings lexically, a keyword by name - and a structure (a
+  breadcrumb, a field list, a reverse reference) by its printed form. The closed
+  field set admits all of those, and a name that is accepted must not break the
+  pipeline: ordering by a structure is meaningless, but crashing is worse. The
+  leading rank keeps the kinds apart, so a column mixing an assigned value with an
+  absent one (an unassigned swimlane, an error step's element) is still totally
+  ordered instead of comparing a number to a string."
   [v]
-  (cond (nil? v)                                             ""
-        (or (number? v) (string? v) (boolean? v) (keyword? v)) v
-        :else                                                (pr-str v)))
+  (cond (nil? v)     [0]
+        (number? v)  [1 v]
+        (string? v)  [2 v]
+        (keyword? v) [3 (name v)]
+        (boolean? v) [4 (if v 1 0)]
+        :else        [5 (pr-str v)]))
 
 (defn- where-pred [store {:keys [field comparator operand]}]
   (fn [item]

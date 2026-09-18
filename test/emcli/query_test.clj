@@ -353,3 +353,10 @@
       (is (vector? (run-q env "element | order fields"))))
     (testing "while a scalar still orders by its own type, not its printed form"
       (is (= [0 1] (mapv :index (run-q env "slice | order index | select index")))))))
+
+(deftest ordering-by-a-nullable-field-is-totally-ordered
+  (let [env (build)]
+    (testing "a column mixing an assigned value with an absent one still orders"
+      (is (vector? (run-q env "element | order swimlane")))
+      (is (vector? (run-q env "element | order -swimlane")))
+      (is (vector? (run-q env "step | order element"))))))

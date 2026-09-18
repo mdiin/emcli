@@ -1138,13 +1138,20 @@ rule DeleteSpecificationCascades {
     ensures: not exists spec
 }
 
--- Deleting an element cascades to every placement that references it and every
--- connection it participates in (inbound or outbound).
+-- Deleting an element cascades to every placement that references it, every
+-- connection it participates in (inbound or outbound), and every specification
+-- step that asserts about it - a step naming the element cannot outlive it, since
+-- SpecificationComposition would then describe a step about nothing. The
+-- specifications those steps belonged to stay, like the model's registry of
+-- elements when a slice goes.
 rule DeleteElementCascades {
     when: DeleteElement(element)
     ensures:
         for p in element.placements:
             not exists p
+    ensures:
+        for st in SpecSteps where st.element = element:
+            not exists st
     ensures:
         for c in element.outgoing:
             not exists c
