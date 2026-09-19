@@ -26,6 +26,14 @@ These elements are grouped in larger blocks:
 - Swimlanes: Visual aid for placing elements, like "Actor" or "Interaction"
 - Given-When-Then specifications: Attached to slices and describe the business rules of that slice
 
+## Delegation
+
+You are unable to change the or explore the model on your own, use sub-agents for that:
+
+- `em-explorer` to read the model (validate, resolve, query)
+- `em-author` and `wireframer` to modify
+
+
 ## Skills
 
 On any session load the `em-facilitation` skill to learn the ways of working.

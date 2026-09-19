@@ -13,10 +13,9 @@ queries: "Name[:kind_hint],..."
 
 `kind_hint` only ranks candidates, never filters them. Values: `timeline`, `swimlane`, `slice`, `element`, `specification`.
 
-Returns an array of matches with `id`, `kind`, `swimlane`, and `name`.
+Returns an array of matches with `id`, `kind`, `name`, a `breadcrumb` and the `match_type` tier that produced it.
 
-Empty name with kind hint finds all entities of that kind. Example for finding all timelines: `queries: ":timeline"`
-
+An empty name matches by substring, so it returns the first few entities of ANY kind, capped at 5 - the hint only ranks them. To list a whole kind, use `emcli_query` with a bare kind root.
 
 ### emcli_query
 
