@@ -25,6 +25,7 @@ Read-only structural query over the model: follow relations outward from a root 
 query: "element:42 | slice"            -- slices this element is placed in
 query: "slice:7 | elements {index}"    -- elements in a slice, with their placement index
 query: "element:42 | outgoing {derivations}"
+query: "element | where element_type in (command,event)"  -- set membership: `in` follows the field directly, no `=` before it
 ```
 
 Roots: `timeline`, `swimlane`, `slice`, `element`, `specification`, `step`. Stages: `where`, `order`, `select`, `count`, `limit`, `distinct`. An invalid stage returns an error naming the valid alternatives; run `emcli query --relations` for the full vocabulary.
