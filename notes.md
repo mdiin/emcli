@@ -7,6 +7,8 @@
   "verb": "add"
 }
 
+- emcli should reject extra parameters; this will provide guidance for the llm regsrding the previous point
+
 # Operation improvements
 - Slice reordering by `--before` and `--after` instead of by index (I think wireframing does this as well)
   - This makes it much simpler to reorder slices for both humans and llm's
