@@ -432,3 +432,59 @@
     (cmd/run a "create-element" {:name " Order" :element-type "event"})
     (is (= 1 (count (cmd/query-model a "element:Order")))
         "a name root matches by the model's name equality, surrounding whitespace included")))
+
+;; --- unknown-parameter rejection -------------------------------------------
+
+(deftest unknown-params-rejected-for-registry-command
+  (let [a (app/new-app "M")]
+    (testing "an extra --slice flag on create-element is rejected before reaching the rule"
+      (let [res (cmd/run a "create-element" {:name "Foo" :element-type "command" :slice 15})]
+        (is (= :unknown-params (:error res)))
+        (is (= ["slice"] (:params res)))
+        (is (re-find #"slice" (:message res)))))
+    (testing "multiple unknown flags are all listed"
+      (let [res (cmd/run a "create-element" {:name "Foo" :element-type "command" :slice 15 :bogus "x"})]
+        (is (= :unknown-params (:error res)))
+        (is (= ["bogus" "slice"] (sort (:params res))))))
+    (testing "nothing was committed on rejection"
+      (is (zero? (count (emcli.model/elements (app/store a) (app/model-id a))))))))
+
+(deftest unknown-params-rejected-for-composite-command
+  (let [a   (app/new-app "M")
+        eid (:id (:result (cmd/run a "create-element" {:name "Order" :element-type "event"})))]
+    (testing "an extra --slice flag on add-field is rejected"
+      (let [res (cmd/run a "add-field" {:element eid :name "orderId" :type "uuid" :slice 3})]
+        (is (= :unknown-params (:error res)))
+        (is (= ["slice"] (:params res)))))
+    (testing "the field was not added"
+      (is (empty? (:fields (emcli.model/fetch (app/store a) :element eid)))))))
+
+(deftest server-key-is-not-flagged-as-unknown
+  (let [a (app/new-app "M")]
+    (testing ":server is always allowed and does not trigger unknown-params"
+      (let [res (cmd/run a "create-element" {:name "Foo" :element-type "command"
+                                             :server "http://localhost:8090"})]
+        (is (not (r/error? res)))))))
+
+(deftest valid-registry-call-unaffected-by-check
+  (let [a (app/new-app "M")]
+    (testing "a call with only known params is not affected by the guard"
+      (let [res (cmd/run a "create-timeline" {:title "Timeline A"})]
+        (is (not (r/error? res)))
+        (is (= "Timeline A" (:title (:result res))))))))
+
+(deftest open-wireframe-node-commands-accept-arbitrary-attr-flags
+  (let [a   (app/new-app "M")
+        eid (:id (:result (cmd/run a "create-element" {:name "Home" :element-type "screen"})))]
+    (testing "add-wireframe-node passes extra flags as tag attrs without error"
+      (let [res (cmd/run a "add-wireframe-node" {:element eid :tag "button" :label "Click me"})]
+        (is (not (r/error? res)))))
+    (testing "add-wireframe-node-before also accepts arbitrary flags"
+      (let [row-result (cmd/run a "add-wireframe-node" {:element eid :tag "row"})
+            ;; The wireframe is [:canvas {:-id "n1"} [:row {:-id "n2"}] ...];
+            ;; find the :-id of the last child (the row we just added).
+            wf         (:wireframe (:result row-result))
+            row-id     (get-in (last wf) [1 :-id])
+            res        (cmd/run a "add-wireframe-node-before"
+                                {:element eid :before row-id :tag "button" :label "Go"})]
+        (is (not (r/error? res)))))))

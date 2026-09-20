@@ -115,6 +115,25 @@
     "add-wireframe-node-before" [:element]
     "set-wireframe-text" [:element]})
 
+;; Allowed option keys per structured/composite command. Derived from the same
+;; flag names that `cli/structured-manifest-params` publishes, so there is one
+;; source of truth: each entry is the set of keywords an operator may pass.
+;; :server is always allowed (stripped by the CLI layer; may arrive from HTTP).
+;; `add-wireframe-node` and `add-wireframe-node-before` are intentionally absent
+;; here: they forward all remaining opts as tag attributes (an open set), so
+;; unknown-param rejection would be wrong for those two commands.
+(def ^:private structured-allowed-params
+  {"add-field"           #{:element :name :type :cardinality :optional :subfield-of}
+   "remove-field"        #{:element :name}
+   "add-field-origin"    #{:element :field :origin}
+   "remove-field-origin" #{:element :field}
+   "add-derivation"      #{:connection :target :from}
+   "remove-derivation"   #{:connection :target}
+   "add-step-example"    #{:step :field-name :field-value}
+   "remove-step-example" #{:step :field-name}
+   "set-wireframe-attr"  #{:element :node :attr :value}
+   "set-wireframe-text"  #{:element :node :text}})
+
 (defn- int-opt-keys [command]
   (if-let [params (:params (registry command))]
     (->> params (filter #(= :int (nth % 2))) (map first))
@@ -127,6 +146,29 @@
   (->> (int-opt-keys command)
        (filter #(and (some? (get opts %)) (= parse-failure (->int (get opts %)))))
        (mapv name)))
+
+(def ^:private always-allowed #{:server})
+
+(defn- allowed-opt-keys
+  "The complete set of option keys a command accepts. Returns nil for open
+  commands (add-wireframe-node, add-wireframe-node-before) that forward
+  arbitrary attribute flags — unknown-param rejection is skipped for those."
+  [command]
+  (when-let [base (or (when-let [params (:params (registry command))]
+                        (into #{} (map first) params))
+                      (structured-allowed-params command))]
+    (into base always-allowed)))
+
+(defn- unknown-opt-keys
+  "Option keys in `opts` that are not in the command's allowed set. Returns an
+  empty seq for open commands (allowed-opt-keys returns nil)."
+  [command opts]
+  (if-let [allowed (allowed-opt-keys command)]
+    (->> (keys opts)
+         (remove allowed)
+         (mapv name)
+         sort)
+    []))
 
 (defn- build-args [{:keys [params model?]} app opts]
   (let [missing (for [[opt _ _ req?] params :when (and req? (nil? (get opts opt)))] opt)]
@@ -148,10 +190,18 @@
   Any spec-declared Integer argument that is present but not a valid integer is
   rejected up front with :bad-argument, so it can never reach a rule as nil."
   [app command opts]
-  (let [bad (bad-int-opts command opts)]
-   (if (seq bad)
+  (let [unknown (unknown-opt-keys command opts)
+        bad     (bad-int-opts command opts)]
+   (cond
+     (seq unknown)
+     {:error :unknown-params :params unknown
+      :message (str "unknown parameter(s): " (str/join ", " unknown))}
+
+     (seq bad)
      {:error :bad-argument :args bad
       :message (str "expected an integer for: " (str/join ", " bad))}
+
+     :else
      (cond
     ;; Convenience composites (append/remove one entry, preserving the rest).
     ;; They emit the same SetFields / SetFieldOrigins / SetConnectionDerivations
