@@ -4,7 +4,8 @@
   (:require [cheshire.core :as json]
             [clojure.test :refer [deftest testing is]]
             [emcli.cli :as cli]
-            [emcli.commands :as cmd]))
+            [emcli.commands :as cmd]
+            [emcli.wireframe :as wf]))
 
 (defn- all-grouped-commands []
   (mapcat vals (vals cli/command-groups)))
@@ -62,6 +63,31 @@
   (let [output (with-out-str (#'cli/print-group-help "wireframe"))]
     (is (clojure.string/includes? output "show")
         "wireframe group help must list the CLI-only show verb")))
+
+;; `wireframe tags` is the discovery verb for the tag vocabulary: CLI-only (the
+;; vocabulary is fixed, so no server round trip), offered wherever the verbs are.
+(deftest wireframe-group-help-includes-tags
+  (let [output (with-out-str (#'cli/print-group-help "wireframe"))]
+    (is (re-find #"wireframe tags\s+\[--tag <string>\]" output))
+    (is (re-find #"wireframe show\s+--element <int>" output))))
+
+(deftest wireframe-tool-offers-tags-verb
+  (let [{:keys [description schema]} (get (#'cli/build-tools) "emcli_wireframe")]
+    (is (some #{"tags"} (get-in schema ["properties" "verb" "enum"])))
+    (is (clojure.string/includes? description "tags ([--tag])"))
+    (is (clojure.string/includes? description "show (--element)"))))
+
+(deftest tags-output-lists-details-or-rejects
+  (testing "without --tag, every tag is listed"
+    (is (= {:out (wf/tag-list-text)} (#'cli/tags-output nil))))
+  (testing "with --tag, that tag's detail"
+    (is (= {:out (wf/tag-detail-text :button)} (#'cli/tags-output "button")))
+    (is (= {:out (wf/tag-detail-text :button)} (#'cli/tags-output ":button"))
+        "a leading colon, as tags are written in the docs, is accepted"))
+  (testing "an unknown tag is named, and the valid ones listed"
+    (let [{:keys [out error]} (#'cli/tags-output "card")]
+      (is (= "unknown tag: card" error))
+      (is (= (wf/tag-list-text) out)))))
 
 (deftest set-wireframe-attr-node-note-names-current-show-command
   (let [params (#'cli/command->manifest-params "set-wireframe-attr")

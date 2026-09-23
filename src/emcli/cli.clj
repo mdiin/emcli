@@ -84,6 +84,19 @@
                  "add-example" "add-step-example" "remove-example" "remove-step-example"
                  "expect-empty" "set-step-expect-empty"}})
 
+;; Verbs a group offers that the CLI answers itself, with no authoring command
+;; behind them: reads, not operations. Listed with their params wherever the
+;; group's verbs are (help, tools), alongside the authoring verbs.
+(def ^:private cli-only-verbs
+  {"wireframe" {"show" [{:flag "element" :type "int" :required true}]
+                "tags" [{:flag "tag" :type "string" :required false
+                         :note "a tag's attributes and an example; omit to list every tag"}]}})
+
+(defn- group-verbs
+  "Every verb of `group`, authoring and CLI-only alike, sorted."
+  [group]
+  (sort (concat (keys (command-groups group)) (keys (cli-only-verbs group)))))
+
 (defn resolve-command
   "The flat authoring command for an (entity, verb) pair, or nil."
   [group verb]
@@ -144,6 +157,21 @@
       (nil? el)   (die (str "✗ element " eid " does not exist"))
       (nil? (:wireframe el)) (die (str "✗ element " eid " has no wireframe"))
       :else       (println (wf/format-tree (json->wireframe (:wireframe el)))))))
+
+(defn- tags-output
+  "What `wireframe tags [--tag X]` prints: every tag, one tag's detail, or - for
+  a name that is no tag - an error plus the list, so the next call can succeed."
+  [tag]
+  (let [kw (some-> tag str (str/replace #"^:" "") keyword)]
+    (cond
+      (nil? kw)            {:out (wf/tag-list-text)}
+      (wf/tag-detail-text kw) {:out (wf/tag-detail-text kw)}
+      :else                {:out (wf/tag-list-text) :error (str "unknown tag: " (name kw))})))
+
+(defn- do-wireframe-tags [opts]
+  (let [{:keys [out error]} (tags-output (:tag opts))]
+    (println out)
+    (when error (die (str "✗ " error)))))
 
 (defn- do-validate [opts]
   (emit (parse-body (request :get (str (server-url opts) "/validate")))))
@@ -294,7 +322,7 @@
    [{:flag "element" :type "int" :required true :ref "elements[].id"
      :note "must be a screen element"}
      {:flag "tag" :type "string" :required true
-      :note "wireframe tag, e.g. button, input, row, col, text"}
+      :note "wireframe tag; `emcli wireframe tags` lists them, `--tag <name>` gives one's attributes"}
      {:flag "text" :type "string" :required false
       :note "new node's text content on a text-children tag (h1, h2, h3, text, span), or the required text attribute on :alert; rejected for any other tag"}
      {:flag "parent" :type "string" :required false
@@ -305,7 +333,7 @@
     {:flag "before" :type "string" :required true
      :note "node id (nN) of the existing sibling node to insert before"}
     {:flag "tag" :type "string" :required true
-     :note "wireframe tag, e.g. button, input, row, col, text"}
+     :note "wireframe tag; `emcli wireframe tags` lists them, `--tag <name>` gives one's attributes"}
     {:flag "text" :type "string" :required false
      :note "new node's text content on a text-children tag (h1, h2, h3, text, span), or the required text attribute on :alert; rejected for any other tag"}]
    "set-wireframe-text"
@@ -361,15 +389,15 @@
 
 ;; --- tools (--export-tools) ------------------------------------------------
 
-(defn- verb-flag-summary [group verbs]
-  (let [show-entry  (when (= group "wireframe")
-                      [["show" [{:flag "element" :required true}]]])
-        verb-params (for [[verb _] (sort verbs)
-                          :let [cmd    (resolve-command group verb)
-                                params (command->manifest-params cmd)]]
-                      [verb params])
-        all-entries (concat verb-params show-entry)
-        parts       (for [[verb params] all-entries
+(defn- verb-params
+  "A verb's params: its authoring command's, or a CLI-only verb's own."
+  [group verb]
+  (or (get-in cli-only-verbs [group verb])
+      (command->manifest-params (resolve-command group verb))))
+
+(defn- verb-flag-summary [group]
+  (let [parts       (for [verb (group-verbs group)
+                          :let [params (verb-params group verb)]
                           :let [flags (map (fn [{:keys [flag required]}]
                                             (if required
                                               (str "--" flag)
@@ -381,15 +409,12 @@
 (defn- build-tools []
   (into (sorted-map)
         (concat
-         (for [[group verbs] (sort command-groups)]
+         (for [group (sort (keys command-groups))]
            (let [tool-name  (str/replace (str "emcli_" group) "-" "_")
-                 all-verbs  (sort (keys verbs))
-                 verb-enum  (if (= group "wireframe")
-                              (sort (conj (set all-verbs) "show"))
-                              all-verbs)
+                 verb-enum  (group-verbs group)
                  desc       (str (group-descriptions group)
                                  "\n"
-                                 (verb-flag-summary group verbs))]
+                                 (verb-flag-summary group))]
              [tool-name
               {:description desc
                :command     (str "emcli " group " {{verb}} {{args}}")
@@ -437,7 +462,7 @@
     (if required inner (str "[" inner "]"))))
 
 (defn- format-usage-suffix [group verb]
-  (let [params (command->manifest-params (resolve-command group verb))]
+  (let [params (verb-params group verb)]
     (str/join " " (map format-param-signature params))))
 
 (defn- format-usage-line [group verb]
@@ -446,7 +471,7 @@
 
 (defn- print-verb-help [group verb]
   (println (str "Usage: " (format-usage-line group verb)))
-  (let [params (command->manifest-params (resolve-command group verb))]
+  (let [params (verb-params group verb)]
     (when (seq params)
       (println "\nOptions:")
       (let [max-flag (apply max (map #(count (:flag %)) params))]
@@ -487,8 +512,7 @@
 ;; --- help & dispatch -------------------------------------------------------
 
 (defn- print-group [group]
-  (let [verbs (cond-> (sort (keys (command-groups group)))
-                (= group "wireframe") (concat ["show"]))]
+  (let [verbs (group-verbs group)]
     (println (str "  " group))
     (doseq [v verbs]
       (println (str "    " group " " v)))))
@@ -522,16 +546,13 @@
 
 (defn- print-group-help [group]
   (println (str "emcli " group " <verb> [--server URL]\n"))
-  (let [verbs    (cond-> (sort (keys (command-groups group)))
-                   (= group "wireframe") (concat ["show"]))
+  (let [verbs    (group-verbs group)
         max-verb (apply max (map count verbs))]
     (doseq [v verbs]
       (let [pad    (str/join (repeat (- max-verb (count v)) " "))
-            suffix (when-not (= v "show")
-                     (format-usage-suffix group v))]
+            suffix (format-usage-suffix group v)]
         (println (str "  " group " " v pad
-                      (when (seq suffix) (str "  " suffix))
-                      (when (= v "show") "  --element <int>")))))))
+                      (when (seq suffix) (str "  " suffix))))))))
 
 (def ^:private meta-commands #{"serve" "show" "validate" "resolve" "query" "export" "import" "help"})
 
@@ -555,9 +576,13 @@
             third    (nth argv 2 nil)]
         (cond
           (or (nil? verb) (= "help" verb)) (print-group-help head)
-          ;; show is CLI-only (not a server command)
+          ;; show and tags are CLI-only (not server commands)
           (and (= head "wireframe") (= verb "show"))
           (do-show-wireframe (cli/parse-opts (drop 2 argv)))
+          (and (= head "wireframe") (= verb "tags"))
+          (if (= "help" third)
+            (print-verb-help head verb)
+            (do-wireframe-tags (cli/parse-opts (drop 2 argv) {:coerce {:tag :string}})))
           (resolve-command head verb)
           (if (= "help" third)
             (print-verb-help head verb)
