@@ -2,7 +2,14 @@
  :deps {http-kit/http-kit {:mvn/version "2.8.0"}}
  :bbin/bin {emcli {:main-opts ["-m" "emcli.cli"]}}
  :tasks
- {check {:doc      "Check the code and docs against docs/change-stream.schema.json"
+ {check-tag-docs {:doc      "Check the wireframe tag tables in the docs against tag-schema"
+                  :task     (exec 'emcli.tag-docs/check)
+                  :requires ([emcli.tag-docs])}
+  gen-docs {:doc      "Regenerate the wireframe tag tables in the docs from tag-schema"
+            :task     (exec 'emcli.tag-docs/gen)
+            :requires ([emcli.tag-docs])}
+  check {:doc      "Check the code and docs against docs/change-stream.schema.json and tag-schema"
+         :depends  [check-tag-docs]
          :task     (exec 'emcli.change-stream-check/run)
          :requires ([emcli.change-stream-check])}
   test {:doc      "Run the test suite (after the change-stream drift check)"

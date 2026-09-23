@@ -2,75 +2,56 @@
 
 ## Nodes and their attributes
 
-All nodes except `:canvas` and `:divider` accept `command-input` (bool), and all except those two and the action and navigation tags `:button`, `:icon-button` and `:link` accept `field-name` (string), in addition to their own attrs listed below.
+`emcli wireframe tags` lists the tags; `emcli wireframe tags --tag <name>` prints one tag's attributes and a command that adds it.
 
-### Layout nodes
+A node holds child nodes (add them with `--parent <node id>`), text (given with `--text`) or nothing. `field-name` must name a field of the screen; `command-input` marks a node as input to a command. A list attribute such as `options` is given as comma-separated text.
 
-| node      | required flags | optional flags                                     | accepts children |
-|-----------|----------------|----------------------------------------------------|------------------|
-| `canvas`  |                |                                                    | true             |
-| `row`     |                | `align` (string), `gap` (string)                   | true             |
-| `col`     |                | `align` (string), `gap` (string), `width` (string) | true             |
-| `divider` |                |                                                    | false            |
+<!-- BEGIN GENERATED: wireframe tag tables (bb gen-docs) -->
+### Layout
 
-Attribute `align` values: `start`, `center`, `end`, `between`
+| tag | purpose | holds | required attributes | optional attributes |
+|-----|---------|-------|---------------------|---------------------|
+| `canvas` | root of every layout; always n1, created automatically, never added | child nodes |  |  |
+| `row` | lays its child nodes out side by side | child nodes |  | `align` (start, center, end, between), `gap` (sm, md, lg), `field-name`, `command-input` (true/false) |
+| `col` | stacks its child nodes vertically | child nodes |  | `align` (start, center, end, between), `gap` (sm, md, lg), `width` (narrow, wide, auto, full), `field-name`, `command-input` (true/false) |
+| `divider` | horizontal line separating content | nothing |  |  |
 
-Attribute `gap` values: `sm`, `md`, `lg`
+### Typography
 
-Attribute `width` values: `narrow`, `wide`, `auto`, `full`
+| tag | purpose | holds | required attributes | optional attributes |
+|-----|---------|-------|---------------------|---------------------|
+| `h1` | page heading | text |  | `field-name`, `command-input` (true/false) |
+| `h2` | section heading | text |  | `field-name`, `command-input` (true/false) |
+| `h3` | sub-section heading | text |  | `field-name`, `command-input` (true/false) |
+| `text` | paragraph of text, e.g. a displayed value | text |  | `align` (left, center, right), `tone` (default, muted, danger, success), `field-name`, `command-input` (true/false) |
+| `span` | short inline text, e.g. a caption or a value | text |  | `tone` (default, muted, danger, success), `field-name`, `command-input` (true/false) |
 
-### Typography nodes
-Set text content via `set-text` after creation.
+### Input
 
-| node      | required flags | optional flags                    | accepts children |
-|-----------|----------------|-----------------------------------|------------------|
-| `h1`      |                |                                   | false            |
-| `h2`      |                |                                   | false            |
-| `h3`      |                |                                   | false            |
-| `text`    |                | `align` (string), `tone` (string) | false            |
-| `span`    |                | `tone` (string)                   | false            |
+| tag | purpose | holds | required attributes | optional attributes |
+|-----|---------|-------|---------------------|---------------------|
+| `input` | single-line entry field | nothing |  | `type` (text, email, password, number, tel, url), `label`, `placeholder`, `required` (true/false), `field-name`, `command-input` (true/false) |
+| `textarea` | multi-line entry field | nothing |  | `label`, `placeholder`, `required` (true/false), `field-name`, `command-input` (true/false) |
+| `dropdown` | pick one of a fixed set of options | nothing | `options` (comma-separated list) | `label`, `required` (true/false), `field-name`, `command-input` (true/false) |
+| `checkbox` | tick box for a yes/no value | nothing |  | `label`, `default` (true/false), `field-name`, `command-input` (true/false) |
+| `toggle` | on/off switch for a yes/no value | nothing |  | `label`, `default` (true/false), `field-name`, `command-input` (true/false) |
 
-Attribute `align` values: `left`, `center`, `right`
+### Action
 
-Attribute `tone` values: `default`, `muted`, `danger`, `success`
+| tag | purpose | holds | required attributes | optional attributes |
+|-----|---------|-------|---------------------|---------------------|
+| `button` | labelled action, e.g. one that triggers a command | nothing | `label` | `variant` (primary, secondary, ghost, danger), `disabled` (true/false), `command-input` (true/false) |
+| `icon-button` | action shown as an icon only | nothing | `icon`, `aria-label` | `command-input` (true/false) |
 
-### Input nodes
+### Content
 
-| node      | required flags     | optional flags                                                                                                              | accepts children |
-|-----------|--------------------|-----------------------------------------------------------------------------------------------------------------------------|------------------|
-| `input`   |                    | `type` (string), `label` (string), `placeholder` (string), `required` (bool), `field-name` (string), `command-input` (bool) | false            |
-| `textarea`|                    | `label` (string), `placeholder` (string), `required` (bool), `field-name` (string), `command-input` (bool)                  | false            |
-| `dropdown`| `options` (string) | `label` (string), `required` (bool), `field-name` (string), `command-input` (bool)                                          | false            |
-| `checkbox`|                    | `label` (string), `default` (bool), `field-name` (string), `command-input` (bool)                                           | false            |
-| `toggle`  |                    | `label` (string), `default` (bool), `field-name` (string), `command-input` (bool)                                           | false            |
-
-Attribute `type` values: `text`, `email`, `password`, `number`, `tel`, `url`
-
-Attribute `options` value: comma-separated string of options
-
-### Action nodes
-
-| node         | required flags                         | optional flags                                                | accepts children |
-|--------------|----------------------------------------|---------------------------------------------------------------|------------------|
-| `button`     | `label` (string)                       | `variant` (string), `disabled` (bool), `command-input` (bool) | false            |
-| `icon-button`| `icon` (string), `aria-label` (string) | `command-input` (bool)                                        | false            |
-
-Attribute `variant` values: `primary`, `secondary`, `ghost`, `danger`
-
-### Content/navigation nodes
-
-| node         | required flags   | optional flags                                                   | accepts children |
-|--------------|------------------|------------------------------------------------------------------|------------------|
-| `link`       | `label` (string) | `command-input` (bool)                                           | false            |
-| `image`      | `alt` (string)   | `aspect` (string), `field-name` (string), `command-input` (bool) | false            |
-| `icon`       | `name` (string)  | `size` (string), `field-name` (string), `command-input` (bool)   | false            |
-| `alert`      | `text` (string)  | `type` (string), `field-name` (string), `command-input` (bool)   | false            |
-
-Attribute `aspect` values: `square`, `wide`, `tall`
-
-Attribute `size` values: `sm`, `md`, `lg`
-
-Attribute `type` values: `info`, `warning`, `danger`, `success`
+| tag | purpose | holds | required attributes | optional attributes |
+|-----|---------|-------|---------------------|---------------------|
+| `link` | navigation to another screen or page | nothing | `label` | `command-input` (true/false) |
+| `image` | picture or media placeholder | nothing | `alt` | `aspect` (square, wide, tall), `field-name`, `command-input` (true/false) |
+| `icon` | small symbol, e.g. a status indicator | nothing | `name` | `size` (sm, md, lg), `field-name`, `command-input` (true/false) |
+| `alert` | message banner: info, warning, danger or success | nothing | `text` | `type` (info, warning, danger, success), `field-name`, `command-input` (true/false) |
+<!-- END GENERATED -->
 
 ## Gotchas
 

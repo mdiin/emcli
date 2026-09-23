@@ -63,8 +63,9 @@ Tags are grouped by their role:
 
 - **Container** tags hold child nodes.
 - **Leaf** tags hold no children.
-- **Text-children** tags hold a plain string as their content, set with
-  `emcli wireframe set-text` (see [CLI commands](#cli-commands)).
+- **Text-children** tags hold a plain string as their content, given with
+  `--text` when the node is added or set later with `emcli wireframe set-text`
+  (see [CLI commands](#cli-commands)).
 
 Two attributes are shared across most of the vocabulary:
 
@@ -77,45 +78,60 @@ Two attributes are shared across most of the vocabulary:
   list**. Accepted by every tag except `:canvas`, `:divider` and the action and
   navigation tags `:button`, `:icon-button` and `:link`.
 
-The per-tag lists below give each tag's own attributes.
+The tables below give every tag's attributes, by the tag's role. They are
+generated from the tag schema in `src/emcli/wireframe.clj` (`bb gen-docs`), so
+they are exactly what the CLI accepts; `emcli wireframe tags --tag <name>` prints
+the same for one tag, with a command that adds it.
 
-### Layout — container
+<!-- BEGIN GENERATED: wireframe tag tables (bb gen-docs) -->
+### Layout
 
-- `:canvas` — the root of every wireframe; always `n1`, no attributes
-- `:row` — horizontal group; attrs: `align` (start|center|end|between), `gap` (sm|md|lg)
-- `:col` — vertical group; attrs: `align` (start|center|end|between), `gap` (sm|md|lg), `width` (narrow|wide|auto|full)
-- `:divider` — horizontal rule, no attrs, **leaf**
+| tag | purpose | holds | required attributes | optional attributes |
+|-----|---------|-------|---------------------|---------------------|
+| `canvas` | root of every layout; always n1, created automatically, never added | child nodes |  |  |
+| `row` | lays its child nodes out side by side | child nodes |  | `align` (start, center, end, between), `gap` (sm, md, lg), `field-name`, `command-input` (true/false) |
+| `col` | stacks its child nodes vertically | child nodes |  | `align` (start, center, end, between), `gap` (sm, md, lg), `width` (narrow, wide, auto, full), `field-name`, `command-input` (true/false) |
+| `divider` | horizontal line separating content | nothing |  |  |
 
-### Typography — text-children
+### Typography
 
-Content is a string child, added with `wireframe set-text`.
+| tag | purpose | holds | required attributes | optional attributes |
+|-----|---------|-------|---------------------|---------------------|
+| `h1` | page heading | text |  | `field-name`, `command-input` (true/false) |
+| `h2` | section heading | text |  | `field-name`, `command-input` (true/false) |
+| `h3` | sub-section heading | text |  | `field-name`, `command-input` (true/false) |
+| `text` | paragraph of text, e.g. a displayed value | text |  | `align` (left, center, right), `tone` (default, muted, danger, success), `field-name`, `command-input` (true/false) |
+| `span` | short inline text, e.g. a caption or a value | text |  | `tone` (default, muted, danger, success), `field-name`, `command-input` (true/false) |
 
-- `:h1`, `:h2`, `:h3` — headings, no other attributes
-- `:text` — body text; attrs: `align` (left|center|right), `tone` (default|muted|danger|success)
-- `:span` — inline text; attrs: `tone` (default|muted|danger|success)
+### Input
 
-### Inputs — leaf
+| tag | purpose | holds | required attributes | optional attributes |
+|-----|---------|-------|---------------------|---------------------|
+| `input` | single-line entry field | nothing |  | `type` (text, email, password, number, tel, url), `label`, `placeholder`, `required` (true/false), `field-name`, `command-input` (true/false) |
+| `textarea` | multi-line entry field | nothing |  | `label`, `placeholder`, `required` (true/false), `field-name`, `command-input` (true/false) |
+| `dropdown` | pick one of a fixed set of options | nothing | `options` (comma-separated list) | `label`, `required` (true/false), `field-name`, `command-input` (true/false) |
+| `checkbox` | tick box for a yes/no value | nothing |  | `label`, `default` (true/false), `field-name`, `command-input` (true/false) |
+| `toggle` | on/off switch for a yes/no value | nothing |  | `label`, `default` (true/false), `field-name`, `command-input` (true/false) |
 
-- `:input` — single-line text field; attrs: `type` (text|email|password|number|tel|url), `label`, `placeholder`, `required` (bool)
-- `:textarea` — multi-line text field; attrs: `label`, `placeholder`, `required` (bool)
-- `:dropdown` — select list; attrs: **`options` (required**, comma-separated strings), `label`, `required` (bool)
-- `:checkbox` — boolean toggle with label; attrs: `label`, `default` (bool)
-- `:toggle` — toggle switch; attrs: `label`, `default` (bool)
+### Action
+
+| tag | purpose | holds | required attributes | optional attributes |
+|-----|---------|-------|---------------------|---------------------|
+| `button` | labelled action, e.g. one that triggers a command | nothing | `label` | `variant` (primary, secondary, ghost, danger), `disabled` (true/false), `command-input` (true/false) |
+| `icon-button` | action shown as an icon only | nothing | `icon`, `aria-label` | `command-input` (true/false) |
+
+### Content
+
+| tag | purpose | holds | required attributes | optional attributes |
+|-----|---------|-------|---------------------|---------------------|
+| `link` | navigation to another screen or page | nothing | `label` | `command-input` (true/false) |
+| `image` | picture or media placeholder | nothing | `alt` | `aspect` (square, wide, tall), `field-name`, `command-input` (true/false) |
+| `icon` | small symbol, e.g. a status indicator | nothing | `name` | `size` (sm, md, lg), `field-name`, `command-input` (true/false) |
+| `alert` | message banner: info, warning, danger or success | nothing | `text` | `type` (info, warning, danger, success), `field-name`, `command-input` (true/false) |
+<!-- END GENERATED -->
 
 An input's `field-name` is what ties the layout to the model: it must name one of
 the screen's own fields, so a screen can only lay out data it declares.
-
-### Actions — leaf
-
-- `:button` — **`label` required**; attrs: `variant` (primary|secondary|ghost|danger), `disabled` (bool)
-- `:icon-button` — **`icon` and `aria-label` required**; no other attributes
-
-### Content / navigation — leaf
-
-- `:link` — **`label` required**; no other attributes
-- `:image` — **`alt` required**; attrs: `aspect` (square|wide|tall)
-- `:icon` — **`name` required**; attrs: `size` (sm|md|lg)
-- `:alert` — **`text` required**; attrs: `type` (info|warning|danger|success)
 
 Note that `:alert` takes its message as the `text` *attribute*, whereas the
 text-children tags take it as a string child — passed as `--text` when the node
@@ -127,6 +143,10 @@ is created, or set afterwards with `set-text`. No other tag accepts `text`.
 # List the verbs, or get per-verb options
 emcli wireframe
 emcli wireframe add-node help
+
+# List the tags, or get one tag's attributes and an example command
+emcli wireframe tags
+emcli wireframe tags --tag button
 
 # Add a node as the last child of --parent (omit --parent to append at the root)
 emcli wireframe add-node --element 42 --tag col
@@ -192,10 +212,11 @@ prints as just `[nN] :tag`.
 - `--text` is not an attribute: on a text-children tag (`h1`, `h2`, `h3`,
   `text`, `span`) it becomes the new node's content, and on `:alert` it is the
   required `text` attribute. Any other tag rejects it with
-  `unknown attribute :text for :<tag>`.
+  `unknown attribute :text for :<tag> (see: emcli wireframe tags --tag <tag>)`.
 - Errors name the node they concern, e.g. `label is required for :button`,
-  `unknown attribute :bogus`, `Field 'x' does not exist on screen`, or
-  `node nZZ does not exist`.
+  `Field 'x' does not exist on screen`, or `node nZZ does not exist`. An unknown
+  tag or attribute points at `emcli wireframe tags`, which lists the vocabulary:
+  `unknown attribute :bogus for :button (see: emcli wireframe tags --tag button)`.
 
 ## Current limitations
 
