@@ -1,5 +1,6 @@
 (ns emcli.wireframe-test
-  (:require [clojure.test :refer [deftest testing is]]
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest testing is]]
             [emcli.wireframe :as wf]))
 
 ;; ---------------------------------------------------------------------------
@@ -371,6 +372,74 @@
   (let [{:keys [error]} (wf/parse-node-attrs :icon-button {:icon "trash"})]
     (is (some? error))
     (is (re-find #"aria-label" error))))
+
+;; ---------------------------------------------------------------------------
+;; tag reference (the `wireframe tags` discovery verb and the generated docs)
+;; ---------------------------------------------------------------------------
+
+(deftest tag-groups-follow-the-spec-roles
+  ;; event-model.allium, the comment on enum WireframeTag
+  (is (= [[:layout     [:canvas :row :col :divider]]
+          [:typography [:h1 :h2 :h3 :text :span]]
+          [:input      [:input :textarea :dropdown :checkbox :toggle]]
+          [:action     [:button :icon-button]]
+          [:content    [:link :image :icon :alert]]]
+         wf/tag-groups))
+  (testing "every tag of the schema is in exactly one group"
+    (let [grouped (mapcat second wf/tag-groups)]
+      (is (= (count grouped) (count (set grouped))))
+      (is (= wf/allowed-tags (set grouped))))))
+
+(deftest every-tag-states-its-purpose
+  (doseq [[tag schema] wf/tag-schema]
+    (is (and (string? (:doc schema)) (not (str/blank? (:doc schema))))
+        (str tag " needs a :doc purpose line"))))
+
+(deftest tag-list-names-every-addable-tag-with-its-purpose
+  (let [out (wf/tag-list-text)]
+    (doseq [[tag schema] (dissoc wf/tag-schema :canvas)]
+      (is (re-find (re-pattern (str "(?m)^\\s+" (name tag) "\\s+"
+                                    (java.util.regex.Pattern/quote (:doc schema)) "$"))
+                   out)
+          (str tag " listed with its purpose")))
+    (testing "canvas is never added, so the list does not offer it"
+      (is (not (re-find #"(?m)^\s+canvas\b" out))))
+    (testing "points at the per-tag detail"
+      (is (str/includes? out "emcli wireframe tags --tag <name>")))))
+
+(deftest tag-detail-describes-attributes-and-an-example
+  (let [out (wf/tag-detail-text :button)]
+    (is (str/includes? out (:doc (wf/tag-schema :button))))
+    (is (re-find #"--label\s+text\s+required" out))
+    (is (re-find #"--variant\s+primary\|secondary\|ghost\|danger" out))
+    (is (re-find #"--disabled\s+true\|false" out))
+    (is (str/includes? out "emcli wireframe add-node --element <screen id> --tag button --label \"<label>\""))
+    (testing "required attributes are listed first"
+      (is (< (str/index-of out "--label") (str/index-of out "--variant"))))))
+
+(deftest tag-detail-shows-what-a-node-holds
+  (is (re-find #"(?i)children: child nodes" (wf/tag-detail-text :row)))
+  (is (re-find #"(?i)children: text" (wf/tag-detail-text :h1)))
+  (is (re-find #"(?i)children: none" (wf/tag-detail-text :input)))
+  (testing "a text tag's example supplies its content with --text"
+    (is (str/includes? (wf/tag-detail-text :h1) "--tag h1 --text \"<text>\""))))
+
+(deftest tag-detail-of-unknown-tag-is-nil
+  (is (nil? (wf/tag-detail-text :card))))
+
+(deftest every-example-is-accepted-by-the-schema
+  ;; the example is what a small model copies, so it must never be rejected
+  (doseq [tag (disj wf/allowed-tags :canvas)]
+    (is (:ok (wf/parse-node-attrs tag (wf/example-attrs tag)))
+        (str "example for " tag " parses"))))
+
+(deftest tag-reference-markdown-has-a-table-per-group
+  (let [md (wf/tag-reference-markdown)]
+    (doseq [[group tags] wf/tag-groups]
+      (is (re-find (re-pattern (str "(?m)^### " (str/capitalize (name group)))) md))
+      (doseq [t tags]
+        (is (str/includes? md (str "| `" (name t) "`")))))
+    (is (str/includes? md "`variant` (primary, secondary, ghost, danger)"))))
 
 ;; ---------------------------------------------------------------------------
 ;; format-tree

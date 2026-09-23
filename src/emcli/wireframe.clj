@@ -9,93 +9,126 @@
 ;; Tag schema
 ;; ---------------------------------------------------------------------------
 
-;; Each entry: {:attrs {attr-kw {:type :kw|:bool|:str|:str-list :required? bool :values #{...}}}
+;; Each entry: {:doc str
+;;              :attrs {attr-kw {:type :kw|:bool|:str|:str-list :required? bool :values [...]}}
 ;;              :leaf? bool :text-children? bool}
+;; :doc is the tag's purpose in one line, shown by `wireframe tags` and in the
+;; generated docs. :values is a vector so the allowed set reads in its declared
+;; order wherever it is shown. Attributes are listed in display order.
 ;; :-id is never in attrs — it is reserved and handled separately everywhere.
 (def tag-schema
-  {:canvas      {:attrs {} :leaf? false :text-children? false}
-   :row         {:attrs {:align         {:type :kw :values #{:start :center :end :between}}
-                          :gap           {:type :kw :values #{:sm :md :lg}}
+  {:canvas      {:doc "root of every layout; always n1, created automatically, never added"
+                 :attrs {} :leaf? false :text-children? false}
+   :row         {:doc "lays its child nodes out side by side"
+                 :attrs {:align         {:type :kw :values [:start :center :end :between]}
+                          :gap           {:type :kw :values [:sm :md :lg]}
                           :field-name    {:type :str}
                           :command-input {:type :bool}}
                   :leaf? false :text-children? false}
-   :col         {:attrs {:align         {:type :kw :values #{:start :center :end :between}}
-                          :gap           {:type :kw :values #{:sm :md :lg}}
-                          :width         {:type :kw :values #{:narrow :wide :auto :full}}
+   :col         {:doc "stacks its child nodes vertically"
+                 :attrs {:align         {:type :kw :values [:start :center :end :between]}
+                          :gap           {:type :kw :values [:sm :md :lg]}
+                          :width         {:type :kw :values [:narrow :wide :auto :full]}
                           :field-name    {:type :str}
                           :command-input {:type :bool}}
                   :leaf? false :text-children? false}
-   :h1          {:attrs {:field-name {:type :str} :command-input {:type :bool}} :leaf? false :text-children? true}
-   :h2          {:attrs {:field-name {:type :str} :command-input {:type :bool}} :leaf? false :text-children? true}
-   :h3          {:attrs {:field-name {:type :str} :command-input {:type :bool}} :leaf? false :text-children? true}
-   :text        {:attrs {:align         {:type :kw :values #{:left :center :right}}
-                          :tone          {:type :kw :values #{:default :muted :danger :success}}
+   :h1          {:doc "page heading"
+                 :attrs {:field-name {:type :str} :command-input {:type :bool}} :leaf? false :text-children? true}
+   :h2          {:doc "section heading"
+                 :attrs {:field-name {:type :str} :command-input {:type :bool}} :leaf? false :text-children? true}
+   :h3          {:doc "sub-section heading"
+                 :attrs {:field-name {:type :str} :command-input {:type :bool}} :leaf? false :text-children? true}
+   :text        {:doc "paragraph of text, e.g. a displayed value"
+                 :attrs {:align         {:type :kw :values [:left :center :right]}
+                          :tone          {:type :kw :values [:default :muted :danger :success]}
                           :field-name    {:type :str}
                           :command-input {:type :bool}}
                   :leaf? false :text-children? true}
-   :span        {:attrs {:tone          {:type :kw :values #{:default :muted :danger :success}}
+   :span        {:doc "short inline text, e.g. a caption or a value"
+                 :attrs {:tone          {:type :kw :values [:default :muted :danger :success]}
                           :field-name    {:type :str}
                           :command-input {:type :bool}}
                   :leaf? false :text-children? true}
-   :divider     {:attrs {} :leaf? true :text-children? false}
-   :input       {:attrs {:type          {:type :kw :values #{:text :email :password :number :tel :url}}
+   :divider     {:doc "horizontal line separating content"
+                 :attrs {} :leaf? true :text-children? false}
+   :input       {:doc "single-line entry field"
+                 :attrs {:type          {:type :kw :values [:text :email :password :number :tel :url]}
                          :label         {:type :str}
                          :placeholder   {:type :str}
                          :required      {:type :bool}
                          :field-name    {:type :str}
                          :command-input {:type :bool}}
                  :leaf? true :text-children? false}
-   :textarea    {:attrs {:label         {:type :str}
+   :textarea    {:doc "multi-line entry field"
+                 :attrs {:label         {:type :str}
                          :placeholder   {:type :str}
                          :required      {:type :bool}
                          :field-name    {:type :str}
                          :command-input {:type :bool}}
                  :leaf? true :text-children? false}
-   :dropdown    {:attrs {:options        {:type :str-list :required? true}
+   :dropdown    {:doc "pick one of a fixed set of options"
+                 :attrs {:options        {:type :str-list :required? true}
                          :label          {:type :str}
                          :required       {:type :bool}
                          :field-name     {:type :str}
                          :command-input  {:type :bool}}
                  :leaf? true :text-children? false}
-   :checkbox    {:attrs {:label         {:type :str}
+   :checkbox    {:doc "tick box for a yes/no value"
+                 :attrs {:label         {:type :str}
                          :default       {:type :bool}
                          :field-name    {:type :str}
                          :command-input {:type :bool}}
                  :leaf? true :text-children? false}
-   :toggle      {:attrs {:label         {:type :str}
+   :toggle      {:doc "on/off switch for a yes/no value"
+                 :attrs {:label         {:type :str}
                          :default       {:type :bool}
                          :field-name    {:type :str}
                          :command-input {:type :bool}}
                  :leaf? true :text-children? false}
-   :button      {:attrs {:label         {:type :str :required? true}
-                         :variant       {:type :kw :values #{:primary :secondary :ghost :danger}}
+   :button      {:doc "labelled action, e.g. one that triggers a command"
+                 :attrs {:label         {:type :str :required? true}
+                         :variant       {:type :kw :values [:primary :secondary :ghost :danger]}
                          :disabled      {:type :bool}
                          :command-input {:type :bool}}
                  :leaf? true :text-children? false}
-   :icon-button {:attrs {:icon          {:type :str :required? true}
+   :icon-button {:doc "action shown as an icon only"
+                 :attrs {:icon          {:type :str :required? true}
                          :aria-label    {:type :str :required? true}
                          :command-input {:type :bool}}
                  :leaf? true :text-children? false}
-   :link        {:attrs {:label         {:type :str :required? true}
+   :link        {:doc "navigation to another screen or page"
+                 :attrs {:label         {:type :str :required? true}
                          :command-input {:type :bool}}
                  :leaf? true :text-children? false}
-   :image       {:attrs {:alt           {:type :str :required? true}
-                          :aspect        {:type :kw :values #{:square :wide :tall}}
+   :image       {:doc "picture or media placeholder"
+                 :attrs {:alt           {:type :str :required? true}
+                          :aspect        {:type :kw :values [:square :wide :tall]}
                           :field-name    {:type :str}
                           :command-input {:type :bool}}
                   :leaf? true :text-children? false}
-   :icon        {:attrs {:name          {:type :str :required? true}
-                          :size          {:type :kw :values #{:sm :md :lg}}
+   :icon        {:doc "small symbol, e.g. a status indicator"
+                 :attrs {:name          {:type :str :required? true}
+                          :size          {:type :kw :values [:sm :md :lg]}
                           :field-name    {:type :str}
                           :command-input {:type :bool}}
                   :leaf? true :text-children? false}
-   :alert       {:attrs {:text          {:type :str :required? true}
-                          :type          {:type :kw :values #{:info :warning :danger :success}}
+   :alert       {:doc "message banner: info, warning, danger or success"
+                 :attrs {:text          {:type :str :required? true}
+                          :type          {:type :kw :values [:info :warning :danger :success]}
                           :field-name    {:type :str}
                           :command-input {:type :bool}}
                   :leaf? true :text-children? false}})
 
 (def allowed-tags (set (keys tag-schema)))
+
+;; The tags by role, in display order: the roles the comment on enum WireframeTag
+;; in event-model.allium names. The single place the grouping and the order live.
+(def tag-groups
+  [[:layout     [:canvas :row :col :divider]]
+   [:typography [:h1 :h2 :h3 :text :span]]
+   [:input      [:input :textarea :dropdown :checkbox :toggle]]
+   [:action     [:button :icon-button]]
+   [:content    [:link :image :icon :alert]]])
 
 ;; ---------------------------------------------------------------------------
 ;; Private tree-navigation helpers
@@ -201,7 +234,7 @@
                           [{:node-id node-id :message (str (name k) " must be a string")}]
                           (and (= type :str-list) (not (vector? v)))
                           [{:node-id node-id :message (str (name k) " must be a vector of strings")}]
-                          (and vals (keyword? v) (not (contains? vals v)))
+                          (and vals (keyword? v) (not (some #{v} vals)))
                           [{:node-id node-id :message (str (name k) " value " v " not in allowed set "
                                                             (str/join ", " (map name vals)))}]
                           :else []))
@@ -425,7 +458,7 @@
         vals (:values schema-entry)]
     (case type
       :kw       (let [kw (keyword raw)]
-                  (if (and vals (not (contains? vals kw)))
+                  (if (and vals (not (some #{kw} vals)))
                     (throw (ex-info (str (name attr-kw) " value '" raw "' not in allowed set "
                                         (str/join ", " (map name vals)))
                                     {:attr attr-kw}))
@@ -510,3 +543,126 @@
   indentation matching nesting depth."
   [wireframe]
   (format-node wireframe 0))
+
+;; ---------------------------------------------------------------------------
+;; Tag reference: `emcli wireframe tags` and the generated doc tables
+;; ---------------------------------------------------------------------------
+
+(defn- ordered-attrs
+  "A tag's [attr-kw attr-schema] pairs, required ones first, the rest in their
+  declared order."
+  [tag]
+  (let [attrs (:attrs (tag-schema tag))]
+    (concat (filter (comp :required? val) attrs)
+            (remove (comp :required? val) attrs))))
+
+(defn- example-pairs
+  "[attr-kw text] for each attribute `tag` requires, as an operator would type it."
+  [tag]
+  (for [[k {:keys [type values required?]}] (ordered-attrs tag)
+        :when required?]
+    [k (case type
+         :kw       (name (first values))
+         :bool     "true"
+         :str-list "<a,b,c>"
+         (str "<" (name k) ">"))]))
+
+(defn example-attrs
+  "The attributes the example for `tag` supplies: exactly its required ones,
+  with placeholder text."
+  [tag]
+  (into {} (example-pairs tag)))
+
+(defn- example-command [tag]
+  (str/join " " (concat ["emcli wireframe add-node --element <screen id> --tag" (name tag)]
+                        (when (:text-children? (tag-schema tag)) ["--text \"<text>\""])
+                        (map (fn [[k v]] (str "--" (name k) " \"" v "\"")) (example-pairs tag)))))
+
+(defn- value-hint
+  "What an attribute's value looks like on the command line."
+  [{:keys [type values]}]
+  (case type
+    :kw       (str/join "|" (map name values))
+    :bool     "true|false"
+    :str-list "comma-separated list"
+    "text"))
+
+;; What the attributes shared across the vocabulary mean; the others speak for
+;; themselves through their name and value hint.
+(def ^:private attr-notes
+  {:field-name    "name of a field on this screen"
+   :command-input "marks the node as input to a command"})
+
+(defn- holds [schema]
+  (cond (:leaf? schema)          "none"
+        (:text-children? schema) "text (given with --text)"
+        :else                    "child nodes (add them with --parent <this node's id>)"))
+
+(defn tag-list-text
+  "Every tag an operator can add, by role, each with its purpose in one line.
+  The canvas is left out: it is every layout's root and never added."
+  []
+  (let [width (->> tag-groups (mapcat second) (map (comp count name)) (apply max) (+ 2))]
+    (str/join "\n"
+              (concat
+                (for [[group tags] tag-groups
+                      :let [addable (remove #{:canvas} tags)]
+                      line (cons (name group)
+                                 (for [t addable]
+                                   (str "  " (format (str "%-" width "s") (name t))
+                                        (:doc (tag-schema t)))))]
+                  line)
+                ["" "Attributes and an example: emcli wireframe tags --tag <name>"]))))
+
+(defn tag-detail-text
+  "One tag's purpose, what it holds, its attributes and a command that adds it,
+  or nil when `tag` is not a tag."
+  [tag]
+  (when-let [schema (tag-schema tag)]
+    (let [attrs (ordered-attrs tag)]
+      (str/join "\n"
+                (concat
+                  [(str (name tag) " - " (:doc schema))
+                   (str "children: " (holds schema))]
+                  (if (seq attrs)
+                    (let [width (apply max (map (comp count value-hint val) attrs))]
+                      (cons "attributes:"
+                            (for [[k a] attrs]
+                              (str/trimr (format (str "  %-16s %-" width "s  %s")
+                                                 (str "--" (name k)) (value-hint a)
+                                                 (str/join ", " (remove nil? [(when (:required? a) "required")
+                                                                             (attr-notes k)])))))))
+                    ["attributes: none"])
+                  (when-not (= :canvas tag)
+                    ["example:" (str "  " (example-command tag))]))))))
+
+(defn- md-attr [[k {:keys [type values]}]]
+  (str "`" (name k) "`"
+       (case type
+         :kw       (str " (" (str/join ", " (map name values)) ")")
+         :bool     " (true/false)"
+         :str-list " (comma-separated list)"
+         "")))
+
+(defn tag-reference-markdown
+  "The per-tag attribute tables, one per role, as markdown."
+  []
+  (str/join "\n"
+            (for [[group tags] tag-groups]
+              (str/join "\n"
+                        (concat
+                          [(str "### " (str/capitalize (name group)))
+                           ""
+                           "| tag | purpose | holds | required attributes | optional attributes |"
+                           "|-----|---------|-------|---------------------|---------------------|"]
+                          (for [t tags
+                                :let [schema (tag-schema t)
+                                      attrs  (ordered-attrs t)
+                                      cell   #(str/join ", " (map md-attr (filter % attrs)))]]
+                            (str "| `" (name t) "` | " (:doc schema)
+                                 " | " (cond (:leaf? schema) "nothing"
+                                             (:text-children? schema) "text"
+                                             :else "child nodes")
+                                 " | " (cell (comp :required? val))
+                                 " | " (cell (complement (comp :required? val))) " |"))
+                          [""])))))
