@@ -354,6 +354,18 @@
     (testing "while a scalar still orders by its own type, not its printed form"
       (is (= [0 1] (mapv :index (run-q env "slice | order index | select index")))))))
 
+(deftest a-rejection-says-what-index-means
+  (let [env (build)]
+    (testing "a caller guessing a name for slice order is pointed at index"
+      (is (rejects? #"index \(position in its timeline\)"
+                    #(run-q env (str "timeline:" (:tl env) " | slice | select name,placement_order")))))
+    (testing "and the field it is pointed at orders the timeline's slices"
+      (is (= [["Ordering" 0] ["Confirm" 1]]
+             (mapv (juxt :title :index)
+                   (run-q env (str "timeline:" (:tl env) " | slices | order index | select title,index"))))))
+    (testing "the tool description says so too"
+      (is (re-find #"`index` is its position in its timeline" (q/tool-description))))))
+
 (deftest ordering-by-a-nullable-field-is-totally-ordered
   (let [env (build)]
     (testing "a column mixing an assigned value with an absent one still orders"

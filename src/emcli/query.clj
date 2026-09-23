@@ -108,6 +108,21 @@
 
 (def ^:private entity-fields (merge-with into stored-fields derived-fields))
 
+;; What a field means, where its name alone does not say. A rejection lists the
+;; fields a row carries, and a caller looking for "the order of the slices" does
+;; not recognise `index` as that answer unless the list says so.
+(def ^:private field-glosses
+  {:slice    {"index" "position in its timeline"}
+   :swimlane {"index" "position among the swimlanes"}
+   :step     {"index" "position in its specification"}})
+
+(defn- gloss-field
+  "A field name for a rejection's list, with its meaning when it has one."
+  [kind f]
+  (if-let [g (get-in field-glosses [kind f])]
+    (str f " (" g ")")
+    f))
+
 (defn- derived-value
   "The value of a DERIVED attribute for an entity of `kind`, or nil when `k` is not
   one of them."
@@ -382,7 +397,7 @@
         (throw (query-error
                 (str "unknown field " (pr-str f) " on " (token-label kind) " rows; "
                      (name (:kind st)) " accepts "
-                     (str/join ", " (sort accepted)))))))))
+                     (str/join ", " (map #(gloss-field kind %) (sort accepted))))))))))
 
 (defn- check-edge-fields!
   "Reject a projection naming a field the association does not carry. An
@@ -665,11 +680,17 @@
      " is how you learn what the field operations address a field by (`fields` is"
      " the recursive list, subfields included). Beware that `kind` is the CATEGORY:"
      " what an element IS is its `element_type` (command | event | read_model |"
-     " screen | automation), and what a slice is, is its `slice_type`. The set is"
+     " screen | automation), and what a slice is, is its `slice_type`. A slice's"
+     " `index` is its position in its timeline (0 = first), so `timeline:3 | slices"
+     " | order index | select title,index` lists a timeline's slices in display"
+     " order - the field to check after reordering a slice. A swimlane's `index`"
+     " is likewise its position among the swimlanes (the rows of every timeline),"
+     " and a step's its position in its specification. The set is"
      " per kind, and an unknown field name is REJECTED naming what that row does"
      " carry - never silently an empty result.\n\n"
      "Examples:\n"
      "  timelines | slice | where status = done | select id,title\n"
+     "  timeline:3 | slices | order index | select title,index\n"
      "  element | where element_type in (command,event) | select id,name\n"
      "  element:42 | slice\n"
      "  slice:7 | elements {index} | where element_type = command\n"
