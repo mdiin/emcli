@@ -136,7 +136,14 @@
     (testing "--text on a tag that takes neither text children nor a text attribute"
       (let [res (cmd/run a "add-wireframe-node" {:element eid :tag "col" :text "nope"})]
         (is (= :invalid-value (:error res)))
-        (is (= "unknown attribute :text for :col" (:message res)))))))
+        (is (= "unknown attribute :text for :col (see: emcli wireframe tags --tag col)"
+               (:message res)))))))
+
+(deftest add-wireframe-node-points-an-unknown-tag-at-the-tag-list
+  (let [[a eid] (screen-app)
+        res     (cmd/run a "add-wireframe-node" {:element eid :tag "card"})]
+    (is (= :invalid-value (:error res)))
+    (is (= "unknown tag :card (see: emcli wireframe tags)" (:message res)))))
 
 (deftest add-wireframe-node-keeps-text-as-attribute-for-alert
   (let [[a eid] (screen-app)]
@@ -277,7 +284,9 @@
                          {:element eid :node "n2" :attr "align" :value "center"})]
     (testing "an attribute the node's tag does not admit is still the rule's call"
       (is (= :invalid-wireframe (:error res)))
-      (is (= "wireframe validation failed: unknown attribute :align" (:message res))))))
+      (is (= (str "wireframe validation failed: unknown attribute :align for :button"
+                  " (see: emcli wireframe tags --tag button)")
+             (:message res))))))
 
 ;; --- field removal vs a stored layout (BUGS.md item 5) ----------------------
 ;; RemoveField now guards the removal against the screen's stored layout, so a

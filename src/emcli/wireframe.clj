@@ -121,6 +121,16 @@
 
 (def allowed-tags (set (keys tag-schema)))
 
+;; A tag or attribute name that is not in the vocabulary says where the
+;; vocabulary is, rather than spelling it out: the hint costs a caller nothing
+;; until the mistake is made, and `wireframe tags` answers it in full.
+(defn- unknown-tag-message [tag]
+  (str "unknown tag :" (name tag) " (see: emcli wireframe tags)"))
+
+(defn- unknown-attr-message [tag attr]
+  (str "unknown attribute :" (name attr) " for :" (name tag)
+       " (see: emcli wireframe tags --tag " (name tag) ")"))
+
 ;; The tags by role, in display order: the roles the comment on enum WireframeTag
 ;; in event-model.allium names. The single place the grouping and the order live.
 (def tag-groups
@@ -215,7 +225,7 @@
           schema   (tag-schema tag)]
       (cond
         (nil? schema)
-        [{:node-id node-id :message (str "unknown tag :" (name tag))}]
+        [{:node-id node-id :message (unknown-tag-message tag)}]
 
         :else
         (let [attr-errs
@@ -238,7 +248,7 @@
                           [{:node-id node-id :message (str (name k) " value " v " not in allowed set "
                                                             (str/join ", " (map name vals)))}]
                           :else []))
-                      [{:node-id node-id :message (str "unknown attribute :" (name k))}]))
+                      [{:node-id node-id :message (unknown-attr-message tag k)}]))
                   attrs))
               req-errs
               (mapcat
@@ -480,11 +490,11 @@
   [tag-kw opts-map]
   (let [schema (get tag-schema tag-kw)]
     (if (nil? schema)
-      {:error (str "unknown tag :" (name tag-kw))}
+      {:error (unknown-tag-message tag-kw)}
       (let [attr-schema (:attrs schema)]
         ;; Check for unknown keys
         (if-let [unknown (first (remove #(contains? attr-schema %) (keys opts-map)))]
-          {:error (str "unknown attribute :" (name unknown) " for :" (name tag-kw))}
+          {:error (unknown-attr-message tag-kw unknown)}
           ;; Coerce all provided attrs
           (let [result
                 (reduce

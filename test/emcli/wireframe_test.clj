@@ -67,7 +67,14 @@
         result (wf/validate wf)]
     (is (false? (:valid? result)))
     (is (seq (:errors result)))
-    (is (some #(re-find #"foobar" (:message %)) (:errors result)))))
+    (is (some #(= "unknown tag :foobar (see: emcli wireframe tags)" (:message %))
+              (:errors result)))))
+
+(deftest validate-names-the-tag-of-an-unknown-attribute
+  (let [wf [:canvas {:-id "n1"} [:button {:-id "n2"} {:label "Go" :align :center}]]]
+    (is (= [{:node-id "n2"
+             :message "unknown attribute :align for :button (see: emcli wireframe tags --tag button)"}]
+           (:errors (wf/validate wf))))))
 
 (deftest validate-rejects-missing-required-attr
   (testing ":button requires :label"
