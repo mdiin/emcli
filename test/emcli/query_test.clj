@@ -23,8 +23,8 @@
   (let [a   (app/new-app "M")
         tl  (:id (:result (cmd/run a "create-timeline" {:title "Checkout"})))
         lane (:id (:result (cmd/run a "create-swimlane" {:name "Actor" :index 0})))
-        sl1 (:id (:result (cmd/run a "add-slice" {:timeline tl :title "Ordering" :slice-type "state_change" :index 0})))
-        sl2 (:id (:result (cmd/run a "add-slice" {:timeline tl :title "Confirm" :slice-type "state_change" :index 1})))
+        sl1 (:id (:result (cmd/run a "add-slice" {:timeline tl :title "Ordering" :slice-type "state_change"})))
+        sl2 (:id (:result (cmd/run a "add-slice" {:timeline tl :title "Confirm" :slice-type "state_change"})))
         e1  (:id (:result (cmd/run a "create-element" {:name "PlaceOrder" :element-type "command"})))
         e2  (:id (:result (cmd/run a "create-element" {:name "OrderPlaced" :element-type "event"})))
         e3  (:id (:result (cmd/run a "create-element" {:name "OrderView" :element-type "read_model"})))]
@@ -189,8 +189,8 @@
           t1 (:id (:result (cmd/run a "create-timeline" {:title "T1"})))
           t2 (:id (:result (cmd/run a "create-timeline" {:title "T2"})))
           s1 (:id (:result (cmd/run a "add-slice" {:timeline t1 :title "Ordering"
-                                                   :slice-type "state_change" :index 0})))]
-      (cmd/run a "add-slice" {:timeline t2 :title "Ordering" :slice-type "state_change" :index 0})
+                                                   :slice-type "state_change"})))]
+      (cmd/run a "add-slice" {:timeline t2 :title "Ordering" :slice-type "state_change"})
       (is (rejects? #"several slices are named \"Ordering\""
                     #(cmd/query-model a "slice:\"Ordering\"")))
       (is (= [s1] (map :id (cmd/query-model a (str "slice:" s1))))
@@ -201,7 +201,7 @@
     (let [a (app/new-app "M")]
       (dotimes [i 6]
         (let [tl (:id (:result (cmd/run a "create-timeline" {:title (str "T" i)})))]
-          (cmd/run a "add-slice" {:timeline tl :title "Ordering" :slice-type "state_change" :index 0})))
+          (cmd/run a "add-slice" {:timeline tl :title "Ordering" :slice-type "state_change"})))
       (let [msg (try (cmd/query-model a "slice:\"Ordering\"") nil
                      (catch Exception e (ex-message e)))]
         (is (re-find #"several slices are named" msg))

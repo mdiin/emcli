@@ -354,8 +354,7 @@
                  {s2 :store sl :result}
                  (check-step {:step :add-slice :slices [(get ss "id")]}
                              (r/add-slice s {:timeline tl :title (get ss "title")
-                                             :slice-type (schema-type->slice-type (get ss "sliceType") :state_change)
-                                             :index (get ss "index" 0)}))
+                                             :slice-type (schema-type->slice-type (get ss "sliceType") :state_change)}))
                  slid (:id sl)
                  {s2 :store} (check-step {:step :set-slice-status :slices [(get ss "id")]}
                                          (r/set-slice-status s2 {:slice slid

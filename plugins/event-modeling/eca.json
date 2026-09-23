@@ -222,7 +222,7 @@
             }
         },
         "emcli_slice" : {
-            "description" : "Manage slices (vertical time segments) within a timeline.\nVerbs: add (--timeline --title --slice-type --index [--id]), delete (--slice), rename (--slice --new-title), reorder (--slice --new-index), status (--slice --new-status), type (--slice --new-slice-type)",
+            "description" : "Manage slices (vertical time segments) within a timeline.\nVerbs: add (--timeline --title --slice-type [--before] [--after] [--id]), delete (--slice), rename (--slice --new-title), reorder (--slice [--position] [--before] [--after]), status (--slice --new-status), type (--slice --new-slice-type)",
             "command" : "emcli slice {{verb}} {{args}}",
             "schema" : {
                 "properties" : {

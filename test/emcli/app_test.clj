@@ -36,7 +36,7 @@
     (let [a   (app/new-app "Orders")
           tl  (:result (cmd/run a "create-timeline" {:title "Ordering"}))
           sw  (:result (cmd/run a "create-swimlane" {:name "Lane" :index 0}))
-          sl  (:result (cmd/run a "add-slice" {:timeline (:id tl) :title "Place" :slice-type "state_change" :index 0}))
+          sl  (:result (cmd/run a "add-slice" {:timeline (:id tl) :title "Place" :slice-type "state_change"}))
           cmd' (:result (cmd/run a "create-element" {:name "PlaceOrder" :element-type "command"}))
           evt (:result (cmd/run a "create-element" {:name "OrderPlaced" :element-type "event"}))
           pl  (:result (cmd/run a "place-element" {:slice (:id sl) :element (:id cmd')}))
@@ -64,7 +64,7 @@
   (testing "image_url and wireframe are present on element in snapshot"
     (let [a    (app/new-app "Orders")
           tl   (:result (cmd/run a "create-timeline" {:title "Ordering"}))
-          sl   (:result (cmd/run a "add-slice" {:timeline (:id tl) :title "Place" :slice-type "state_change" :index 0}))
+          sl   (:result (cmd/run a "add-slice" {:timeline (:id tl) :title "Place" :slice-type "state_change"}))
           scr  (:result (cmd/run a "create-element" {:name "OrderScreen" :element-type "screen"}))
           _    (cmd/run a "set-image-url" {:element (:id scr) :url "https://example.com/img.png"})
           _    (cmd/run a "add-wireframe-node" {:element (:id scr) :tag "row"})
@@ -79,7 +79,7 @@
   (testing "an element's fields are streamed flat under its placement (subfields dropped)"
     (let [a    (app/new-app "Orders")
           tl   (:result (cmd/run a "create-timeline" {:title "Ordering"}))
-          sl   (:result (cmd/run a "add-slice" {:timeline (:id tl) :title "Place" :slice-type "state_change" :index 0}))
+          sl   (:result (cmd/run a "add-slice" {:timeline (:id tl) :title "Place" :slice-type "state_change"}))
           cmd' (:result (cmd/run a "create-element" {:name "PlaceOrder" :element-type "command"}))
           _    (cmd/run a "add-field" {:element (:id cmd') :name "id" :type "uuid" :cardinality "single"})
           _    (cmd/run a "place-element" {:slice (:id sl) :element (:id cmd')})
@@ -125,7 +125,7 @@
   (testing "a slice's specifications, steps and their examples are streamed in the snapshot"
     (let [a    (app/new-app "Orders")
           tl   (:result (cmd/run a "create-timeline" {:title "Ordering"}))
-          sl   (:result (cmd/run a "add-slice" {:timeline (:id tl) :title "Place" :slice-type "state_change" :index 0}))
+          sl   (:result (cmd/run a "add-slice" {:timeline (:id tl) :title "Place" :slice-type "state_change"}))
           el   (:result (cmd/run a "create-element" {:name "PlaceOrder" :element-type "command"}))
           sp   (:result (cmd/run a "add-specification" {:slice (:id sl) :title "Happy path"}))
           st   (:result (cmd/run a "add-spec-step" {:spec (:id sp) :clause :when_step :element (:id el) :index 0}))
@@ -148,7 +148,7 @@
   (testing "an error step has no element to reference"
     (let [a    (app/new-app "Orders")
           tl   (:result (cmd/run a "create-timeline" {:title "Ordering"}))
-          sl   (:result (cmd/run a "add-slice" {:timeline (:id tl) :title "Place" :slice-type "state_change" :index 0}))
+          sl   (:result (cmd/run a "add-slice" {:timeline (:id tl) :title "Place" :slice-type "state_change"}))
           sp   (:result (cmd/run a "add-specification" {:slice (:id sl) :title "Rejected"}))
           _    (cmd/run a "add-error-step" {:spec (:id sp) :error-name "AlreadyPlaced" :index 0})
           [_ msgs] (recording-sub a)
@@ -170,7 +170,7 @@
   (testing "a cascading delete is one surface op -> one delta"
     (let [a (app/new-app "Orders")
           tl (:result (cmd/run a "create-timeline" {:title "T"}))
-          _  (cmd/run a "add-slice" {:timeline (:id tl) :title "S" :slice-type "state_change" :index 0})
+          _  (cmd/run a "add-slice" {:timeline (:id tl) :title "S" :slice-type "state_change"})
           [_ msgs] (recording-sub a)]
       (cmd/run a "delete-timeline" {:timeline (:id tl)})
       (is (= 2 (count @msgs)))                        ; snapshot + 1 delta

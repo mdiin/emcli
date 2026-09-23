@@ -19,7 +19,10 @@
             "nothing was committed")))
     (testing "an id argument is validated too"
       (is (= :bad-argument (:error (cmd/run a "add-slice"
-                                            {:timeline "nope" :title "t" :slice-type "state_change" :index "0"})))))
+                                            {:timeline "nope" :title "t" :slice-type "state_change"}))))
+      (is (= :bad-argument (:error (cmd/run a "add-slice"
+                                            {:timeline 1 :title "t" :slice-type "state_change" :before "abc"})))
+          "non-integer :before is also bad-argument"))
     (testing "structured/composite command: bad :connection is rejected"
       (is (= :bad-argument (:error (cmd/run a "add-derivation"
                                             {:connection "xyz" :target "t" :from "a"})))))
@@ -309,7 +312,7 @@
 (deftest resolve-names-test
   (let [a  (app/new-app "M")
         tl (:id (:result (cmd/run a "create-timeline" {:title "Checkout"})))]
-    (cmd/run a "add-slice" {:timeline tl :title "Baz" :slice-type "state_change" :index 0})
+    (cmd/run a "add-slice" {:timeline tl :title "Baz" :slice-type "state_change"})
     (cmd/run a "create-element" {:name "Snaz" :element-type "read_model"})
     (cmd/run a "create-element" {:name "Snazzz" :element-type "read_model"})
 
@@ -354,7 +357,7 @@
   (let [a  (app/new-app "M")
         sl (:id (:result (cmd/run a "add-slice"
                                   {:timeline (:id (:result (cmd/run a "create-timeline" {:title "T"})))
-                                   :title "S" :slice-type "state_change" :index 0})))
+                                   :title "S" :slice-type "state_change"})))
         a1 (:id (:result (cmd/run a "create-element" {:name "A" :element-type "event"})))
         a2 (:id (:result (cmd/run a "create-element" {:name "B" :element-type "event"})))]
     (cmd/run a "place-element" {:slice sl :element a1})

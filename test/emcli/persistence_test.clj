@@ -13,7 +13,7 @@
 
 (defn- author! [a]
   (let [tl (:result (cmd/run a "create-timeline" {:title "Ordering"}))
-        sl (:result (cmd/run a "add-slice" {:timeline (:id tl) :title "Place" :slice-type "state_change" :index 0}))
+        sl (:result (cmd/run a "add-slice" {:timeline (:id tl) :title "Place" :slice-type "state_change"}))
         c  (:result (cmd/run a "create-element" {:name "PlaceOrder" :element-type "command"}))]
     (cmd/run a "place-element" {:slice (:id sl) :element (:id c)})
     {:tl (:id tl) :sl (:id sl) :c (:id c)}))

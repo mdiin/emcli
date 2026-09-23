@@ -70,9 +70,9 @@
    "reorder-swimlane"    {:rule r/reorder-swimlane    :params [[:lane :lane :int true] [:new-index :new-index :int true]]}
    "delete-swimlane"     {:rule r/delete-swimlane     :params [[:lane :lane :int true]]}
    ;; Slices
-   "add-slice"           {:rule r/add-slice           :params [[:timeline :timeline :int true] [:title :title :str true] [:slice-type :slice-type :kw true] [:index :index :int true] [:id :id :int false]]}
+   "add-slice"           {:rule r/add-slice           :params [[:timeline :timeline :int true] [:title :title :str true] [:slice-type :slice-type :kw true] [:before :before :int false] [:after :after :int false] [:id :id :int false]]}
    "rename-slice"        {:rule r/rename-slice        :params [[:slice :slice :int true] [:new-title :new-title :str true]]}
-   "reorder-slice"       {:rule r/reorder-slice       :params [[:slice :slice :int true] [:new-index :new-index :int true]]}
+   "reorder-slice"       {:rule r/reorder-slice       :params [[:slice :slice :int true] [:position :position :kw false] [:before :before :int false] [:after :after :int false]]}
    "set-slice-status"    {:rule r/set-slice-status    :params [[:slice :slice :int true] [:new-status :new-status :kw true]]}
    "set-slice-type"      {:rule r/set-slice-type      :params [[:slice :slice :int true] [:new-slice-type :new-slice-type :kw true]]}
    "delete-slice"        {:rule r/delete-slice        :params [[:slice :slice :int true]]}

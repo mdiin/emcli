@@ -115,7 +115,7 @@
   (let [[store mid] (s/with-model)
         store       (:store (s/ok store r/create-timeline {:model mid :title "T"}))
         tlid        (:id (first (m/timelines store mid)))
-        store       (:store (s/ok store r/add-slice {:timeline tlid :title "S" :slice-type :state_change :index 0}))
+        store       (:store (s/ok store r/add-slice {:timeline tlid :title "S" :slice-type :state_change}))
         slid        (:id (first (m/slices store tlid)))]
     (testing "any status transition is accepted, regardless of the prior status"
       (doseq [[from to] [[:created :in_progress]
@@ -136,7 +136,7 @@
   (let [[store mid] (s/with-model)
         store       (:store (s/ok store r/create-timeline {:model mid :title "T"}))
         tlid        (:id (first (m/timelines store mid)))
-        store       (:store (s/ok store r/add-slice {:timeline tlid :title "S" :slice-type :state_change :index 0}))
+        store       (:store (s/ok store r/add-slice {:timeline tlid :title "S" :slice-type :state_change}))
         slid        (:id (first (m/slices store tlid)))
         store       (:store (s/ok store r/create-element {:model mid :name "PlaceOrder" :element-type :command}))
         eid         (:id (first (m/elements store mid)))
@@ -178,7 +178,7 @@
   (let [[store mid] (s/with-model)
         store       (:store (s/ok store r/create-timeline {:model mid :title "T"}))
         tlid        (:id (first (m/timelines store mid)))
-        store       (:store (s/ok store r/add-slice {:timeline tlid :title "S" :slice-type :state_change :index 0}))
+        store       (:store (s/ok store r/add-slice {:timeline tlid :title "S" :slice-type :state_change}))
         slid        (:id (first (m/slices store tlid)))
         store       (:store (s/ok store r/create-element {:model mid :name "PlaceOrder" :element-type :command}))
         cmd         (:id (first (m/elements store mid)))
@@ -630,7 +630,7 @@
         {s2 :store el :result}   (s/ok s1 r/create-element {:model mid :name "PlaceOrder" :element-type :command})
         {s3 :store ln :result}   (s/ok s2 r/create-swimlane {:model mid :name "Orders" :index 0})
         {s4 :store sl :result}   (s/ok s3 r/add-slice {:timeline (:id tl) :title "Place order"
-                                                       :slice-type :state_change :index 0})
+                                                       :slice-type :state_change})
         {s5 :store sp :result}   (s/ok s4 r/add-specification {:slice (:id sl) :title "Places order"})]
     {:store s5 :model mid :timeline tl :element el :lane ln :slice sl :spec sp}))
 
@@ -666,7 +666,7 @@
         (is (= (:id lane) (:id err)))))
     (testing "slice title, within its timeline"
       (let [err (s/err store r/add-slice {:timeline (:id timeline) :title "place order"
-                                          :slice-type :state_change :index 1})]
+                                          :slice-type :state_change})]
         (is (= :name-conflict (:error err)))
         (is (= (:id slice) (:id err)))))
     (testing "specification title, within its slice"
@@ -685,7 +685,7 @@
     (testing "the same name in a different container"
       (let [{s :store t2 :result} (s/ok store r/create-timeline {:model model :title "Viewing"})]
         (is (not (r/error? (r/add-slice s {:timeline (:id t2) :title "Place order"
-                                           :slice-type :state_change :index 0}))))
+                                           :slice-type :state_change}))))
         (is (not (r/error? (r/create-swimlane s {:model model :name "Customers" :index 1})))))
       (let [{s :store m2 :result} (s/ok store r/create-model {:name "Other"})]
         (is (not (r/error? (r/create-element s {:model (:id m2) :name "PlaceOrder"
@@ -826,9 +826,9 @@
   (let [[store mid]              (s/with-model)
         {s1 :store tl :result}   (s/ok store r/create-timeline {:model mid :title "T"})
         {s2 :store sl :result}   (s/ok s1 r/add-slice {:timeline (:id tl) :title "Place"
-                                                       :slice-type :state_change :index 0})
+                                                       :slice-type :state_change})
         {s3 :store other :result}(s/ok s2 r/add-slice {:timeline (:id tl) :title "Confirm"
-                                                       :slice-type :state_change :index 1})]
+                                                       :slice-type :state_change})]
     (testing "a slice's title can be changed, within its timeline"
       (let [{s4 :store} (s/ok s3 r/rename-slice {:slice (:id sl) :new-title "Confirmed"})]
         (is (= "Confirmed" (:title (m/fetch s4 :slice (:id sl)))))))
@@ -847,7 +847,7 @@
         {s1 :store cmd :result}  (s/ok store r/create-element {:model mid :name "Cmd" :element-type :command})
         {s2 :store tl :result}   (s/ok s1 r/create-timeline {:model mid :title "T"})
         {s3 :store sl :result}   (s/ok s2 r/add-slice {:timeline (:id tl) :title "S"
-                                                       :slice-type :state_change :index 0})
+                                                       :slice-type :state_change})
         {s4 :store sp :result}   (s/ok s3 r/add-specification {:slice (:id sl) :title "spec"})
         {s5 :store est :result}  (s/ok s4 r/add-error-step {:spec (:id sp) :error-name "Declined" :index 0})]
     (testing "the outcome name is content, so two error steps may carry the same one"
@@ -869,7 +869,7 @@
         {s7 :store}             (s/ok s6 r/add-derivation {:connection (:id cn) :target "total" :from ["orderId"]})
         {s8 :store tl :result}  (s/ok s7 r/create-timeline {:model mid :title "T"})
         {s9 :store sl :result}  (s/ok s8 r/add-slice {:timeline (:id tl) :title "S"
-                                                      :slice-type :state_change :index 0})
+                                                      :slice-type :state_change})
         {s10 :store sp :result} (s/ok s9 r/add-specification {:slice (:id sl) :title "spec"})
         {s11 :store st :result} (s/ok s10 r/add-spec-step {:spec (:id sp) :clause :then_step
                                                            :element (:id evt) :index 0})
@@ -949,7 +949,7 @@
         {s1 :store cmd :result} (s/ok store r/create-element {:model mid :name "Cmd" :element-type :command})
         {s2 :store tl :result}  (s/ok s1 r/create-timeline {:model mid :title "T"})
         {s3 :store sl :result}  (s/ok s2 r/add-slice {:timeline (:id tl) :title "S"
-                                                      :slice-type :state_change :index 0})
+                                                      :slice-type :state_change})
         {s4 :store sp :result}  (s/ok s3 r/add-specification {:slice (:id sl) :title "spec"})
         {s5 :store st :result}  (s/ok s4 r/add-spec-step {:spec (:id sp) :clause :when_step
                                                           :element (:id cmd) :index 0})
@@ -978,7 +978,7 @@
           {s1 :store cmd :result} (s/ok store r/create-element {:model mid :name "Cmd" :element-type :command})
           {s2 :store tl :result}  (s/ok s1 r/create-timeline {:model mid :title "T"})
           {s3 :store sl :result}  (s/ok s2 r/add-slice {:timeline (:id tl) :title "S"
-                                                        :slice-type :state_change :index 0})]
+                                                        :slice-type :state_change})]
       (is (false? (:is_complete (m/canonical-entity s3 :slice (:id sl))))
           "an empty slice is not complete")
       (let [{:keys [delta store]} (s/ok s3 r/place-element {:slice (:id sl) :element (:id cmd)})]
@@ -991,7 +991,7 @@
           {s1 :store cmd :result} (s/ok store r/create-element {:model mid :name "Cmd" :element-type :command})
           {s2 :store tl :result}  (s/ok s1 r/create-timeline {:model mid :title "T"})
           {s3 :store sl :result}  (s/ok s2 r/add-slice {:timeline (:id tl) :title "S"
-                                                        :slice-type :state_change :index 0})
+                                                        :slice-type :state_change})
           {s4 :store sp :result}  (s/ok s3 r/add-specification {:slice (:id sl) :title "spec"})]
       (is (false? (:is_complete (m/canonical-entity s4 :specification (:id sp)))))
       (let [{:keys [delta store]} (s/ok s4 r/add-spec-step {:spec (:id sp) :clause :when_step
@@ -1005,7 +1005,7 @@
         {s2 :store evt :result} (s/ok s1 r/create-element {:model mid :name "Evt" :element-type :event})
         {s3 :store tl :result}  (s/ok s2 r/create-timeline {:model mid :title "T"})
         {s4 :store sl :result}  (s/ok s3 r/add-slice {:timeline (:id tl) :title "S"
-                                                      :slice-type :state_change :index 0})
+                                                      :slice-type :state_change})
         {s5 :store sp :result}  (s/ok s4 r/add-specification {:slice (:id sl) :title "spec"})
         {s6 :store}             (s/ok s5 r/add-field {:element (:id cmd) :field {:name "total" :type :decimal}})
         {s7 :store}             (s/ok s6 r/add-field {:element (:id evt) :field {:name "total" :type :decimal}})
@@ -1020,3 +1020,190 @@
               [:updated :slice] [:updated :specification] [:updated :element]]
              (mapv (juxt :action :type) (:changes delta)))
           "deletions, then the element, then the verdicts those removals moved, then the surviving far ends"))))
+
+;; ---------------------------------------------------------------------------
+;; Slice ordering: AddSlice with before/after, and ReorderSlice
+;; ---------------------------------------------------------------------------
+
+(defn- timeline-with-slices
+  "A store with one timeline holding one slice per named title, in the given
+  order. Returns {:store :mid :tlid :slices} with :slices a title -> id map."
+  [titles]
+  (let [[store mid]    (s/with-model)
+        store          (:store (s/ok store r/create-timeline {:model mid :title "T"}))
+        tlid           (:id (first (m/timelines store mid)))
+        [store slices] (reduce (fn [[s acc] title]
+                                 (let [res (s/ok s r/add-slice {:timeline tlid :title title
+                                                                :slice-type :state_change})]
+                                   [(:store res) (assoc acc title (:id (:result res)))]))
+                               [store {}] titles)]
+    {:store store :mid mid :tlid tlid :slices slices}))
+
+(defn- timeline-slice-order
+  "The titles of a timeline's slices, in display order."
+  [store tlid]
+  (mapv :title (m/slices store tlid)))
+
+;; --- AddSlice with before/after positioning --------------------------------
+
+(deftest add-slice-appends-to-tail-by-default
+  (let [{:keys [store tlid slices]} (timeline-with-slices ["A" "B"])]
+    (testing "no anchor: new slice is last, indices are 0..n"
+      (let [res    (s/ok store r/add-slice {:timeline tlid :title "C" :slice-type :state_change})
+            store' (:store res)]
+        (is (not (r/error? res)))
+        (is (= ["A" "B" "C"] (timeline-slice-order store' tlid)))
+        (is (= [0 1 2] (map :index (m/slices store' tlid))))))))
+
+(deftest add-slice-inserts-before-anchor
+  (let [{:keys [store tlid slices]} (timeline-with-slices ["A" "C"])]
+    (testing ":before inserts immediately before the anchor"
+      (let [res    (s/ok store r/add-slice {:timeline tlid :title "B" :slice-type :state_change
+                                            :before (slices "C")})
+            store' (:store res)]
+        (is (= ["A" "B" "C"] (timeline-slice-order store' tlid)))
+        (is (= [0 1 2] (map :index (m/slices store' tlid))))))))
+
+(deftest add-slice-inserts-after-anchor
+  (let [{:keys [store tlid slices]} (timeline-with-slices ["A" "C"])]
+    (testing ":after inserts immediately after the anchor"
+      (let [res    (s/ok store r/add-slice {:timeline tlid :title "B" :slice-type :state_change
+                                            :after (slices "A")})
+            store' (:store res)]
+        (is (= ["A" "B" "C"] (timeline-slice-order store' tlid)))
+        (is (= [0 1 2] (map :index (m/slices store' tlid))))))))
+
+(deftest add-slice-rejects-anchor-from-different-timeline
+  (let [{:keys [store mid tlid slices]} (timeline-with-slices ["A"])
+        store  (:store (s/ok store r/create-timeline {:model mid :title "Other"}))
+        other-tlid (:id (second (m/timelines store mid)))
+        other-sl   (:id (:result (s/ok store r/add-slice {:timeline other-tlid :title "X"
+                                                          :slice-type :state_change})))]
+    (testing ":before from a different timeline is rejected"
+      (let [err (s/err store r/add-slice {:timeline tlid :title "B" :slice-type :state_change
+                                          :before other-sl})]
+        (is (= :not-found (:error err)))
+        (is (= :slice (:type err)))))))
+
+;; --- ReorderSlice ----------------------------------------------------------
+
+(deftest reorder-slice-front-and-back
+  (let [{:keys [store tlid slices]} (timeline-with-slices ["A" "B" "C"])]
+    (testing ":front moves the target to the head and renumbers 0..n-1"
+      (let [res    (s/ok store r/reorder-slice {:slice (slices "C") :position :front})
+            store' (:store res)]
+        (is (= ["C" "A" "B"] (timeline-slice-order store' tlid)))
+        (is (= [0 1 2] (map :index (m/slices store' tlid))))
+        (is (= :ReorderSlice (:op (:delta res))))
+        (is (= 3 (count (:changes (:delta res))))
+            "every slice is restated, not just the moved one")))
+    (testing ":back moves the target to the tail"
+      (let [store' (:store (s/ok store r/reorder-slice {:slice (slices "A") :position :back}))]
+        (is (= ["B" "C" "A"] (timeline-slice-order store' tlid)))
+        (is (= [0 1 2] (map :index (m/slices store' tlid))))))))
+
+(deftest reorder-slice-before-and-after
+  (let [{:keys [store tlid slices]} (timeline-with-slices ["A" "B" "C"])]
+    (testing ":before inserts immediately before the anchor"
+      (let [store' (:store (s/ok store r/reorder-slice {:slice (slices "C") :before (slices "A")}))]
+        (is (= ["C" "A" "B"] (timeline-slice-order store' tlid)))
+        (is (= [0 1 2] (map :index (m/slices store' tlid))))))
+    (testing ":after inserts immediately after the anchor"
+      (let [store' (:store (s/ok store r/reorder-slice {:slice (slices "A") :after (slices "C")}))]
+        (is (= ["B" "C" "A"] (timeline-slice-order store' tlid)))
+        (is (= [0 1 2] (map :index (m/slices store' tlid))))))
+    (testing "every other slice keeps its relative order"
+      (let [store' (:store (s/ok store r/reorder-slice {:slice (slices "A") :after (slices "B")}))]
+        (is (= ["B" "A" "C"] (timeline-slice-order store' tlid)))))
+    (testing "a move that changes nothing still succeeds, with no changes restated"
+      (let [res (s/ok store r/reorder-slice {:slice (slices "B") :before (slices "C")})]
+        (is (= ["A" "B" "C"] (timeline-slice-order (:store res) tlid)))
+        (is (empty? (:changes (:delta res))))))))
+
+(deftest reorder-slice-renormalizes-indices
+  (let [{:keys [store tlid slices]} (timeline-with-slices ["A" "B" "C"])
+        ;; Delete "B" to leave non-contiguous indices on A and C
+        store  (:store (s/ok store r/delete-slice {:slice (slices "B")}))
+        store' (:store (s/ok store r/reorder-slice {:slice (slices "C") :position :front}))]
+    (testing "a reorder renormalizes the whole timeline to 0..n-1"
+      (is (= ["C" "A"] (timeline-slice-order store' tlid)))
+      (is (= [0 1] (map :index (m/slices store' tlid)))))))
+
+(deftest reorder-slice-requires-exactly-one-move-selector
+  (let [{:keys [store slices]} (timeline-with-slices ["A" "B"])]
+    (testing "no selector"
+      (let [err (s/err store r/reorder-slice {:slice (slices "A")})]
+        (is (= :invalid-value (:error err)))
+        (is (re-find #"exactly one" (:message err)))))
+    (testing "more than one selector"
+      (let [err (s/err store r/reorder-slice {:slice (slices "A") :position :front
+                                              :before (slices "B")})]
+        (is (= :invalid-value (:error err)))
+        (is (re-find #"exactly one" (:message err)))))
+    (testing "a position outside front/back"
+      (let [err (s/err store r/reorder-slice {:slice (slices "A") :position :middle})]
+        (is (= :invalid-value (:error err)))
+        (is (= :middle (:value err)))))))
+
+(deftest reorder-slice-rejects-anchor-equal-to-moved-slice
+  (let [{:keys [store slices]} (timeline-with-slices ["A" "B"])]
+    (testing "--before the slice being moved is rejected"
+      (let [err (s/err store r/reorder-slice {:slice (slices "A") :before (slices "A")})]
+        (is (= :invalid-value (:error err)))
+        (is (re-find #"different element" (:message err)))))
+    (testing "--after the slice being moved is rejected"
+      (let [err (s/err store r/reorder-slice {:slice (slices "B") :after (slices "B")})]
+        (is (= :invalid-value (:error err)))
+        (is (re-find #"different element" (:message err)))))))
+
+(deftest reorder-slice-rejects-anchor-from-different-timeline
+  (let [{:keys [store mid tlid slices]} (timeline-with-slices ["A" "B"])
+        store      (:store (s/ok store r/create-timeline {:model mid :title "Other"}))
+        other-tlid (:id (second (m/timelines store mid)))
+        other-sl   (:id (:result (s/ok store r/add-slice {:timeline other-tlid :title "X"
+                                                          :slice-type :state_change})))]
+    (testing ":before from a different timeline is rejected"
+      (let [err (s/err store r/reorder-slice {:slice (slices "A") :before other-sl})]
+        (is (= :not-found (:error err)))
+        (is (= :slice (:type err)))))
+    (testing ":after from a different timeline is rejected"
+      (let [err (s/err store r/reorder-slice {:slice (slices "A") :after other-sl})]
+        (is (= :not-found (:error err)))
+        (is (= :slice (:type err)))))))
+
+;; ---------------------------------------------------------------------------
+;; AddSlice guards: blank title, after-anchor from wrong timeline, explicit id
+;; ---------------------------------------------------------------------------
+
+(deftest add-slice-rejects-blank-title
+  (testing "a blank title is rejected with :invalid-value"
+    (let [{:keys [store tlid]} (timeline-with-slices [])]
+      (let [err (s/err store r/add-slice {:timeline tlid :title "   " :slice-type :state_change})]
+        (is (= :invalid-value (:error err))))
+      (testing "and an empty string is also rejected"
+        (let [err (s/err store r/add-slice {:timeline tlid :title "" :slice-type :state_change})]
+          (is (= :invalid-value (:error err))))))))
+
+(deftest add-slice-rejects-after-anchor-from-different-timeline
+  (let [{:keys [store mid tlid slices]} (timeline-with-slices ["A"])
+        store  (:store (s/ok store r/create-timeline {:model mid :title "Other"}))
+        other-tlid (:id (second (m/timelines store mid)))
+        other-sl   (:id (:result (s/ok store r/add-slice {:timeline other-tlid :title "X"
+                                                          :slice-type :state_change})))]
+    (testing ":after from a different timeline is rejected"
+      (let [err (s/err store r/add-slice {:timeline tlid :title "B" :slice-type :state_change
+                                          :after other-sl})]
+        (is (= :not-found (:error err)))
+        (is (= :slice (:type err)))))))
+
+(deftest add-slice-explicit-id-is-honored-and-conflict-rejected
+  (let [{:keys [store tlid]} (timeline-with-slices [])]
+    (testing "an explicit id is stored on the new slice"
+      (let [{sl :result store' :store} (s/ok store r/add-slice {:timeline tlid :title "S"
+                                                                 :slice-type :state_change :id 500})]
+        (is (= 500 (:id sl)))
+        (testing "a second add-slice with the same id is rejected"
+          (let [err (s/err store' r/add-slice {:timeline tlid :title "S2"
+                                               :slice-type :state_change :id 500})]
+            (is (= :id-conflict (:error err)))
+            (is (= 500 (:id err)))))))))

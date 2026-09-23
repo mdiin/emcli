@@ -37,7 +37,7 @@
   (testing "GET /model is the richer ModelAuthoring exposes projection"
     (let [tl   (:result (body-json (post "/authoring/create-timeline" {:title "Ordering"})))
           sl   (:result (body-json (post "/authoring/add-slice"
-                                         {:timeline (:id tl) :title "Place" :slice-type "state_change" :index 0})))
+                                         {:timeline (:id tl) :title "Place" :slice-type "state_change"})))
           cmd  (:result (body-json (post "/authoring/create-element" {:name "PlaceOrder" :element-type "command"})))
           _    (post "/authoring/place-element" {:slice (:id sl) :element (:id cmd)})
           spec (:result (body-json (post "/authoring/add-specification" {:slice (:id sl) :title "spec"})))
@@ -73,7 +73,7 @@
   (testing "an invariant-violating command is 422"
     (let [tl (:result (body-json (post "/authoring/create-timeline" {:title "T"})))
           sl (:result (body-json (post "/authoring/add-slice"
-                                       {:timeline (:id tl) :title "S" :slice-type "state_change" :index 0})))
+                                       {:timeline (:id tl) :title "S" :slice-type "state_change"})))
           c1 (:result (body-json (post "/authoring/create-element" {:name "A" :element-type "command"})))
           c2 (:result (body-json (post "/authoring/create-element" {:name "B" :element-type "command"})))]
       (is (= 200 (:status (post "/authoring/place-element" {:slice (:id sl) :element (:id c1)}))))
@@ -86,7 +86,7 @@
   (testing "export of an incomplete model is 422; a complete one exports 200"
     (let [tl (:result (body-json (post "/authoring/create-timeline" {:title "Ordering"})))
           sl (:result (body-json (post "/authoring/add-slice"
-                                       {:timeline (:id tl) :title "Place" :slice-type "state_change" :index 0})))]
+                                       {:timeline (:id tl) :title "Place" :slice-type "state_change"})))]
       (is (= 422 (:status (get* "/export"))) "no command placed yet")
       (let [cmd (:result (body-json (post "/authoring/create-element" {:name "PlaceOrder" :element-type "command"})))]
         (post "/authoring/place-element" {:slice (:id sl) :element (:id cmd)})
@@ -127,7 +127,7 @@
   (testing "POST /import of a valid-but-forbidden document is refused and installs nothing"
     (let [tl     (:result (body-json (post "/authoring/create-timeline" {:title "Ordering"})))
           sl     (:result (body-json (post "/authoring/add-slice" {:timeline (:id tl) :title "Place"
-                                                                   :slice-type "state_change" :index 0})))
+                                                                   :slice-type "state_change"})))
           cmd    (:result (body-json (post "/authoring/create-element" {:name "PlaceOrder"
                                                                         :element-type "command"})))
           _      (post "/authoring/place-element" {:slice (:id sl) :element (:id cmd)})
@@ -153,7 +153,7 @@
 (deftest resolve-endpoint
   (testing "POST /resolve batches name lookups without exposing the whole model"
     (let [tl (:result (body-json (post "/authoring/create-timeline" {:title "Checkout"})))
-          _  (post "/authoring/add-slice" {:timeline (:id tl) :title "Baz" :slice-type "state_change" :index 0})
+          _  (post "/authoring/add-slice" {:timeline (:id tl) :title "Baz" :slice-type "state_change"})
           _  (post "/authoring/create-element" {:name "Snaz" :element-type "read_model"})
           resp (post "/resolve" {:queries [{:name "Baz"} {:name "Snaz"} {:name "Nope"}]})
           results (:results (body-json resp))]
@@ -169,7 +169,7 @@
   (testing "POST /query follows relations from a root without dumping the model"
     (let [tl  (:result (body-json (post "/authoring/create-timeline" {:title "Checkout"})))
           sl  (:result (body-json (post "/authoring/add-slice"
-                                        {:timeline (:id tl) :title "Ordering" :slice-type "state_change" :index 0})))
+                                        {:timeline (:id tl) :title "Ordering" :slice-type "state_change"})))
           e1  (:result (body-json (post "/authoring/create-element" {:name "PlaceOrder" :element-type "command"})))
           e2  (:result (body-json (post "/authoring/create-element" {:name "OrderPlaced" :element-type "event"})))
           _   (post "/authoring/place-element" {:slice (:id sl) :element (:id e1)})

@@ -235,7 +235,7 @@
   (let [a    (app/new-app "M")
         el   (:result (cmd/run a "create-element" {:name "PlaceOrder" :element-type "command"}))
         tl   (:result (cmd/run a "create-timeline" {:title "T"}))
-        sl   (:result (cmd/run a "add-slice" {:timeline (:id tl) :title "S" :slice-type "state_change" :index 0}))
+        sl   (:result (cmd/run a "add-slice" {:timeline (:id tl) :title "S" :slice-type "state_change"}))
         sp   (:result (cmd/run a "add-specification" {:slice (:id sl) :title "spec"}))
         st   (:result (cmd/run a "add-spec-step" {:spec (:id sp) :clause "when_step" :element (:id el) :index 0}))]
     (cmd/run a "add-step-example" {:step (:id st) :field-name "id" :field-value "1"})

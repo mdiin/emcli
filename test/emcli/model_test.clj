@@ -48,7 +48,7 @@
     (let [[store mid] (s/with-model)
           store       (:store (s/ok store r/create-timeline {:model mid :title "T"}))
           tlid        (:id (first (m/timelines store mid)))
-          store       (:store (s/ok store r/add-slice {:timeline tlid :title "S" :slice-type :state_change :index 0}))
+          store       (:store (s/ok store r/add-slice {:timeline tlid :title "S" :slice-type :state_change}))
           slid        (:id (first (m/slices store tlid)))
           store       (:store (s/ok store r/add-specification {:slice slid :title "spec"}))
           spid        (:id (first (m/specs store slid)))
@@ -74,7 +74,7 @@
   (let [[store mid] (s/with-model)
         store       (:store (s/ok store r/create-timeline {:model mid :title "T"}))
         tlid        (:id (first (m/timelines store mid)))
-        store       (:store (s/ok store r/add-slice {:timeline tlid :title "S" :slice-type slice-type :index 0}))
+        store       (:store (s/ok store r/add-slice {:timeline tlid :title "S" :slice-type slice-type}))
         slid        (:id (first (m/slices store tlid)))]
     [store mid slid]))
 

@@ -226,19 +226,74 @@
 ;; Slices
 ;; ---------------------------------------------------------------------------
 
-(defn add-slice [store {:keys [timeline title slice-type index id]}]
+(defn- no-slice [slice-id]
+  {:error :not-found :type :slice :id slice-id
+   :message (str "slice " slice-id " does not exist")})
+
+(defn- renumber-entities
+  "Assign index = 0-based rank to every entity in `order`, returning [store'
+  changes] where changes restates each entity whose index actually moved.
+  Renormalizing the whole list is intentional: indices are a sort key only, so a
+  relative move cannot be expressed by nudging a single integer."
+  [store type order]
+  (reduce (fn [[s changes] [i p]]
+            (if (= i (:index p))
+              [s changes]
+              (let [s (m/set-field s type (:id p) :index i)]
+                [s (conj changes (updated s type (:id p)))])))
+          [store []]
+          (map-indexed vector order)))
+
+(defn- insert-slice-at
+  "`slices` (a timeline's slices minus the new one) with `new-slice` inserted
+  immediately before `anchor-id` (when `after?` is false) or immediately after
+  it (when `after?` is true). Appends when `anchor-id` is nil."
+  [slices new-slice anchor-id after?]
+  (if (nil? anchor-id)
+    (conj (vec slices) new-slice)
+    (let [[head tail] (split-with #(not= anchor-id (:id %)) slices)]
+      (if (and after? (seq tail))
+        (vec (concat head [(first tail) new-slice] (rest tail)))
+        (vec (concat head [new-slice] tail))))))
+
+(defn add-slice [store {:keys [timeline title slice-type before after id]}]
   (or (require-entity store :timeline timeline)
       (require-id-available store id)
       (require-non-blank :title title)
       (require-valid-value slice-types slice-type)
       (require-unique-name :slice title (m/slices store timeline) :title nil)
-      (let [[store sl] (m/create store :slice (with-id {:timeline timeline :title title
-                                                        :slice_type slice-type :index index
-                                                        :status :created} id))]
+      (when (and before (not (m/exists? store :slice before)))
+        (no-slice before))
+      (when (and after (not (m/exists? store :slice after)))
+        (no-slice after))
+      (when (and before (not (some #(= before (:id %)) (m/slices store timeline))))
+        {:error :not-found :type :slice :id before
+         :message (str "slice " before " is not in this timeline")})
+      (when (and after (not (some #(= after (:id %)) (m/slices store timeline))))
+        {:error :not-found :type :slice :id after
+         :message (str "slice " after " is not in this timeline")})
+      (let [existing         (m/slices store timeline)
+            [store sl]       (m/create store :slice (with-id {:timeline timeline :title title
+                                                              :slice_type slice-type :index 0
+                                                              :status :created} id))
+            ;; anchor is :before or :after; after? distinguishes the two
+            anchor           (or before after)
+            ordered          (insert-slice-at existing sl anchor (some? after))
+            ;; when an anchor is given, renumber the whole timeline 0..n; otherwise
+            ;; the new slice is simply last, so assign it the tail index directly.
+            [store changes]  (if (or before after)
+                               (renumber-entities store :slice ordered)
+                               (let [tail-idx (count existing)
+                                     store    (m/set-field store :slice (:id sl) :index tail-idx)]
+                                 [store []]))]
         ;; the CREATED delta carries the canonical record too, derived verdict
         ;; included, so a consumer seeding from a snapshot and patching by id sees
-        ;; one shape either way (CreateElement builds its change the same way)
-        (commit store :AddSlice [(created :slice (m/canonical-entity store :slice (:id sl)))] sl))))
+        ;; one shape either way (CreateElement builds its change the same way).
+        ;; updated slices from renumbering ride along as additional changes.
+        (commit store :AddSlice
+                (into [(created :slice (m/canonical-entity store :slice (:id sl)))]
+                      changes)
+                sl))))
 
 ;; Rename a slice's title, unique within its timeline (invariant SliceTitleUnique).
 ;; Nothing references a slice by title - a slice is addressed by identity, and the
@@ -252,11 +307,7 @@
           (commit store :RenameSlice [(updated store :slice slice)]
                   (m/fetch store :slice slice))))))
 
-(defn reorder-slice [store {:keys [slice new-index]}]
-  (or (require-entity store :slice slice)
-      (let [store (m/set-field store :slice slice :index new-index)]
-        (commit store :ReorderSlice [(updated store :slice slice)]
-                (m/fetch store :slice slice)))))
+
 
 (defn set-slice-status [store {:keys [slice new-status]}]
   (or (require-entity store :slice slice)
@@ -619,13 +670,35 @@
   indices), so a relative before/after move cannot be expressed by nudging a
   single integer."
   [store order]
-  (reduce (fn [[s changes] [i p]]
-            (if (= i (:index p))
-              [s changes]
-              (let [s (m/set-field s :placement (:id p) :index i)]
-                [s (conj changes (updated s :placement (:id p)))])))
-          [store []]
-          (map-indexed vector order)))
+  (renumber-entities store :placement order))
+
+;; Reorder a slice within its timeline using the same relative-move semantics as
+;; ReorderPlacement. `require-valid-move` / `normalize-move` are reused directly;
+;; `reposition` and `renumber-entities` work on the id+index shape common to both
+;; slice and placement records, so they compose without modification.
+(defn- no-slice-in-timeline [slice-id]
+  {:error :not-found :type :slice :id slice-id
+   :message (str "slice " slice-id " is not in this timeline")})
+
+(defn reorder-slice [store {:keys [slice before after] :as args}]
+  (or (require-valid-move (assoc args :element slice))
+      (require-entity store :slice slice)
+      (let [sl        (m/fetch store :slice slice)
+            tl-slices (m/slices store (:timeline sl))
+            move      (normalize-move args)
+            ;; Anchor is a slice id; map to the slice record for reposition.
+            anchor-sl (when (:anchor move) (m/fetch store :slice (:anchor move)))]
+        (or (when (and (:anchor move) (nil? (some #(= (:anchor move) (:id %)) tl-slices)))
+              (no-slice-in-timeline (:anchor move)))
+            (let [;; reposition/insert-next-to key on :element for the moved record and
+                  ;; the anchor; inject :element = :id so the helpers work on slices.
+                  with-el   (fn [s] (assoc s :element (:id s)))
+                  ps        (mapv with-el tl-slices)
+                  target    (with-el sl)
+                  move'     (cond-> move (:anchor move) (assoc :anchor (:id anchor-sl)))
+                  [store changes] (renumber-entities store :slice (reposition ps target move'))]
+              (commit store :ReorderSlice changes
+                      (m/fetch store :slice slice)))))))
 
 (defn reorder-placement [store {:keys [slice element before after] :as args}]
   (or (require-valid-move args)

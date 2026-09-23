@@ -38,7 +38,7 @@
         store       (:store (s/ok store r/create-timeline {:model mid :title "Ordering"}))
         tl1         (:id (first (m/timelines store mid)))
         store       (:store (s/ok store r/add-slice {:timeline tl1 :title "Place an order"
-                                                     :slice-type :state_change :index 0}))
+                                                     :slice-type :state_change}))
         sc1         (:id (first (m/slices store tl1)))
         store       (:store (s/ok store r/place-element {:slice sc1 :element cmd}))
         store       (:store (s/ok store r/place-element {:slice sc1 :element evt}))
@@ -54,7 +54,7 @@
         store       (:store (s/ok store r/create-timeline {:model mid :title "Viewing"}))
         tl2         (:id (second (m/timelines store mid)))
         store       (:store (s/ok store r/add-slice {:timeline tl2 :title "View orders"
-                                                     :slice-type :state_view :index 0}))
+                                                     :slice-type :state_view}))
         sc2         (:id (first (m/slices store tl2)))
         store       (:store (s/ok store r/place-element {:slice sc2 :element rm}))
         store       (:store (s/ok store r/place-element {:slice sc2 :element scr}))
@@ -111,7 +111,7 @@
           store       (:store (s/ok store r/create-timeline {:model mid :title "T"}))
           tlid        (:id (first (m/timelines store mid)))
           store       (:store (s/ok store r/add-slice {:timeline tlid :title "incomplete"
-                                                       :slice-type :state_change :index 0}))]
+                                                       :slice-type :state_change}))]
       (is (seq (sc/export-readiness store mid)))
       (is (thrown? clojure.lang.ExceptionInfo (sc/export store mid))))))
 
@@ -121,7 +121,7 @@
           store       (:store (s/ok store r/create-timeline {:model mid :title "Notes"}))
           tlid        (:id (last (m/timelines store mid)))
           store       (:store (s/ok store r/add-slice {:timeline tlid :title "just a note"
-                                                       :slice-type :state_change :index 0}))
+                                                       :slice-type :state_change}))
           slid        (:id (first (m/slices store tlid)))
           store       (:store (s/ok store r/set-slice-status {:slice slid :new-status :informational}))
           doc         (sc/export store mid)]
@@ -133,7 +133,7 @@
           store       (:store (s/ok store r/create-timeline {:model mid :title "Notes"}))
           tlid        (:id (last (m/timelines store mid)))
           store       (:store (s/ok store r/add-slice {:timeline tlid :title "just a note"
-                                                       :slice-type :state_change :index 0}))
+                                                       :slice-type :state_change}))
           slid        (:id (first (m/slices store tlid)))
           store       (:store (s/ok store r/set-slice-status {:slice slid :new-status :informational}))
           store       (:store (s/ok store r/add-specification {:slice slid :title "half written"}))]

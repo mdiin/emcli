@@ -238,7 +238,8 @@
    "set-slice-type"   {"new-slice-type"   ["state_change" "state_view" "automation"]}
    "create-element"   {"element-type"       ["command" "event" "read_model" "screen" "automation"]}
    "add-spec-step"    {"clause"     ["given_step" "when_step" "then_step"]}
-   "reorder-placement" {"position"  ["front" "back"]}})
+   "reorder-placement" {"position"  ["front" "back"]}
+   "reorder-slice"    {"position"   ["front" "back"]}})
 
 ;; Free-text notes per (registry) flag name — shown in `--manifest` and
 ;; `<entity> <verb> help`. "id" is the one optional flag every entity-creating
@@ -246,9 +247,9 @@
 ;; movers to "position" on reorder-placement (exactly one is required).
 (def ^:private param-notes
   {"id" "pre-assign this entity's id instead of auto-generating one; must not already be in use"
-   "position" "move to the front or back of the slice; exactly one of position/before/after is required"
-   "before" "element id to move immediately before; exactly one of position/before/after is required"
-   "after" "element id to move immediately after; exactly one of position/before/after is required"})
+   "position" "move to the front or back; exactly one of position/before/after is required"
+   "before" "id to move/insert immediately before; exactly one of position/before/after is required"
+   "after" "id to move/insert immediately after; exactly one of position/before/after is required"})
 
 ;; Full param specs for composite commands that are not in the registry.
 (def ^:private structured-manifest-params

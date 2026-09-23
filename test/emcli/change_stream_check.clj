@@ -69,7 +69,7 @@
         sw   (id! a "create-swimlane"   {:name "Lane A" :index 0})
         sw2  (id! a "create-swimlane"   {:name "Lane B" :index 1})
         sl   (id! a "add-slice"         {:timeline tl :title "Place order"
-                                         :slice-type "state_change" :index 0})
+                                         :slice-type "state_change"})
         cmd  (id! a "create-element"    {:name "PlaceOrder"   :element-type "command"})
         evt  (id! a "create-element"    {:name "OrderPlaced"  :element-type "event"})
         evt2 (id! a "create-element"    {:name "OrderCancelled" :element-type "event"})
@@ -126,11 +126,11 @@
    ["DeleteSwimlane"         "delete-swimlane"
     (fn [{:keys [sw2]}] {:lane sw2})]
    ["AddSlice"               "add-slice"
-    (fn [{:keys [tl]}] {:timeline tl :title "New slice" :slice-type "state_view" :index 1})]
+    (fn [{:keys [tl]}] {:timeline tl :title "New slice" :slice-type "state_view"})]
    ["RenameSlice"            "rename-slice"
     (fn [{:keys [sl]}] {:slice sl :new-title "Renamed slice"})]
    ["ReorderSlice"           "reorder-slice"
-    (fn [{:keys [sl]}] {:slice sl :new-index 3})]
+    (fn [{:keys [sl]}] {:slice sl :position "front"})]
    ["SetSliceStatus"         "set-slice-status"
     (fn [{:keys [sl]}] {:slice sl :new-status "done"})]
    ["SetSliceType"           "set-slice-type"
@@ -361,7 +361,7 @@
   []
   (let [a      (app/new-app "Orders")
         tl     (id! a "create-timeline" {:title "Order flow"})
-        sl     (id! a "add-slice" {:timeline tl :title "Place order" :slice-type "state_change" :index 0})
+        sl     (id! a "add-slice" {:timeline tl :title "Place order" :slice-type "state_change"})
         el     (id! a "create-element" {:name "OrderCancelled" :element-type "event"}) ; unplaced so far
         msgs   (atom [])
         _      (app/subscribe! a #(swap! msgs conj %))
