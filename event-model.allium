@@ -475,20 +475,36 @@ rule DeleteSwimlaneCascades {
 
 -- Slices --------------------------------------------------------------------
 
+-- Add a slice to the timeline. When neither `before` nor `after` is given the
+-- new slice is appended at the tail (index = next_index(timeline.slices)).
+-- When `before` or `after` names an existing slice in the same timeline the
+-- new slice is inserted immediately before or after it, and EVERY slice in the
+-- timeline is renumbered 0..n so the index sequence stays contiguous. A
+-- black-box collection helper expresses the insertion:
+--   insert_slice(list, new_slice, before?, after?): returns `list` with
+--     `new_slice` appended (when no anchor is given) or inserted immediately
+--     before/after the anchor slice; every other slice keeps its relative order.
+-- (index_in is the same helper used by ReorderSlice and ReorderPlacement.)
 rule AddSlice {
-    when: AddSlice(timeline, title, slice_type, index, id?)
+    when: AddSlice(timeline, title, slice_type, before?, after?, id?)
     requires: non_blank(title)
     -- The title must be unique within this timeline (see invariant
     -- SliceTitleUnique); the same title in another timeline is a different slice
     -- and stays legal.
     requires: not timeline.slices.any(s => same_name(s.title, title))
-    ensures: Slice.created(
+    requires: before = null or timeline.slices.any(s => s = before)
+    requires: after = null or timeline.slices.any(s => s = after)
+    let new_slice = Slice.created(
         timeline: timeline,
         title: title,
         slice_type: slice_type,
-        index: index,
+        index: 0,
         status: created
     )
+    let order = insert_slice(timeline.slices, new_slice, before, after)
+    ensures:
+        for s in order:
+            s.index = index_in(order, s)
 }
 
 -- Rename a slice's title. The title is unique within the smallest container that
@@ -505,9 +521,35 @@ rule RenameSlice {
     ensures: slice.title = new_title
 }
 
+-- Reorder `slice` within its timeline with a single relative move.
+-- `move` carries exactly one selector:
+--   position: front  - move to the head of the timeline's slices
+--   position: back   - move to the tail
+--   before: <slice>  - move immediately before that slice
+--   after:  <slice>  - move immediately after it
+-- `before`/`after` must name a different slice in the same timeline. Two
+-- black-box collection helpers express the reindexing (the same helpers used
+-- by ReorderPlacement):
+--   reposition(list, slice, move): returns `list` ordered with `slice` at the
+--     head, tail, or immediately before/after the anchor slice; every other
+--     slice keeps its relative order.
+--   index_in(list, slice): the 0-based index of `slice` in `list`.
+-- An index is a sort key only - non-contiguous once slices have been removed -
+-- so a relative move cannot be expressed by nudging a single integer. EVERY
+-- slice in the timeline is renumbered instead: after the move the timeline's
+-- slices carry 0..n-1, their new display order.
 rule ReorderSlice {
-    when: ReorderSlice(slice, new_index)
-    ensures: slice.index = new_index
+    when: ReorderSlice(slice, move)
+    requires: move.before = null or (
+        move.before != slice
+        and slice.timeline.slices.any(s => s = move.before))
+    requires: move.after = null or (
+        move.after != slice
+        and slice.timeline.slices.any(s => s = move.after))
+    let order = reposition(slice.timeline.slices, slice, move)
+    ensures:
+        for s in order:
+            s.index = index_in(order, s)
 }
 
 -- Reorder the placement of `element` within `slice` with a single relative move.
@@ -2114,9 +2156,9 @@ surface ModelAuthoring {
         DeleteSwimlane(lane)
 
         -- Slices
-        AddSlice(timeline, title, slice_type, index, id?)
+        AddSlice(timeline, title, slice_type, before?, after?, id?)
         RenameSlice(slice, new_title)
-        ReorderSlice(slice, new_index)
+        ReorderSlice(slice, move)
         SetSliceStatus(slice, new_status)
         SetSliceType(slice, new_slice_type)
         DeleteSlice(slice)
