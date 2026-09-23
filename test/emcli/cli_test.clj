@@ -69,6 +69,29 @@
     (testing "the node-id note points operators at the current command name"
       (is (= "node id (nN) as shown by wireframe show" (:note node))))))
 
+;; Authoring flags are parsed against the usage table, not babashka.cli's
+;; auto-coercion: an unspecced parse turns "12" into a number and "007" into 7,
+;; which crashed keyword coercion on the server and silently mangled names.
+(deftest authoring-opts-are-parsed-by-spec
+  (let [parse #'cli/parse-authoring-opts]
+    (testing "string and keyword flags stay strings, whatever they look like"
+      (is (= {:element "7" :field "x" :origin "12"}
+             (parse "add-field-origin" ["--element" "7" "--field" "x" "--origin" "12"])))
+      (is (= "007" (:name (parse "create-element" ["--name" "007" "--element-type" "screen"]))))
+      (is (= "1e3" (:name (parse "remove-field" ["--element" "1" "--name" "1e3"])))))
+    (testing "int flags are left as strings for the server to validate"
+      (is (= "abc" (:element (parse "remove-field" ["--element" "abc" "--name" "x"])))))
+    (testing "boolean flags may be bare or explicit"
+      (is (true? (:optional (parse "add-field" ["--element" "1" "--name" "a" "--type" "string" "--optional"]))))
+      (is (false? (:optional (parse "add-field" ["--element" "1" "--name" "a" "--type" "string" "--optional" "false"])))))
+    (testing "--server is always accepted as a string"
+      (is (= "http://x:1" (:server (parse "delete-slice" ["--slice" "1" "--server" "http://x:1"])))))
+    (testing "a string flag without a value is a parse error naming the flag"
+      (let [e (try (parse "remove-field" ["--element" "1" "--name"]) nil
+                   (catch clojure.lang.ExceptionInfo e e))]
+        (is (some? e))
+        (is (clojure.string/includes? (ex-message e) "--name"))))))
+
 ;; --queries "name[:kind_hint],..." parsing for `emcli resolve`.
 (deftest parse-resolve-queries-test
   (testing "bare names carry no kind_hint"

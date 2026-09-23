@@ -82,6 +82,25 @@
         (is (= 422 (:status resp)))
         (is (= "invariant-violation" (:error (body-json resp))))))))
 
+(deftest authoring-internal-error-is-json-and-logged
+  (testing "an exception inside a command is a 500 JSON `internal` error, logged with its request"
+    (let [logged (atom [])
+          el     (:result (body-json (post "/authoring/create-element"
+                                           {:name "Notify" :element-type "automation"})))]
+      (with-redefs [server/log-internal-error! (fn [req e] (swap! logged conj [(:uri req) e]))]
+        ;; a JSON number where a keyword is expected throws inside the command
+        (let [resp (post "/authoring/add-field-origin" {:element (:id el) :field "x" :origin 12})
+              body (body-json resp)]
+          (is (= 500 (:status resp)))
+          (is (str/starts-with? (get-in resp [:headers "content-type"]) "application/json"))
+          (is (false? (:ok body)))
+          (is (= "internal" (:error body)))
+          (is (string? (:message body)))
+          (is (= ["/authoring/add-field-origin"] (map first @logged)))
+          (is (instance? Throwable (second (first @logged))))))))
+  (testing "the server keeps serving after an internal error"
+    (is (= 200 (:status (post "/authoring/create-timeline" {:title "After"}))))))
+
 (deftest export-requires-complete
   (testing "export of an incomplete model is 422; a complete one exports 200"
     (let [tl (:result (body-json (post "/authoring/create-timeline" {:title "Ordering"})))

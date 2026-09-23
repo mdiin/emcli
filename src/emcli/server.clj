@@ -65,6 +65,27 @@
 (defn- read-json-body [req] (read-body req true))
 (defn- read-json-doc  [req] (read-body req false))
 
+(defn log-internal-error!
+  "Log an unexpected exception from a request, with its stack trace, to stderr.
+  The client only gets a short JSON `internal` error, so this is where the
+  detail needed to diagnose the bug lives."
+  [req ^Throwable e]
+  (binding [*out* *err*]
+    (println (str (java.util.Date.) " ERROR - "
+                  (str/upper-case (name (:request-method req))) " " (:uri req)))
+    (.printStackTrace e (java.io.PrintWriter. *err* true))
+    (flush)))
+
+(defn- internal-error
+  "The response for an unexpected exception: a 500 that is still JSON, with an
+  `internal` error code so a client (or LLM) can tell a server bug apart from a
+  rejected request (422) and does not keep rephrasing its input."
+  [req e]
+  (log-internal-error! req e)
+  (json-response 500 {:ok false :error "internal"
+                      :message (str "internal server error: "
+                                    (or (ex-message e) (.getName (class e))))}))
+
 (defn- sanitize
   "Strip the heavy/internal bits from a rule result for the wire."
   [res]
@@ -139,13 +160,18 @@
 
       ;; POST /authoring/<command>
       (and (= :post request-method) (= "authoring" (first segments)) (= 2 (count segments)))
-      (let [command (second segments)
-            opts    (or (read-json-body req) {})
-            res     (cmd/run app command opts)]
-        (json-response (cond (not (r/error? res)) 200
-                             (= :unknown-command (:error res)) 404
-                             :else 422)
-                       (sanitize res)))
+      ;; Any unexpected exception is still answered in JSON (never http-kit's
+      ;; plain-text stack trace, which the CLI cannot parse), and logged.
+      (try
+        (let [command (second segments)
+              opts    (or (read-json-body req) {})
+              res     (cmd/run app command opts)]
+          (json-response (cond (not (r/error? res)) 200
+                               (= :unknown-command (:error res)) 404
+                               :else 422)
+                         (sanitize res)))
+        (catch Exception e
+          (internal-error req e)))
 
       :else
       (json-response 404 {:ok false :message (str "no route for " (name request-method) " " uri)}))))

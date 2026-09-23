@@ -462,6 +462,28 @@
                           "  " (if required "required" "optional")
                           (when (seq detail) (str "  " detail))))))))))
 
+;; --- authoring option parsing ----------------------------------------------
+
+;; babashka.cli coercion per usage-table type. Everything but booleans stays a
+;; string: an unspecced parse auto-coerces "12" to a number and "007" to 7,
+;; mangling names and crashing keyword coercion on the server. Int flags stay
+;; strings too, so the server's integer check remains the single validator.
+(defn- authoring-coerce-spec [command]
+  (into {:server :string}
+        (map (fn [{:keys [flag type]}]
+               [(keyword flag) (if (= "boolean" type) :boolean :string)]))
+        (command->manifest-params command)))
+
+(defn- parse-authoring-opts
+  "Parse an authoring command's flags against its usage table. Flags outside the
+  table (the open wireframe attribute flags) keep babashka.cli's defaults.
+  Throws babashka.cli's ex-info on a malformed flag, e.g. a missing value."
+  [command args]
+  (cli/parse-opts args {:coerce (authoring-coerce-spec command)}))
+
+(defn- cli-parse-error? [e]
+  (= :org.babashka/cli (:type (ex-data e))))
+
 ;; --- help & dispatch -------------------------------------------------------
 
 (defn- print-group [group]
@@ -539,7 +561,13 @@
           (resolve-command head verb)
           (if (= "help" third)
             (print-verb-help head verb)
-            (let [opts (cli/parse-opts (drop 2 argv))]
+            (let [opts (try
+                         (parse-authoring-opts (resolve-command head verb) (drop 2 argv))
+                         (catch clojure.lang.ExceptionInfo e
+                           (if (cli-parse-error? e)
+                             (die (str "✗ " head " " verb ": " (ex-message e)
+                                       "\n\nUsage: " (format-usage-line head verb)))
+                             (throw e))))]
               (if (:help opts)
                 (print-verb-help head verb)
                 (do-authoring head verb opts))))
