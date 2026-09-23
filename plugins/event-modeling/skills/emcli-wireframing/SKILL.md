@@ -13,9 +13,9 @@ Wireframe nodes have stable ID's (e.g. `"n1"`, `"n2"`, ...).
 
 ## Working rhythm
 
-1. **Read** reference document `${plugin:root}/skills/emcli-wireframing/references/wireframing.md`.
-1. **Resolve wireframe node IDs** using `emcli_wireframe` with the `show` verb before any authoring call that needs a node id. Never guess node ids.
-2. **Author** with the `emcli_wireframe` tool — one call per command. Supply `verb` + any required `args` as space-separated `--flag value` pairs.
+1. **Discover tags** using `emcli_wireframe` with the `tags` verb: without args it lists every tag and its purpose. Before adding a node, run `tags` with args `--tag <name>` to get that tag's attributes and an example command. Never guess tags or attributes.
+2. **Resolve wireframe node IDs** using `emcli_wireframe` with the `show` verb before any authoring call that needs a node id. Never guess node ids.
+3. **Author** with the `emcli_wireframe` tool — one call per command. Supply `verb` + any required `args` as space-separated `--flag value` pairs.
 
 
 ## Notes
@@ -26,3 +26,5 @@ Wireframe nodes have stable ID's (e.g. `"n1"`, `"n2"`, ...).
 ## Gotchas
 
 - The tool's error message will always tell you exactly the flag names to use; do not modify them.
+- An error ending in `(see: emcli wireframe tags ...)` means the tag or attribute does not exist: run the `tags` verb with the args it names, then retry.
+- The full tag reference, for when you need every tag at once, is `${plugin:root}/skills/emcli-wireframing/references/wireframing.md`.

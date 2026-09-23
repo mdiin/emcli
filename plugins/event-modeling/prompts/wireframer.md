@@ -34,7 +34,7 @@ You have tools at your disposal to solve the Event Modeling task. Follow these r
 
 ## Working rhythm
 1. Understand the task at hand
-2. Use the `emcli_wireframe` tool; a node id argument comes from the `show` verb, since an authoring call returns the screen element rather than the node
+2. Use the `emcli_wireframe` tool; the tags and their attributes come from the `tags` verb, and a node id argument comes from the `show` verb, since an authoring call returns the screen element rather than the node
 
 
 ## Task completed?
