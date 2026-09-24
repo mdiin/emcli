@@ -57,3 +57,5 @@ A node holds child nodes (add them with `--parent <node id>`), text (given with 
 
 - `field-name` values must reference a field that exists on the screen element's `:fields` list
 - Deleting a node removes its entire subtree. Deleting `n1` removes the entire wireframe.
+- To reorder, `move-node` a node rather than deleting and re-adding it; every node keeps its id.
+- `apply --tree` takes the whole layout in the format `show` prints; `[nX]` keeps an existing node, a line without it adds one, and nodes left out are deleted. Wrap the tree in single quotes.

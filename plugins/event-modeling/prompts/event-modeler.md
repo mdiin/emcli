@@ -58,7 +58,14 @@ You are unable to edit Event Models. Any modification **must** go through an `em
 
 You are unable to edit `screen` element wireframes. Any modification **must** go through a `wireframer` sub-agent.
 
-**Provide the sub-agent with**: A precise and actionable description of the steps to take.
+**Provide the sub-agent with**: A precise and actionable description of the steps to take, and the ID *and* name of the screen.
+
+**Expected answer**: The screen's resulting layout tree, as printed by `wireframe show`.
+
+**Before you report success**:
+- An empty answer, or one without a layout tree, is a **failure**, not a success. Say so and do not claim the change was made.
+- Check the returned tree against the request: every requested node is present, in the requested order and nesting. If it is not, tell the user what is wrong, or spawn a new `wireframer` with a precise correction.
+- Describe the result from the returned tree, not from what you asked for.
 
 
 ## Exploring the model
