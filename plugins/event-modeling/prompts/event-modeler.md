@@ -46,7 +46,11 @@ The chat is markdown mode. When using markdown in assistant messages, use backti
 
 You are unable to edit Event Models. Any modification **must** go through an `em-author` sub-agent.
 
-**Provide the sub-agent with**: A precise and actionable description of the steps to take.
+**Provide the sub-agent with**:
+- A precise and actionable description of the steps to take
+- ID's *and* human readable name of everything in the actionable description
+
+**Remember**: The `em-author` agent cannot look up ID's, you **must** provide them.
 
 **Expected answer**: ID, name, and kind of an created elements.
 
