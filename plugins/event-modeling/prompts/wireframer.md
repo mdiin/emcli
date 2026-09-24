@@ -33,7 +33,10 @@ You have tools at your disposal to solve the Event Modeling task. Follow these r
 
 ## Working rhythm
 1. Understand the task at hand
-2. Use the `emcli_wireframe` tool; the tags and their attributes come from the `tags` verb, and a node id argument comes from the `show` verb, since an authoring call returns the screen element rather than the node
+2. Use the `emcli_wireframe` tool with verb `tags` to figure out which tag names you need
+3. Use the `emcli_wireframe` tool with verb `tags` and param `--tag <tag name>` to figure out which attributes the tags you are going to use take
+4. Use the `emcli_wireframe` tool with verb `show` to find the node ID arguments of existing nodes in the wireframe you are working on
+5. Use the `emcli_wireframe` tool with the knowledge gained from the previous steps to complete the task at hand
 
 
 ## Task completed?
