@@ -2,7 +2,8 @@
   "Command-layer argument validation: a spec-declared Integer argument that is
   present but not a valid integer is rejected (:bad-argument) rather than
   silently coerced to nil."
-  (:require [clojure.test :refer [deftest testing is]]
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest testing is]]
             [emcli.app :as app]
             [emcli.commands :as cmd]
             [emcli.model :as m]
@@ -136,8 +137,9 @@
     (testing "--text on a tag that takes neither text children nor a text attribute"
       (let [res (cmd/run a "add-wireframe-node" {:element eid :tag "col" :text "nope"})]
         (is (= :invalid-value (:error res)))
-        (is (= "unknown attribute :text for :col (see: emcli wireframe tags --tag col)"
-               (:message res)))))))
+        ;; RejectedLayoutEditNamesRemedy: the problem comes first, the remedy after
+        (is (str/starts-with? (:message res)
+                              "unknown attribute :text for :col (see: emcli wireframe tags --tag col)"))))))
 
 (deftest add-wireframe-node-points-an-unknown-tag-at-the-tag-list
   (let [[a eid] (screen-app)
@@ -246,7 +248,9 @@
       (let [res (cmd/run a "set-wireframe-attr"
                          {:element eid :node "n3" :attr "required" :value "maybe"})]
         (is (= :invalid-value (:error res)))
-        (is (= "required must be a boolean (true/false)" (:message res)))
+        (is (str/starts-with? (:message res) "required must be a boolean (true/false)"))
+        (testing "and names what the tag admits (RejectedLayoutEditNamesRemedy)"
+          (is (re-find #"--required true\|false" (:message res))))
         (is (true? (:required (stored-node-attrs a eid "n3")))
             "the store is left untouched")))))
 
@@ -284,9 +288,10 @@
                          {:element eid :node "n2" :attr "align" :value "center"})]
     (testing "an attribute the node's tag does not admit is still the rule's call"
       (is (= :invalid-wireframe (:error res)))
-      (is (= (str "wireframe validation failed: unknown attribute :align for :button"
-                  " (see: emcli wireframe tags --tag button)")
-             (:message res))))))
+      ;; RejectedLayoutEditNamesRemedy: the problem comes first, the remedy after
+      (is (str/starts-with? (:message res)
+                            (str "wireframe validation failed: unknown attribute :align for :button"
+                                 " (see: emcli wireframe tags --tag button)"))))))
 
 ;; --- field removal vs a stored layout (BUGS.md item 5) ----------------------
 ;; RemoveField now guards the removal against the screen's stored layout, so a
@@ -500,3 +505,223 @@
             res        (cmd/run a "add-wireframe-node-before"
                                 {:element eid :before row-id :tag "button" :label "Go"})]
         (is (not (r/error? res)))))))
+
+;; --- wireframe move-node / apply (MoveWireframeNode, ReplaceWireframe) --------
+;; The flat commands behind `wireframe move-node` and `wireframe apply`. apply
+;; takes the target as the text `wireframe show` prints (wf/format-tree): a line
+;; prefixed [nX] keeps that node, an unprefixed line is a new node.
+
+(defn- form-app
+  "An app with a screen whose layout reproduces the transcript's misordered
+  form: n1 :canvas > n2 :input Password, n3 :button Submit, n4 :input Email.
+  Returns [app screen-element-id]."
+  []
+  (let [[a eid] (screen-app)]
+    (cmd/run a "add-wireframe-node" {:element eid :tag "input" :type "password" :label "Password"})
+    (cmd/run a "add-wireframe-node" {:element eid :tag "button" :label "Submit"})
+    (cmd/run a "add-wireframe-node" {:element eid :tag "input" :type "email" :label "Email"})
+    [a eid]))
+
+(defn- stored-layout [a eid] (:wireframe (m/fetch (app/store a) :element eid)))
+
+(deftest move-wireframe-node-command-reorders-in-one-call
+  (let [[a eid] (form-app)
+        res     (cmd/run a "move-wireframe-node" {:element (str eid) :node "n4" :before "n2"})]
+    (is (not (r/error? res)) (pr-str res))
+    (is (= ["n4" "n2" "n3"] (canvas-child-ids (:result res) "n1")))
+    (is (= "Email" (:label (stored-node-attrs a eid "n4"))) "the moved node keeps its id")
+    (testing "--parent appends into a container"
+      (cmd/run a "add-wireframe-node" {:element eid :tag "col"})
+      (let [res (cmd/run a "move-wireframe-node" {:element eid :node "n3" :parent "n5"})]
+        (is (not (r/error? res)) (pr-str res))
+        (is (= ["n3"] (canvas-child-ids (:result res) "n5")))))))
+
+(deftest move-wireframe-node-command-checks-its-options
+  (let [[a eid] (form-app)]
+    (is (= :missing-args (:error (cmd/run a "move-wireframe-node" {:element eid :before "n2"}))))
+    (is (= :bad-argument (:error (cmd/run a "move-wireframe-node"
+                                          {:element "abc" :node "n4" :before "n2"}))))
+    (is (= :unknown-params (:error (cmd/run a "move-wireframe-node"
+                                            {:element eid :node "n4" :before "n2" :tag "col"}))))
+    (is (= :invalid-value (:error (cmd/run a "move-wireframe-node"
+                                           {:element eid :node "n4" :before "n2" :parent "n1"}))))))
+
+(deftest replace-wireframe-command-applies-the-show-text
+  (let [[a eid] (form-app)
+        res     (cmd/run a "replace-wireframe"
+                         {:element (str eid)
+                          :tree    (str "[n1] :canvas\n"
+                                        "  :col\n"
+                                        "    [n4] :input  {:type :email, :label \"Email\"}\n"
+                                        "    [n2] :input  {:type :password, :label \"Password\"}\n"
+                                        "    [n3] :button  {:label \"Submit\", :variant :primary}")})]
+    (is (not (r/error? res)) (pr-str res))
+    (is (= ["n5"] (canvas-child-ids (:result res) "n1")) "the new col takes a fresh id")
+    (is (= ["n4" "n2" "n3"] (canvas-child-ids (:result res) "n5")))
+    (is (= :primary (:variant (stored-node-attrs a eid "n3"))))))
+
+(deftest replace-wireframe-command-round-trips-the-show-text
+  ;; reading a layout, handing it back unchanged, changes nothing
+  (let [[a eid] (form-app)
+        _       (cmd/run a "add-wireframe-node" {:element eid :tag "row" :gap "md"})
+        _       (cmd/run a "add-wireframe-node" {:element eid :tag "h1" :parent "n5" :text "Log in"})
+        before  (stored-layout a eid)
+        res     (cmd/run a "replace-wireframe" {:element eid :tree (wf/format-tree before)})]
+    (is (not (r/error? res)) (pr-str res))
+    (is (= before (stored-layout a eid)))))
+
+(deftest replace-wireframe-command-accepts-values-as-show-prints-them
+  ;; `wireframe show` reads the layout back through JSON, so a keyword value
+  ;; arrives as a string; applying that text must still type it
+  (let [[a eid] (form-app)
+        res     (cmd/run a "replace-wireframe"
+                         {:element eid
+                          :tree    "[n1] :canvas\n  [n3] :button  {:label \"Submit\", :variant \"primary\"}"})]
+    (is (not (r/error? res)) (pr-str res))
+    (is (= :primary (:variant (stored-node-attrs a eid "n3"))))))
+
+(deftest replace-wireframe-command-names-the-line-of-a-parse-error
+  (let [[a eid] (form-app)
+        before  (stored-layout a eid)
+        res     (cmd/run a "replace-wireframe"
+                         {:element eid :tree "[n1] :canvas\n  [n2] :input\n        :divider"})]
+    (is (= :parse-error (:error res)))
+    (is (some #(= 3 (:line %)) (:errors res)))
+    (is (re-find #"line 3" (:message res)))
+    (is (= before (stored-layout a eid)) "nothing was applied")))
+
+(deftest replace-wireframe-command-reports-every-problem
+  (let [[a eid] (form-app)
+        before  (stored-layout a eid)
+        res     (cmd/run a "replace-wireframe"
+                         {:element eid
+                          :tree    "[n1] :canvas\n  [n99] :divider\n  :button  {:variant :primary}"})]
+    (is (= :invalid-wireframe (:error res)))
+    (is (str/includes? (:message res) "n99"))
+    (is (str/includes? (:message res) "label is required"))
+    (is (= before (stored-layout a eid)) "all or nothing: the layout is unchanged")))
+
+(deftest replace-wireframe-command-checks-its-options
+  (let [[a eid] (form-app)]
+    (is (= :missing-args (:error (cmd/run a "replace-wireframe" {:element eid}))))
+    (is (= :bad-argument (:error (cmd/run a "replace-wireframe" {:element "x" :tree "[n1] :canvas"}))))
+    (is (= :unknown-params (:error (cmd/run a "replace-wireframe"
+                                            {:element eid :tree "[n1] :canvas" :node "n2"}))))))
+
+(deftest rejected-move-changes-nothing
+  (let [[a eid] (form-app)
+        before  (stored-layout a eid)]
+    (doseq [opts [{:node "n1" :before "n2"} {:node "n2" :parent "n3"} {:node "n99" :parent "n1"}]]
+      (is (r/error? (cmd/run a "move-wireframe-node" (assoc opts :element eid))) (pr-str opts))
+      (is (= before (stored-layout a eid)) (pr-str opts)))))
+
+;; --- LayoutEditRevealsResult: the touched node --------------------------------
+;; Every successful node edit names the node it created, moved or changed, so
+;; the CLI can print it above the resulting tree.
+
+(deftest wireframe-mutations-name-the-touched-node
+  (let [[a eid] (form-app)]
+    (is (= "n5" (:node (cmd/run a "add-wireframe-node" {:element eid :tag "h1" :text "Log in"}))))
+    (is (= "n6" (:node (cmd/run a "add-wireframe-node-before"
+                                {:element eid :before "n2" :tag "divider"}))))
+    (is (= "n4" (:node (cmd/run a "move-wireframe-node" {:element eid :node "n4" :before "n2"}))))
+    (is (= "n3" (:node (cmd/run a "set-wireframe-attr"
+                                {:element eid :node "n3" :attr "variant" :value "primary"}))))
+    (is (= "n5" (:node (cmd/run a "set-wireframe-text" {:element eid :node "n5" :text "Sign in"}))))
+    (is (= "n6" (:node (cmd/run a "delete-wireframe-node" {:element eid :node "n6"}))))))
+
+;; --- RejectedLayoutEditNamesRemedy --------------------------------------------
+;; A rejection for an attribute the tag does not admit, a required attribute left
+;; out, or a value outside the allowed set lists what the tag admits (required
+;; ones marked, allowed values spelled out) and, where it can be derived, the
+;; corrected command.
+
+(defn- try-line
+  "The `try:` line of a rejection message, trimmed, or nil."
+  [message]
+  (some #(when (re-find #"^\s*try:" %) (str/trim %)) (str/split-lines (str message))))
+
+(defn- names-button-remedy? [message]
+  (and (string? message)
+       (re-find #"--label \(required\)" message)
+       (re-find #"--variant primary\|secondary\|ghost\|danger" message)
+       (str/includes? message "--disabled")
+       (str/includes? message "--command-input")))
+
+(deftest rejected-add-node-names-the-remedy-for-an-unadmitted-attribute
+  (let [[a eid] (screen-app)
+        res     (cmd/run a "add-wireframe-node" {:element eid :tag "button" :text "Submit"})
+        msg     (:message res)
+        suggestion (try-line msg)]
+    (is (= :invalid-value (:error res)))
+    (is (str/starts-with? msg "unknown attribute :text for :button (see: emcli wireframe tags --tag button)"))
+    (is (names-button-remedy? msg) msg)
+    (is (some? suggestion) msg)
+    (is (re-find (re-pattern (str "^try:\\s+emcli wireframe add-node --element " eid " --tag button\\b"))
+                 (str suggestion)))
+    (is (re-find #"--label\b" (str suggestion)))
+    (is (not (str/includes? (str suggestion) "--text")) "the corrected command drops what was wrong")))
+
+(deftest rejected-add-node-names-the-remedy-for-a-missing-required-attribute
+  (let [[a eid] (screen-app)]
+    (testing "one required attribute"
+      (let [msg (:message (cmd/run a "add-wireframe-node" {:element eid :tag "button" :variant "primary"}))
+            suggestion (str (try-line msg))]
+        (is (str/starts-with? msg "label is required for :button"))
+        (is (names-button-remedy? msg) msg)
+        (is (re-find (re-pattern (str "^try:\\s+emcli wireframe add-node --element " eid " --tag button\\b")) suggestion))
+        (is (re-find #"--label\b" suggestion))))
+    (testing "every required flag appears in the corrected command"
+      (let [msg (:message (cmd/run a "add-wireframe-node" {:element eid :tag "icon-button" :icon "trash"}))
+            suggestion (str (try-line msg))]
+        (is (re-find #"--icon \(required\)" msg))
+        (is (re-find #"--aria-label \(required\)" msg))
+        (is (re-find #"--tag icon-button\b" suggestion))
+        (is (re-find #"--icon\b" suggestion))
+        (is (re-find #"--aria-label\b" suggestion))))))
+
+(deftest rejected-add-node-names-the-remedy-for-a-value-outside-the-allowed-set
+  (let [[a eid] (screen-app)
+        res     (cmd/run a "add-wireframe-node" {:element eid :tag "button" :label "Go" :variant "bogus"})]
+    (is (= :invalid-value (:error res)))
+    (is (str/includes? (:message res) "variant value 'bogus' not in allowed set"))
+    (is (names-button-remedy? (:message res)) (:message res))))
+
+(deftest rejected-add-node-before-names-the-remedy
+  (let [[a eid] (form-app)
+        msg     (:message (cmd/run a "add-wireframe-node-before"
+                                   {:element eid :before "n2" :tag "button" :text "Back"}))
+        suggestion (str (try-line msg))]
+    (is (str/starts-with? msg "unknown attribute :text for :button"))
+    (is (names-button-remedy? msg) msg)
+    (is (re-find (re-pattern (str "^try:\\s+emcli wireframe add-node-before --element " eid
+                                  " --before n2 --tag button\\b"))
+                 suggestion))
+    (is (re-find #"--label\b" suggestion))
+    (is (not (str/includes? suggestion "--text")))))
+
+(deftest rejected-set-attr-names-the-remedy
+  (let [[a eid] (form-app)]
+    (testing "an attribute the node's tag does not admit"
+      (let [msg (:message (cmd/run a "set-wireframe-attr"
+                                   {:element eid :node "n3" :attr "align" :value "center"}))]
+        (is (str/includes? msg "unknown attribute :align for :button"))
+        (is (names-button-remedy? msg) msg)))
+    (testing "a value outside the allowed set"
+      (let [msg (:message (cmd/run a "set-wireframe-attr"
+                                   {:element eid :node "n3" :attr "variant" :value "bogus"}))]
+        (is (str/starts-with? msg "variant value 'bogus' not in allowed set"))
+        (is (names-button-remedy? msg) msg)))))
+
+(deftest rejected-apply-names-the-remedy-for-every-problem
+  (let [[a eid] (form-app)
+        msg     (:message (cmd/run a "replace-wireframe"
+                                   {:element eid
+                                    :tree    (str "[n1] :canvas\n"
+                                                  "  [n3] :button  {:text \"Submit\"}\n"
+                                                  "  :dropdown  {:label \"Plan\"}")}))]
+    (is (str/includes? msg "unknown attribute :text for :button"))
+    (is (re-find #"label \(required\)" msg) "the button's admitted attributes")
+    (is (re-find #"primary\|secondary\|ghost\|danger" msg))
+    (is (str/includes? msg "options is required"))
+    (is (re-find #"options \(required\)" msg) "the dropdown's admitted attributes")))

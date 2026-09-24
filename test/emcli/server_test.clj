@@ -228,3 +228,58 @@
       (is (= 2 (count @events)))
       (is (= :CreateTimeline (-> @events second :op keyword)))
       (future-cancel reader))))
+
+;; --- wireframe edits over HTTP (MoveWireframeNode, ReplaceWireframe,
+;; LayoutEditRevealsResult) ------------------------------------------------------
+
+(defn- json-child-ids
+  "The ids of the immediate children of a JSON-decoded layout node."
+  [node]
+  (map #(get-in % [1 :-id]) (filter vector? (drop 2 node))))
+
+(defn- form-screen
+  "A screen with n2 Password, n3 Submit, n4 Email at the root; returns its id."
+  []
+  (let [eid (get-in (body-json (post "/authoring/create-element" {:name "Login" :element-type "screen"}))
+                    [:result :id])]
+    (post "/authoring/add-wireframe-node" {:element eid :tag "input" :type "password" :label "Password"})
+    (post "/authoring/add-wireframe-node" {:element eid :tag "button" :label "Submit"})
+    (post "/authoring/add-wireframe-node" {:element eid :tag "input" :type "email" :label "Email"})
+    eid))
+
+(deftest authoring-a-node-edit-names-the-touched-node
+  (let [eid  (get-in (body-json (post "/authoring/create-element" {:name "Login" :element-type "screen"}))
+                     [:result :id])
+        body (body-json (post "/authoring/add-wireframe-node" {:element eid :tag "divider"}))]
+    (is (:ok body))
+    (is (= "n2" (:node body)))))
+
+(deftest authoring-moves-a-wireframe-node
+  (let [eid  (form-screen)
+        resp (post "/authoring/move-wireframe-node" {:element eid :node "n4" :before "n2"})
+        body (body-json resp)]
+    (is (= 200 (:status resp)))
+    (is (= "n4" (:node body)))
+    (is (= ["n4" "n2" "n3"] (json-child-ids (get-in body [:result :wireframe]))))
+    ;; the same screen: a second form-screen would collide on its name
+    (testing "a rejected move is a 422"
+      (let [resp (post "/authoring/move-wireframe-node" {:element eid :node "n1" :before "n2"})]
+        (is (= 422 (:status resp)))
+        (is (re-find #"(?i)root" (:message (body-json resp))))))))
+
+(deftest authoring-replaces-a-wireframe
+  (let [eid  (form-screen)
+        resp (post "/authoring/replace-wireframe"
+                   {:element eid
+                    :tree    "[n1] :canvas\n  [n4] :input  {:type :email, :label \"Email\"}\n  :divider"})
+        body (body-json resp)]
+    (is (= 200 (:status resp)) (pr-str body))
+    (is (= ["n4" "n5"] (json-child-ids (get-in body [:result :wireframe]))))
+    ;; the same screen: a second form-screen would collide on its name
+    (testing "a rejected replacement is a 422 reporting every problem"
+      (let [resp (post "/authoring/replace-wireframe"
+                       {:element eid :tree "[n1] :canvas\n  [n99] :divider\n  :button  {:variant :primary}"})
+            body (body-json resp)]
+        (is (= 422 (:status resp)))
+        (is (str/includes? (:message body) "n99"))
+        (is (str/includes? (:message body) "label is required"))))))

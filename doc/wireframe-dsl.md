@@ -162,6 +162,19 @@ emcli wireframe set-text --element 42 --node n7 --text "Your orders"
 # Insert a node before an existing sibling (--before is the existing sibling's id)
 emcli wireframe add-node-before --element 42 --before n4 --tag divider
 
+# Move an existing node (with its subtree): before a sibling, or to the end of a container
+emcli wireframe move-node --element 42 --node n5 --before n3
+emcli wireframe move-node --element 42 --node n5 --parent n2
+
+# State the whole layout at once, in the format `show` prints: [nX] keeps an
+# existing node, a line without it is a new node, nodes left out are deleted
+emcli wireframe apply --element 42 --tree '
+[n1] :canvas
+  [n2] :col
+    [n3] :h1  "Your orders"
+    :input  {:type :email, :label "Email"}
+    [n5] :button  {:label "Create order", :variant :primary}'
+
 # Show the current wireframe (annotated text tree)
 emcli wireframe show --element 42
 
@@ -172,10 +185,11 @@ emcli wireframe set-attr --element 42 --node n5 --attr label --value "New order"
 emcli wireframe delete-node --element 42 --node n3
 ```
 
-`--element` must always name an element that exists. `add-node` and
-`add-node-before` additionally require it to be a **screen**, rejecting any other
-kind with `element N is not a screen`; the variables that edit one node
-(`set-attr`, `set-text`, `delete-node`) need a layout to edit instead, and answer
+`--element` must always name an element that exists. `add-node`,
+`add-node-before` and `apply` additionally require it to be a **screen**, rejecting
+any other kind with `element N is not a screen`; the verbs that edit existing
+nodes (`set-attr`, `set-text`, `delete-node`, `move-node`) need a layout to edit
+instead, and answer
 `element N has no wireframe` when the element carries none — which a non-screen
 never does, since only screens may carry a layout.
 
@@ -191,9 +205,31 @@ never does, since only screens may carry a layout.
     [n5] :button  {:label "Create order", :variant :primary}
 ```
 
-Each line shows the stable node id, the tag, and either the string content (for
-text nodes) or the attributes map. A node with no content and no attributes
-prints as just `[nN] :tag`.
+Each line shows the stable node id, the tag, then the attributes map and the
+string content (a text node with attributes shows both, map first). A node with
+no content and no attributes prints as just `[nN] :tag`.
+
+The same format is the input of `wireframe apply`, so a layout can be read with
+`show`, edited as text and handed back; handing it back unchanged changes
+nothing. On input, attribute values may be written as `show` prints them
+(`"primary"`) or as keywords (`:primary`) — either is typed by the tag's
+schema. Indentation is two spaces per level; blank lines and a common leading
+indentation are ignored.
+
+Every successful edit prints what it did and the resulting tree, so its outcome
+can be checked without another `show`:
+
+```
+moved n4 :input
+[n1] :canvas
+  [n4] :input  {:type "email", :label "Email"}
+  [n2] :input  {:type "password", :label "Password"}
+  [n3] :button  {:label "Submit"}
+```
+
+The first line is `added nX :tag`, `moved nX :tag`, `updated nX :tag`,
+`deleted nX` or `applied`. Pass `--json` to get the edited screen element as
+JSON instead, as scripts did before.
 
 ## Authoring tips
 
@@ -202,6 +238,28 @@ prints as just `[nN] :tag`.
   call serves a whole editing session.
 - New nodes are appended as the last child of their parent. Use `wireframe
   add-node-before` to insert before an existing sibling instead.
+- To reorder, use `move-node` rather than deleting and re-adding: a move keeps
+  every node id. `--before` places the node before a sibling (under that
+  sibling's parent); `--parent` appends it to a container (`canvas`, `row`,
+  `col`). The root cannot move, nothing goes before the root, and a node cannot
+  move into its own subtree.
+- For several changes at once - a new form, a reorder, wrapping nodes in a
+  `col` - prefer one `apply` over a sequence of edits. It is all-or-nothing:
+  if any line is wrong nothing changes, and every problem is reported (with its
+  line number when the text itself does not read). New nodes get ids above the
+  highest id the layout had, in document order.
+- A rejection over a tag's attributes (one the tag does not admit, a required
+  one left out, a value outside the allowed set) lists what the tag admits and,
+  for `add-node` / `add-node-before`, a corrected command to run:
+  ```
+  ✗ wireframe add-node: unknown attribute :text for :button (see: emcli wireframe tags --tag button)
+  :button admits:
+    --label (required) text
+    --variant primary|secondary|ghost|danger
+    --disabled true|false
+    --command-input true|false
+  try: emcli wireframe add-node --element 31 --tag button --label "Submit"
+  ```
 - Deleting `n1` removes the entire wireframe — the root is the tree's top, so the
   screen's layout goes with it. The screen element itself is untouched, and
   `show` then reports that it has no wireframe.

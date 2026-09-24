@@ -298,8 +298,9 @@ value WireframeAttribute {
 -- created: one past the highest numeric id currently in the tree. Removing a
 -- node neither shifts nor changes any surviving node's id, so an address read
 -- once stays valid across unrelated edits; a removed node's number may be reused
--- if it was the highest in the tree. Node ids address nodes for editing only;
--- the rest of the canonical model knows nothing of them.
+-- if it was the highest in the tree. Moving a node, and replacing the layout
+-- with one that names the node, keep its id too. Node ids address nodes for
+-- editing only; the rest of the canonical model knows nothing of them.
 value WireframeNode {
     node_id: String
     tag: WireframeTag
@@ -310,6 +311,26 @@ value WireframeNode {
     text: String?
 
     children: List<WireframeNode>
+}
+
+-- One node of a target layout an operator states whole (see ReplaceWireframe):
+-- shaped like WireframeNode, except that the node_id is the operator's claim
+-- rather than an allocation. A node naming an id is that existing node of the
+-- screen's current layout, kept under the same id; a node naming none is new
+-- and receives a fresh id when the replacement is applied. Operators state the
+-- target in the same addressed form they read the layout in, so reading a
+-- layout, editing it and handing it back is one round trip; the textual form
+-- itself is a delivery concern.
+value WireframeTargetNode {
+    node_id: String?
+    tag: WireframeTag
+
+    attributes: List<WireframeAttribute>
+
+    -- The node's text content, where its tag carries one.
+    text: String?
+
+    children: List<WireframeTargetNode>
 }
 
 entity Specification {
@@ -988,14 +1009,19 @@ rule SetStepExpectEmpty {
 --     attribute_value_valid(tag, attribute, value): the per-attribute halves of
 --     the same check. An attribute value supplied as operator text is coerced
 --     to the type the tag declares for that attribute before it is checked, the
---     same treatment whether the attribute is given when the node is created or
---     set later through SetWireframeAttr. Text that cannot be coerced, or that
+--     same treatment whether the attribute is given when the node is created,
+--     set later through SetWireframeAttr, or stated on a node of a replacement
+--     layout (ReplaceWireframe). Text that cannot be coerced, or that
 --     falls outside the set the tag allows for the attribute, is rejected and
 --     the edit changes nothing.
 --     The String declared on WireframeAttribute.value is the form an operator
 --     supplies, not the type the model holds: the value is held as the type the
 --     tag's schema declares for that attribute.
 --   text_tag(tag): the tag carries a text content.
+--   container_tag(tag): the tag carries child nodes - the container tags
+--     wireframe_well_formed describes, the canvas among them. Only a container
+--     takes children, so only a container can be the parent a node is appended
+--     or moved into.
 --   fields_resolve(screen, attributes): every field-name value among
 --     `attributes` names a field declared on `screen`, so a layout refers only
 --     to the fields of the screen that owns it. Names are matched by the model's
@@ -1025,6 +1051,30 @@ rule SetStepExpectEmpty {
 --   append_node(tree, parent, node), insert_before(tree, sibling, node),
 --     set_node_attribute(tree, node, attribute, value),
 --     set_node_text(tree, node, text), remove_node(tree, node).
+--   tree_nodes(tree): every node of the tree, the root included, in document
+--     order.
+--   within_subtree(tree, ancestor, node_id): `node_id` is `ancestor` itself or
+--     a node anywhere below it.
+--   move_before(tree, node, sibling): `node` - with its whole subtree,
+--     attributes, text and ids - detached from where it sits and placed
+--     immediately before `sibling`, under whatever parent `sibling` has. Every
+--     other node keeps its place relative to its siblings, and every id in the
+--     tree is unchanged.
+--   move_into(tree, node, parent): the same detachment, `node` then appended as
+--     the last child of `parent`.
+-- Replacing a layout whole, from a target the operator states:
+--   named_node_ids(layout): every node id the target's nodes name, in document
+--     order, repeats included; nodes naming no id contribute nothing.
+--   resolve_ids(current, layout): the concrete tree the target describes. The
+--     target's root is the layout's root: naming no id, it takes the id of
+--     `current`'s root (n1 when `current` is null). Any other node naming an id
+--     keeps it; each node naming none receives a fresh id,
+--     allocated in document order beyond the highest id in `current` (from n1
+--     when `current` is null), so an id the replacement drops is never handed
+--     to a new node within the same replacement. Tags, attributes, text and
+--     children are the target's, attribute values coerced as for any other
+--     layout edit. The nodes of `current` the target does not name are simply
+--     absent from the result.
 
 -- Append a node as the last child of `parent`, or of the root when no parent is
 -- named. Only container tags take children, so this is what grows a tree; `text`
@@ -1107,6 +1157,69 @@ rule DeleteWireframeNode {
             screen.wireframe = null
         else:
             screen.wireframe = remove_node(screen.wireframe, node)
+}
+
+-- Move a node, with its whole subtree, to a new place in the same layout: given
+-- `before`, immediately before that sibling (under whatever parent the sibling
+-- has); given `parent`, as the last child of that container. Exactly one of the
+-- two is named. The node may change parents. Nothing is allocated or renumbered:
+-- the moved node keeps its attributes, text and children, and every node id in
+-- the tree - the moved ones included - is preserved, so addresses read before
+-- the move stay valid after it. The root cannot move, nothing can be placed
+-- before the root, and a node cannot be moved into its own subtree.
+rule MoveWireframeNode {
+    when: MoveWireframeNode(screen, node, before?, parent?)
+    requires: screen.wireframe != null
+    requires: (before != null and parent = null) or (before = null and parent != null)
+    requires: node_exists(screen.wireframe, node)
+    requires: node != root_node_id(screen.wireframe)
+    let target = before ?? parent
+    requires: node_exists(screen.wireframe, target)
+    requires: not within_subtree(screen.wireframe, node, target)
+    requires: before = null or before != root_node_id(screen.wireframe)
+    requires: parent = null or container_tag(node_tag(screen.wireframe, parent))
+    ensures:
+        if before != null:
+            screen.wireframe = move_before(screen.wireframe, node, before)
+        else:
+            screen.wireframe = move_into(screen.wireframe, node, parent)
+}
+
+-- Replace a screen's whole layout with a target the operator states in full
+-- (see WireframeTargetNode): a node naming an existing id keeps it, a node
+-- naming none is new and receives a fresh id (see resolve_ids), and every
+-- existing node the target does not name is removed. Reordering, adding several
+-- nodes and restructuring thus become one edit stating the outcome rather than
+-- a sequence of steps. A screen with no layout yet may be given one this way,
+-- in which case every node is new and none may name an id. The replacement
+-- always covers the whole layout; replacing a single subtree in place is
+-- deferred.
+--
+-- All-or-nothing: the target is validated as a whole before anything is
+-- applied, and any failure rejects the entire replacement and leaves the
+-- layout as it was. The rejection reports every problem found in the target -
+-- each unknown or repeated id, each schema violation, each unresolved field -
+-- not only the first, so one corrected target can answer all of them.
+rule ReplaceWireframe {
+    when: ReplaceWireframe(screen, layout)
+    requires: screen.element_type = screen
+    let named = named_node_ids(layout)
+    -- A named id addresses one existing node, and names it once.
+    requires: named.unique.count = named.count
+    requires: screen.wireframe = null implies named.count = 0
+    requires: screen.wireframe != null implies
+        named.all(id => node_exists(screen.wireframe, id))
+    -- The root stays the root: the target's root names the current root, or
+    -- no id at all (and then takes the current root's).
+    requires: layout.node_id = null
+        or (screen.wireframe != null
+            and layout.node_id = root_node_id(screen.wireframe))
+    let tree = resolve_ids(screen.wireframe, layout)
+    -- A canvas root with no canvas below it, and every node's attributes
+    -- exactly as its tag's schema admits.
+    requires: wireframe_well_formed(tree)
+    requires: tree_nodes(tree).all(n => fields_resolve(screen, n.attributes))
+    ensures: screen.wireframe = tree
 }
 
 -- Change stream subscriptions -----------------------------------------------
@@ -1417,7 +1530,9 @@ invariant ValidConnectionElementTypes {
 -- text content (and no child nodes) on text tags, child nodes (and no text
 -- content) on container tags, and a canvas root. Every wireframe edit validates
 -- the resulting tree before it is applied, so this holds at every observable
--- state.
+-- state: a node edit checks the node it adds or changes, a move admits only a
+-- non-root node placed under a container (see MoveWireframeNode), and a
+-- replacement checks the whole target tree (see ReplaceWireframe).
 invariant WireframeWellFormed {
     for e in Elements:
         e.wireframe != null implies (
@@ -1427,9 +1542,11 @@ invariant WireframeWellFormed {
 -- A layout refers only to fields its own screen declares: every field-name value
 -- in a screen's stored layout names a field the screen has. Three edits keep this
 -- true. Every wireframe edit that would name an unresolvable field is rejected
--- before it is applied (see AddWireframeNode, AddWireframeNodeBefore and
--- SetWireframeAttr); the field side is guarded too, so an edit that would remove a
--- name the screen's stored layout still refers to is rejected (see RemoveField);
+-- before it is applied (see AddWireframeNode, AddWireframeNodeBefore,
+-- SetWireframeAttr and ReplaceWireframe; MoveWireframeNode names no field and
+-- only rearranges nodes that already resolve); the field side is guarded too,
+-- so an edit that would remove a name the screen's stored layout still refers
+-- to is rejected (see RemoveField);
 -- and renaming a field rewrites the layout attribute that names it along with the
 -- declaration (see RenameField), which is what lets a rename carry the reference
 -- with it rather than being blocked by it. Reference resolution therefore holds at
@@ -2176,12 +2293,15 @@ surface ModelAuthoring {
         RenameElement(element, new_name)
         DeleteElement(element)
 
-        -- Screen layouts (a screen's layout tree, edited node by node)
+        -- Screen layouts (a screen's layout tree, edited node by node or
+        -- replaced whole)
         AddWireframeNode(screen, tag, attributes, parent?, text?)
         AddWireframeNodeBefore(screen, sibling, tag, attributes, text?)
         SetWireframeAttr(screen, node, attribute, value)
         SetWireframeText(screen, node, text)
         DeleteWireframeNode(screen, node)
+        MoveWireframeNode(screen, node, before?, parent?)
+        ReplaceWireframe(screen, layout)
 
         -- Placements
         PlaceElement(slice, element, id?)
@@ -2211,6 +2331,29 @@ surface ModelAuthoring {
         fulfils SchemaCodec
         fulfils NameResolution
         fulfils ModelQuery
+
+    @guarantee RejectedLayoutEditNamesRemedy
+        -- A rejected screen layout edit names what would make it acceptable,
+        -- not only what was wrong. When the rejection concerns an attribute the
+        -- node's tag does not admit, an attribute the tag requires but the edit
+        -- omits, or a value outside the set the tag allows, it also states the
+        -- attributes that tag admits, which of them are required and the
+        -- values each allows; and where a corrected form of the same operation
+        -- can be derived from the rejected one, it states that operation too,
+        -- so the operator can recover in one further attempt. A rejected
+        -- ReplaceWireframe states what the tag admits for every node whose
+        -- attributes it faults; the corrected target is the operator's to
+        -- write, since a whole layout admits many corrections.
+
+    @guarantee LayoutEditRevealsResult
+        -- A successful screen layout edit reveals its outcome: the screen's
+        -- resulting layout as an addressed tree (every node with its id, tag,
+        -- attributes and text, in document order), together with the id of the
+        -- node the edit created, moved or changed. A ReplaceWireframe reveals
+        -- the whole resulting tree, new nodes carrying the ids they were given.
+        -- An operator can therefore verify the outcome - order and nesting
+        -- included - without a separate read. A deletion that removes the whole
+        -- layout reveals that the screen now carries none.
 
     @guidance
         -- A ValidateModel operation (report slices that are not is_complete,

@@ -2,7 +2,8 @@
   "Wireframe DSL for screen elements: schema, validation, navigation, mutation,
   and rendering. Wireframes are hiccup-like EDN vectors embedded in screen
   element maps under the :wireframe key."
-  (:require [clojure.string :as str]
+  (:require [clojure.edn :as edn]
+            [clojure.string :as str]
             [emcli.model :as m]))
 
 ;; ---------------------------------------------------------------------------
@@ -348,46 +349,69 @@
 ;; append-child-at / assoc-attr-at / delete-node-at
 ;; ---------------------------------------------------------------------------
 
+(declare delete-node-at)
+
+(defn- append-into
+  "`wireframe` with the addressed node `child` appended as the last child of the
+  node `parent-node-id`."
+  [wireframe parent-node-id child]
+  (let [path (find-node-path wireframe parent-node-id)]
+    (if (seq path)
+      (update-in wireframe path conj child)
+      (conj wireframe child))))
+
 (defn append-child-at
   "Append `child-vec` as a new child of the node identified by `parent-node-id`.
   Assigns a fresh :-id to the child (inserted as the second element, after tag)."
   [wireframe parent-node-id child-vec]
-  (let [new-id (next-node-id wireframe)
-        tag    (first child-vec)
-        rest-  (vec (rest child-vec))
-        child  (into [tag {:-id new-id}] rest-)
-        path   (find-node-path wireframe parent-node-id)
-        update-node #(conj % child)]
-    (if (seq path)
-      (update-in wireframe path update-node)
-      (update-node wireframe))))
+  (append-into wireframe parent-node-id
+               (into [(first child-vec) {:-id (next-node-id wireframe)}] (rest child-vec))))
+
+(defn- splice-before
+  "`wireframe` with the addressed node `child` placed immediately before the
+  node `sibling-node-id`, under whatever parent that sibling has."
+  [wireframe sibling-node-id child]
+  (letfn [(splice [node]
+            (let [sib-idx (first (filter #(= sibling-node-id (node-id-of (nth node %)))
+                                         (child-indices node)))]
+              (if sib-idx
+                (vec (concat (subvec node 0 sib-idx) [child] (subvec node sib-idx)))
+                (into [] (map-indexed (fn [i x] (if (and (pos? i) (vector? x)) (splice x) x)))
+                      node))))]
+    (splice (vec wireframe))))
 
 (defn insert-before-at
   "Insert `child-vec` as a new sibling immediately before the node identified
   by `sibling-node-id`. Assigns a fresh :-id to the new node. Returns nil if
   `sibling-node-id` is the root node (no parent to insert into)."
   [wireframe sibling-node-id child-vec]
-  (if (= sibling-node-id (node-id-of wireframe))
-    nil
-    (let [new-id (next-node-id wireframe)
-          tag    (first child-vec)
-          rest-  (vec (rest child-vec))
-          child  (into [tag {:-id new-id}] rest-)]
-      (letfn [(splice [node]
-                (let [indices (child-indices node)
-                      sib-idx (first (filter #(= sibling-node-id (node-id-of (nth node %))) indices))]
-                  (if sib-idx
-                    (vec (concat
-                           (subvec (vec node) 0 sib-idx)
-                           [child]
-                           (subvec (vec node) sib-idx)))
-                    (vec (keep-indexed
-                           (fn [i x]
-                             (if (and (pos? i) (vector? x))
-                               (splice x)
-                               x))
-                           node)))))]
-        (splice wireframe)))))
+  (when-not (= sibling-node-id (node-id-of wireframe))
+    (splice-before wireframe sibling-node-id
+                   (into [(first child-vec) {:-id (next-node-id wireframe)}] (rest child-vec)))))
+
+(defn container-tag?
+  "The tag carries child nodes (the canvas among them): neither a leaf nor a
+  text tag. Only a container can be the parent a node is appended or moved into."
+  [tag]
+  (let [schema (tag-schema tag)]
+    (boolean (and schema (not (:leaf? schema)) (not (:text-children? schema))))))
+
+(defn within-subtree?
+  "`node-id` is `ancestor-id` itself or a node anywhere below it."
+  [wireframe ancestor-id node-id]
+  (some? (some-> (find-node wireframe ancestor-id) (find-node node-id))))
+
+(defn move-node-at
+  "Move the node `node-id`, with its whole subtree, either immediately before
+  the node `before` or into the container `parent` as its last child. Every node
+  - the moved ones included - keeps its id, attributes, text and children.
+  Preconditions (see MoveWireframeNode) are the caller's to check."
+  [wireframe node-id {:keys [before parent]}]
+  (let [node    (find-node wireframe node-id)
+        without (delete-node-at wireframe node-id)]
+    (if before
+      (splice-before without before node)
+      (append-into without parent node))))
 
 (defn assoc-attr-at
   "Set attribute `attr-kw` to `value` on the node identified by `node-id`.
@@ -484,17 +508,25 @@
                   (vec raw))
       raw)))
 
+(defn value-rejection-kind
+  "How a value that did not coerce is rejected: a choice (keyword) or a flag
+  (true/false) outside its allowed set is :bad-value, anything else :coercion."
+  [schema-entry]
+  (if (#{:kw :bool} (:type schema-entry)) :bad-value :coercion))
+
 (defn parse-node-attrs
   "Parse and coerce a flat opts-map (string values from CLI) against the schema
-  for `tag-kw`. Returns {:ok attrs-map} or {:error \"message\"}."
+  for `tag-kw`. Returns {:ok attrs-map} or {:error \"message\" :kind k :attr a},
+  where :kind is :unknown-tag, :unknown-attr, :missing (a required attribute
+  left out), :bad-value (a choice outside the allowed set) or :coercion."
   [tag-kw opts-map]
   (let [schema (get tag-schema tag-kw)]
     (if (nil? schema)
-      {:error (unknown-tag-message tag-kw)}
+      {:error (unknown-tag-message tag-kw) :kind :unknown-tag}
       (let [attr-schema (:attrs schema)]
         ;; Check for unknown keys
         (if-let [unknown (first (remove #(contains? attr-schema %) (keys opts-map)))]
-          {:error (unknown-attr-message tag-kw unknown)}
+          {:error (unknown-attr-message tag-kw unknown) :kind :unknown-attr :attr unknown}
           ;; Coerce all provided attrs
           (let [result
                 (reduce
@@ -504,7 +536,8 @@
                       (try
                         (assoc acc k (coerce-attr-value k v (attr-schema k)))
                         (catch Exception e
-                          {:error (ex-message e)}))))
+                          {:error (ex-message e) :attr k
+                           :kind  (value-rejection-kind (attr-schema k))}))))
                   {}
                   opts-map)]
             (if (:error result)
@@ -514,7 +547,8 @@
                                             :when (and (:required? aschema)
                                                        (not (contains? result k)))]
                                         k))]
-                {:error (str (name missing) " is required for :" (name tag-kw))}
+                {:error (str (name missing) " is required for :" (name tag-kw))
+                 :kind :missing :attr missing}
                 {:ok result}))))))))
 
 ;; ---------------------------------------------------------------------------
@@ -535,13 +569,11 @@
           indent   (str/join (repeat (* 2 depth) " "))
           id-str   (if node-id (str "[" node-id "] ") "")
           tag-str  (str ":" (name tag))
-          ;; Content: string children inline, attrs map inline
-          content  (cond
-                     (seq (filter string? children))
-                     (str "  " (pr-str (first (filter string? children))))
-                     attrs
-                     (str "  " (pr-str (dissoc attrs)))
-                     :else "")
+          ;; Content inline: the attribute map, then the text - both when a text
+          ;; node carries attributes, so the line is everything `parse-tree`
+          ;; needs to read the node back (LayoutEditRevealsResult)
+          content  (str/join (map #(str "  " (pr-str %))
+                                  (remove nil? [attrs (first (filter string? children))])))
           this-line (str indent id-str tag-str content)
           child-lines (mapcat #(when (vector? %)
                                  [(format-node % (inc depth))])
@@ -553,6 +585,131 @@
   indentation matching nesting depth."
   [wireframe]
   (format-node wireframe 0))
+
+;; ---------------------------------------------------------------------------
+;; parse-tree / resolve-ids (ReplaceWireframe)
+;; ---------------------------------------------------------------------------
+;; A target layout is stated in the text `format-tree` prints: one node per
+;; line, two spaces of indentation per level, an optional `[nX]` prefix naming
+;; an existing node, the tag, then optionally the attribute map and the text as
+;; EDN. Parsed, it is a WireframeTargetNode tree: a wireframe whose id map is
+;; {:-id "nX"} for a named node and {} for a new one.
+
+(def ^:private node-line-re #"^(\s*)(?:\[(n\d+)\]\s+)?:([A-Za-z][\w-]*)(.*)$")
+
+(defn- read-content
+  "The EDN forms after a line's tag: an optional attribute map, then an optional
+  text. Returns {:ok [attrs-or-nil text-or-nil]} or {:error msg}."
+  [s]
+  (try
+    (let [rdr   (java.io.PushbackReader. (java.io.StringReader. s))
+          eof   ::eof
+          forms (->> (repeatedly #(edn/read {:eof eof} rdr))
+                     (take-while #(not= eof %))
+                     vec)
+          [attrs more] (if (map? (first forms)) [(first forms) (rest forms)] [nil forms])
+          [text extra] (if (string? (first more)) [(first more) (rest more)] [nil more])]
+      (if (seq extra)
+        {:error (str "unexpected " (pr-str (first extra))
+                     " - after the tag, only an attribute map and a text may follow")}
+        {:ok [attrs text]}))
+    (catch Exception e
+      {:error (str "content does not read as EDN: " (ex-message e))})))
+
+(defn- parse-line
+  "One non-blank line as {:line n :indent k :node [tag id-map attrs? text?]} or
+  {:line n :error msg}."
+  [[n text]]
+  (if-let [[_ indent id tag content] (re-find node-line-re text)]
+    (let [{:keys [ok error]} (read-content content)]
+      (if error
+        {:line n :error error}
+        (let [[attrs txt] ok]
+          {:line n :indent (count indent)
+           :node (cond-> [(keyword tag) (if id {:-id id} {})]
+                   attrs (conj attrs)
+                   txt   (conj txt))})))
+    {:line n :error (str "not a node line; expected `[nX] :tag {attributes} \"text\"`"
+                         " (the [nX] prefix only for an existing node)")}))
+
+(defn- check-depths
+  "Assign each parsed node its depth (two spaces per level from `base`),
+  reporting a line indented off the two-space grid, deeper than one level below
+  the node before it, or a second root."
+  [base nodes]
+  (:out (reduce (fn [{:keys [prev] :as acc} {:keys [line indent] :as item}]
+                  (let [offset (- indent base)
+                        depth  (quot offset 2)
+                        err    (cond
+                                 (or (neg? offset) (odd? offset))
+                                 "indentation must be two spaces per level"
+                                 (and prev (> depth (inc prev)))
+                                 (str "indented more than one level below the line before it")
+                                 (and prev (zero? depth))
+                                 "a second root - a layout has exactly one :canvas at the top")]
+                    (if err
+                      (update acc :out conj {:line line :error err})
+                      (-> acc
+                          (assoc :prev depth)
+                          (update :out conj (assoc item :depth depth))))))
+                {:prev nil :out []}
+                nodes)))
+
+(defn- build-tree
+  "The tree from [{:depth d :node v}] in document order, rooted at the first.
+  Every item after the root is deeper than it (check-depths sees to that)."
+  [items]
+  (letfn [(child-groups [items]
+            ;; each child with the descendants that follow it
+            (when-let [[head & more] (seq items)]
+              (let [own (take-while #(> (:depth %) (:depth head)) more)]
+                (cons (cons head own) (child-groups (drop (count own) more))))))
+          (build [[{:keys [node]} & descendants]]
+            (into node (map build) (child-groups descendants)))]
+    (build items)))
+
+(defn parse-tree
+  "Read a target layout from the text `format-tree` prints. Returns {:ok tree}
+  or {:errors [{:line n :message str} ...]} naming every bad line."
+  [text]
+  (let [lines  (->> (str/split-lines (str text))
+                    (map-indexed (fn [i l] [(inc i) l]))
+                    (remove (comp str/blank? second)))
+        parsed (map parse-line lines)
+        base   (some :indent parsed)
+        items  (if base (check-depths base (remove :error parsed)) [])
+        errors (->> (concat (filter :error parsed) (filter :error items))
+                    (sort-by :line)
+                    (mapv (fn [{:keys [line error]}] {:line line :message error})))]
+    (cond
+      (seq errors) {:errors errors}
+      (empty? items) {:errors [{:line nil :message "no layout given: expected at least a `:canvas` line"}]}
+      :else {:ok (build-tree items)})))
+
+(defn resolve-ids
+  "The concrete wireframe a target layout describes (see resolve_ids in
+  event-model.allium): the target's root is the layout's root, so naming no id
+  it takes `current`'s root id; any other node naming an id keeps it; every
+  other node gets a fresh id, in document order, beyond the highest id in
+  `current` (from n1 when there is none), so an id the target drops is never
+  handed out again within the same replacement."
+  [current target]
+  (let [start  (parse-long (subs (next-node-id current) 1))
+        target (cond-> target
+                 (and (nil? (get-in target [1 :-id])) (get-in current [1 :-id]))
+                 (assoc-in [1 :-id] (get-in current [1 :-id])))]
+    (letfn [(assign [n node]
+              (let [[tag id-map & more] node
+                    [id n]              (if-let [id (:-id id-map)]
+                                          [id n]
+                                          [(str "n" n) (inc n)])]
+                (reduce (fn [[acc n] x]
+                          (if (vector? x)
+                            (let [[child n] (assign n x)] [(conj acc child) n])
+                            [(conj acc x) n]))
+                        [[tag (assoc id-map :-id id)] n]
+                        more)))]
+      (first (assign start target)))))
 
 ;; ---------------------------------------------------------------------------
 ;; Tag reference: `emcli wireframe tags` and the generated doc tables
@@ -645,6 +802,66 @@
                     ["attributes: none"])
                   (when-not (= :canvas tag)
                     ["example:" (str "  " (example-command tag))]))))))
+
+;; --- remedies (RejectedLayoutEditNamesRemedy) --------------------------------
+;; A rejection over a tag's attributes says what the tag admits, and where it
+;; can, the corrected command - so the next attempt can succeed.
+
+(defn attr-remedy
+  "What `tag` admits, one attribute per line as a flag, required ones first and
+  marked, each with the values it takes."
+  [tag]
+  (let [attrs (ordered-attrs tag)]
+    (if (seq attrs)
+      (str/join "\n" (cons (str ":" (name tag) " admits:")
+                           (for [[k a] attrs]
+                             (str "  --" (name k) (when (:required? a) " (required)")
+                                  " " (value-hint a)))))
+      (str ":" (name tag) " admits no attributes"))))
+
+(def ^:private attr-problem-re
+  #"unknown attribute|is required|not in allowed set|must be a (?:keyword|boolean|string|vector)")
+
+(defn remedy-for-errors
+  "The attr-remedy of every tag whose node a validation error faults over its
+  attributes, or nil when no error concerns attributes."
+  [wireframe errors]
+  (let [tags (into []
+                   (comp (filter #(re-find attr-problem-re (str (:message %))))
+                         (keep #(first (find-node wireframe (:node-id %))))
+                         (filter tag-schema)
+                         (distinct))
+                   errors)]
+    (when (seq tags)
+      (str/join "\n" (map attr-remedy tags)))))
+
+(defn corrected-add-command
+  "The add command an operator meant, derived from a rejected one: attributes
+  the tag does not admit are dropped, and every required attribute left open is
+  supplied - with a dropped attribute's value where there is one (a button's
+  --text \"Submit\" becomes --label \"Submit\"), a placeholder otherwise.
+  `verb` is \"add-node\" or \"add-node-before\"; `attrs` the operator's
+  attribute flags as given."
+  [{:keys [verb element before parent tag text attrs]}]
+  (let [schema   (:attrs (tag-schema tag))
+        kept     (select-keys attrs (keys schema))
+        dropped  (keep (fn [[k v]] (when-not (contains? schema k) v)) attrs)
+        open     (for [[k a] (ordered-attrs tag)
+                       :when (and (:required? a) (not (contains? kept k)))]
+                   k)
+        required (zipmap open (map #(or %2 (str "<" (name %1) ">"))
+                                   open (concat dropped (repeat nil))))
+        flags    (for [[k _] (ordered-attrs tag)
+                       :let  [v (or (required k) (kept k))]
+                       :when (some? v)]
+                   [k v])]
+    (str/join " "
+              (concat ["emcli wireframe" verb "--element" (str element)]
+                      (when before ["--before" before])
+                      ["--tag" (name tag)]
+                      (when parent ["--parent" parent])
+                      (when (and text (:text-children? (tag-schema tag))) ["--text" (pr-str (str text))])
+                      (mapcat (fn [[k v]] [(str "--" (name k)) (pr-str (str v))]) flags)))))
 
 (defn- md-attr [[k {:keys [type values]}]]
   (str "`" (name k) "`"

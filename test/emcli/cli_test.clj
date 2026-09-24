@@ -2,9 +2,13 @@
   "The CLI's entity-grouped subcommands must cover exactly the flat authoring
   commands the server exposes — every operation reachable, nothing dangling."
   (:require [cheshire.core :as json]
+            [clojure.string :as str]
             [clojure.test :refer [deftest testing is]]
+            [emcli.app :as app]
             [emcli.cli :as cli]
             [emcli.commands :as cmd]
+            [emcli.server :as server]
+            [emcli.support :as s]
             [emcli.wireframe :as wf]))
 
 (defn- all-grouped-commands []
@@ -161,3 +165,149 @@
   (let [command (get-in (#'cli/build-tools) ["emcli_resolve" :command])]
     (is (clojure.string/starts-with? command "emcli resolve --queries"))
     (is (clojure.string/includes? command "'{{queries}}'"))))
+
+;; --- wireframe move-node / apply ---------------------------------------------
+
+(deftest wireframe-move-node-and-apply-verbs
+  (is (= "move-wireframe-node" (cli/resolve-command "wireframe" "move-node")))
+  (is (= "replace-wireframe" (cli/resolve-command "wireframe" "apply")))
+  (testing "their flags are published for help, the manifest and the tools"
+    (is (= #{"element" "node" "before" "parent"}
+           (set (map :flag (#'cli/command->manifest-params "move-wireframe-node")))))
+    (is (= #{"element" "tree"}
+           (set (map :flag (#'cli/command->manifest-params "replace-wireframe")))))
+    (let [{:keys [schema]} (get (#'cli/build-tools) "emcli_wireframe")]
+      (is (some #{"move-node"} (get-in schema ["properties" "verb" "enum"])))
+      (is (some #{"apply"} (get-in schema ["properties" "verb" "enum"]))))))
+
+;; --- what a wireframe verb prints (LayoutEditRevealsResult,
+;; RejectedLayoutEditNamesRemedy) -------------------------------------------------
+;; `cli/authoring-output` is the pure half of the authoring round trip: given
+;; the verb, its parsed flags and the server's response ({:status :body}, body
+;; parsed from JSON), it returns {:out text} for stdout or {:error text} for
+;; stderr (exit 1).
+
+(def ^:private authoring-output cli/authoring-output)
+
+(defn- screen-app []
+  (let [a (app/new-app "M")]
+    [a (:id (:result (cmd/run a "create-element" {:name "Login" :element-type "screen"})))]))
+
+(defn- run-verb
+  "Run `wireframe <verb>` with CLI `opts` against `a` as the CLI does - through
+  the server's authoring route, minus the network hop - and return what it
+  prints. The CLI never forwards --json (or --server) to the server."
+  [a verb opts]
+  (let [resp (server/handler a {:request-method :post
+                                :uri            (str "/authoring/" (cli/resolve-command "wireframe" verb))
+                                :body           (json/generate-string (dissoc opts :json :server))})]
+    (authoring-output "wireframe" verb opts
+                      {:status (:status resp) :body (json/parse-string (:body resp) true)})))
+
+(defn- tree-shape
+  "The addressed tree printed below the first line, as [depth id tag] rows in
+  document order (depth from the two-space indentation `wireframe show` uses)."
+  [out]
+  (vec (for [line  (rest (str/split-lines out))
+             :let  [[_ indent id tag] (re-find #"^( *)\[(n\d+)\] (:\S+)" line)]
+             :when id]
+         [(quot (count indent) 2) id tag])))
+
+(defn- tree-line [out id]
+  (first (filter #(str/includes? % (str "[" id "]")) (rest (str/split-lines out)))))
+
+(defn- form-app
+  "The transcript's misordered form: n2 Password, n3 Submit, n4 Email."
+  []
+  (let [[a eid] (screen-app)]
+    (cmd/run a "add-wireframe-node" {:element eid :tag "input" :type "password" :label "Password"})
+    (cmd/run a "add-wireframe-node" {:element eid :tag "button" :label "Submit"})
+    (cmd/run a "add-wireframe-node" {:element eid :tag "input" :type "email" :label "Email"})
+    [a eid]))
+
+(deftest add-node-prints-the-new-node-and-the-tree
+  (let [[a eid] (screen-app)
+        {:keys [out error]} (run-verb a "add-node" {:element (str eid) :tag "input"
+                                                    :type "email" :label "Email"})]
+    (is (nil? error))
+    (is (re-find #"^added n2\b" out))
+    (is (= [[0 "n1" ":canvas"] [1 "n2" ":input"]] (tree-shape out)))
+    (is (str/includes? (str (tree-line out "n2")) "Email"))))
+
+(deftest add-node-before-prints-the-new-node-and-the-tree
+  (let [[a eid] (form-app)
+        {:keys [out]} (run-verb a "add-node-before" {:element (str eid) :before "n2" :tag "h1"
+                                                     :text "Log in"})]
+    (is (re-find #"^added n5\b" out))
+    (is (= [[0 "n1" ":canvas"] [1 "n5" ":h1"] [1 "n2" ":input"] [1 "n3" ":button"] [1 "n4" ":input"]]
+           (tree-shape out)))
+    (is (str/includes? (str (tree-line out "n5")) "Log in"))))
+
+(deftest move-node-prints-the-moved-node-and-the-tree
+  (let [[a eid] (form-app)
+        {:keys [out]} (run-verb a "move-node" {:element (str eid) :node "n4" :before "n2"})]
+    (is (re-find #"^moved n4\b" out))
+    (is (= [[0 "n1" ":canvas"] [1 "n4" ":input"] [1 "n2" ":input"] [1 "n3" ":button"]]
+           (tree-shape out)))))
+
+(deftest set-attr-and-set-text-print-the-updated-node-and-the-tree
+  (let [[a eid] (form-app)]
+    (let [{:keys [out]} (run-verb a "set-attr" {:element (str eid) :node "n3"
+                                                :attr "label" :value "Sign in"})]
+      (is (re-find #"^updated n3\b" out))
+      (is (= 4 (count (tree-shape out))))
+      (is (str/includes? (str (tree-line out "n3")) "Sign in")))
+    (cmd/run a "add-wireframe-node" {:element eid :tag "h1" :text "Log in"})
+    (let [{:keys [out]} (run-verb a "set-text" {:element (str eid) :node "n5" :text "Welcome back"})]
+      (is (re-find #"^updated n5\b" out))
+      (is (str/includes? (str (tree-line out "n5")) "Welcome back")))))
+
+(deftest delete-node-prints-the-deleted-node-and-the-tree
+  (let [[a eid] (form-app)]
+    (let [{:keys [out]} (run-verb a "delete-node" {:element (str eid) :node "n3"})]
+      (is (re-find #"^deleted n3\b" out))
+      (is (= [[0 "n1" ":canvas"] [1 "n2" ":input"] [1 "n4" ":input"]] (tree-shape out))))
+    (testing "deleting the root reports that the screen has no layout"
+      (let [{:keys [out]} (run-verb a "delete-node" {:element (str eid) :node "n1"})]
+        (is (re-find #"^deleted n1\b" out))
+        (is (re-find #"(?i)no layout" out))
+        (is (empty? (tree-shape out)))))))
+
+(deftest apply-prints-the-whole-resulting-tree
+  (let [[a eid] (form-app)
+        {:keys [out]} (run-verb a "apply" {:element (str eid)
+                                           :tree    (str "[n1] :canvas\n"
+                                                         "  :col\n"
+                                                         "    [n4] :input  {:type :email, :label \"Email\"}\n"
+                                                         "    [n2] :input  {:type :password, :label \"Password\"}\n"
+                                                         "    [n3] :button  {:label \"Submit\"}")})]
+    (is (re-find #"^applied\b" out))
+    (is (= [[0 "n1" ":canvas"] [1 "n5" ":col"] [2 "n4" ":input"] [2 "n2" ":input"] [2 "n3" ":button"]]
+           (tree-shape out))
+        "new nodes carry the ids they were given")))
+
+(deftest json-flag-keeps-the-element-json
+  (let [[a eid] (screen-app)
+        {:keys [out]} (run-verb a "add-node" {:element (str eid) :tag "divider" :json true})
+        el            (json/parse-string out true)]
+    (is (= eid (:id el)))
+    (is (vector? (:wireframe el)))))
+
+(deftest a-remedy-rejection-prints-no-generic-usage-line
+  (let [[a eid] (form-app)]
+    (doseq [[verb opts] [["add-node" {:element (str eid) :tag "button" :text "Submit"}]
+                         ["add-node" {:element (str eid) :tag "button"}]
+                         ["add-node-before" {:element (str eid) :before "n2" :tag "button" :text "Back"}]
+                         ["set-attr" {:element (str eid) :node "n3" :attr "variant" :value "bogus"}]
+                         ["apply" {:element (str eid) :tree "[n1] :canvas\n  [n3] :button  {:text \"Go\"}"}]]]
+      (let [{:keys [out error]} (run-verb a verb opts)]
+        (is (nil? out) (str verb " is rejected"))
+        (is (str/starts-with? (str error) (str "✗ wireframe " verb ": ")))
+        (is (re-find #"label \(required\)" (str error)) (str verb " names the remedy"))
+        (is (not (str/includes? (str error) "Usage:"))
+            (str verb " does not print the generic usage line"))))
+    (testing "the corrected command reaches the operator"
+      (let [{:keys [error]} (run-verb a "add-node" {:element (str eid) :tag "button" :text "Submit"})]
+        (is (re-find (re-pattern (str "(?m)^\\s*try:\\s+emcli wireframe add-node --element " eid
+                                      " --tag button\\b.*--label"))
+                     (str error)))))))

@@ -165,6 +165,15 @@
     (fn [{:keys [scr]}] {:element scr :node "n4" :text "New title"})]
    ["DeleteWireframeNode"    "delete-wireframe-node"
     (fn [{:keys [scr]}] {:element scr :node "n3"})]
+   ["MoveWireframeNode"      "move-wireframe-node"
+    (fn [{:keys [scr]}] {:element scr :node "n4" :parent "n2"})]
+   ["ReplaceWireframe"       "replace-wireframe"
+    (fn [{:keys [scr]}] {:element scr
+                         :tree    (str "[n1] :canvas\n"
+                                       "  [n4] :h1  \"Title\"\n"
+                                       "  [n2] :row\n"
+                                       "    [n3] :button  {:label \"OK\"}\n"
+                                       "    :divider")})]
    ["PlaceElement"           "place-element"
     (fn [{:keys [sl evt2]}] {:slice sl :element evt2})]
    ["ReorderPlacement"       "reorder-placement"

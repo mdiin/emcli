@@ -74,7 +74,9 @@
                  "add-node-before" "add-wireframe-node-before"
                  "delete-node"     "delete-wireframe-node"
                  "set-attr"        "set-wireframe-attr"
-                 "set-text"        "set-wireframe-text"}
+                 "set-text"        "set-wireframe-text"
+                 "move-node"       "move-wireframe-node"
+                 "apply"           "replace-wireframe"}
    "placement"  {"add" "place-element" "reorder" "reorder-placement" "remove" "remove-placement"}
    "connection" {"add" "connect" "remove" "disconnect"
                  "add-derivation" "add-derivation" "remove-derivation" "remove-derivation"}
@@ -101,16 +103,6 @@
   "The flat authoring command for an (entity, verb) pair, or nil."
   [group verb]
   (get-in command-groups [group verb]))
-
-(defn- do-authoring [group verb opts]
-  (let [command (resolve-command group verb)
-        payload (dissoc opts :server)
-        resp    (request :post (str (server-url opts) "/authoring/" command) payload)
-        body    (parse-body resp)]
-    (if (and (= 200 (:status resp)) (:ok body))
-      (emit (:result body))
-      (die (str "✗ " group " " verb ": " (:message body)
-                "\n\nUsage: " (format-usage-line group verb))))))
 
 (defn- do-serve [opts]
   (let [port  (parse-long (str (or (:port opts) "8090")))
@@ -157,6 +149,54 @@
       (nil? el)   (die (str "✗ element " eid " does not exist"))
       (nil? (:wireframe el)) (die (str "✗ element " eid " has no wireframe"))
       :else       (println (wf/format-tree (json->wireframe (:wireframe el)))))))
+
+;; --- authoring round trip --------------------------------------------------
+
+(def ^:private wireframe-actions
+  {"add-node" "added" "add-node-before" "added" "move-node" "moved"
+   "set-attr" "updated" "set-text" "updated" "delete-node" "deleted"})
+
+(defn- wireframe-outcome
+  "What a successful layout edit prints (LayoutEditRevealsResult): the node it
+  created, moved or changed, then the screen's resulting layout as `wireframe
+  show` prints it - so the outcome, order and nesting included, can be checked
+  without another call."
+  [verb {:keys [result node]}]
+  (let [tree (some-> (:wireframe result) json->wireframe)
+        tag  (when (and tree node (not= "delete-node" verb)) (first (wf/find-node tree node)))]
+    (str/join "\n"
+              [(if (= "apply" verb)
+                 "applied"
+                 (str/join " " (remove nil? [(wireframe-actions verb) node (some-> tag str)])))
+               (if tree
+                 (wf/format-tree tree)
+                 (str "element " (:id result) " has no layout now"))])))
+
+(defn authoring-output
+  "What an authoring verb prints, given its parsed flags and the server's
+  response ({:status :body}, body parsed from JSON): {:out text} for stdout, or
+  {:error text} for stderr. A wireframe edit prints its outcome as a tree unless
+  --json asks for the element; a rejection whose message already names the
+  remedy is not followed by the generic usage line."
+  [group verb opts {:keys [status body]}]
+  (cond
+    (not (and (= 200 status) (:ok body)))
+    {:error (str "✗ " group " " verb ": " (:message body)
+                 (when-not (:remedy body) (str "\n\nUsage: " (format-usage-line group verb))))}
+
+    (or (:json opts) (not= "wireframe" group))
+    {:out (json/generate-string (:result body) {:pretty true})}
+
+    :else
+    {:out (wireframe-outcome verb body)}))
+
+(defn- do-authoring [group verb opts]
+  (let [command (resolve-command group verb)
+        payload (dissoc opts :server :json)
+        resp    (request :post (str (server-url opts) "/authoring/" command) payload)
+        {:keys [out error]} (authoring-output group verb opts
+                                              {:status (:status resp) :body (parse-body resp)})]
+    (if error (die error) (println out))))
 
 (defn- tags-output
   "What `wireframe tags [--tag X]` prints: every tag, one tag's detail, or - for
@@ -352,6 +392,20 @@
      :note "attribute name, e.g. label, placeholder, field-name"}
     {:flag "value" :type "string" :required true
      :note "new value for the attribute"}]
+   "move-wireframe-node"
+   [{:flag "element" :type "int" :required true :ref "elements[].id"
+     :note "must be a screen element"}
+    {:flag "node" :type "string" :required true
+     :note "node id (nN) to move, with its whole subtree; every node keeps its id"}
+    {:flag "before" :type "string" :required false
+     :note "node id (nN) to place the node immediately before; exactly one of before/parent is required"}
+    {:flag "parent" :type "string" :required false
+     :note "node id (nN) of a container (canvas, row, col) to append the node to as its last child; exactly one of before/parent is required"}]
+   "replace-wireframe"
+   [{:flag "element" :type "int" :required true :ref "elements[].id"
+     :note "must be a screen element"}
+    {:flag "tree" :type "string" :required true
+     :note "the whole target layout in the format `wireframe show` prints: one `[nX] :tag {attributes} \"text\"` line per node, two spaces of indentation per level; keep [nX] on existing nodes, omit it on new ones; nodes left out are deleted"}]
    "resolve"
    [{:flag "queries" :type "string" :required true
      :note "comma-separated name[:kind_hint] entries, e.g. \"Baz:slice,Snaz\"; kind_hint is one of timeline|swimlane|slice|element|specification and only ranks candidates, never filters them"}]})

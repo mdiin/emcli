@@ -1207,3 +1207,355 @@
                                                :slice-type :state_change :id 500})]
             (is (= :id-conflict (:error err)))
             (is (= 500 (:id err)))))))))
+
+;; ---------------------------------------------------------------------------
+;; MoveWireframeNode and ReplaceWireframe
+;; ---------------------------------------------------------------------------
+
+(def ^:private move-wireframe-node r/move-wireframe-node)
+(def ^:private replace-wireframe   r/replace-wireframe)
+
+(defn- screen-with-move-layout
+  "A screen (with a searchTerm field) whose layout is
+     n1 :canvas
+       n2 :col
+         n3 :h1 \"Orders\"
+         n4 :input {:field-name \"searchTerm\"}
+         n5 :button {:label \"Go\"}
+       n6 :row
+         n7 :span \"Total\"
+         n8 :col
+  Returns [store element-id]."
+  []
+  (let [[store eid] (screen-with-field)
+        add         (fn [st args] (:store (s/ok st r/add-wireframe-node (assoc args :element eid))))]
+    [(-> store
+         (add {:tag :col})
+         (add {:tag :h1 :text "Orders" :parent "n2"})
+         (add {:tag :input :attrs {:field-name "searchTerm"} :parent "n2"})
+         (add {:tag :button :attrs {:label "Go"} :parent "n2"})
+         (add {:tag :row})
+         (add {:tag :span :text "Total" :parent "n6"})
+         (add {:tag :col :parent "n6"}))
+     eid]))
+
+(defn- layout-of [store eid] (:wireframe (m/fetch store :element eid)))
+
+(defn- layout-ids
+  "Every node id of a layout, in document order."
+  [node]
+  (when (vector? node)
+    (cons (get-in node [1 :-id]) (mapcat layout-ids (filter vector? (drop 2 node))))))
+
+(defn- rejected
+  "Apply `rule`, assert it was rejected with `error` and committed nothing, and
+  return the rejection."
+  [store rule args error]
+  (let [res (s/err store rule args)]
+    (is (= error (:error res)) (pr-str res))
+    (is (not (contains? res :store)) "a rejected edit changes nothing")
+    res))
+
+;; --- MoveWireframeNode: ensures ---------------------------------------------
+
+(deftest move-wireframe-node-places-a-node-before-a-sibling
+  (let [[store eid] (screen-with-move-layout)
+        el          (:result (s/ok store move-wireframe-node {:element eid :node "n5" :before "n3"}))]
+    (is (= ["n5" "n3" "n4"] (child-ids el "n2")))
+    (is (= ["n7" "n8"] (child-ids el "n6")))))
+
+(deftest move-wireframe-node-appends-into-a-parent-as-last-child
+  (let [[store eid] (screen-with-move-layout)
+        el          (:result (s/ok store move-wireframe-node {:element eid :node "n3" :parent "n2"}))]
+    (is (= ["n4" "n5" "n3"] (child-ids el "n2")))))
+
+(deftest move-wireframe-node-moves-across-parents
+  (let [[store eid] (screen-with-move-layout)]
+    (testing "before a sibling under another parent"
+      (let [el (:result (s/ok store move-wireframe-node {:element eid :node "n4" :before "n7"}))]
+        (is (= ["n3" "n5"] (child-ids el "n2")))
+        (is (= ["n4" "n7" "n8"] (child-ids el "n6")))))
+    (testing "into another container"
+      (let [el (:result (s/ok store move-wireframe-node {:element eid :node "n5" :parent "n8"}))]
+        (is (= ["n3" "n4"] (child-ids el "n2")))
+        (is (= ["n5"] (child-ids el "n8")))))))
+
+(deftest move-wireframe-node-carries-the-whole-subtree
+  (let [[store eid] (screen-with-move-layout)
+        before      (layout-of store eid)
+        el          (:result (s/ok store move-wireframe-node {:element eid :node "n2" :parent "n8"}))]
+    (is (= ["n6"] (child-ids el "n1")))
+    (is (= ["n2"] (child-ids el "n8")))
+    (is (= (wf/find-node before "n2") (wf/find-node (:wireframe el) "n2")))))
+
+(deftest move-wireframe-node-keeps-every-node-id
+  (let [[store eid] (screen-with-move-layout)
+        before      (layout-of store eid)]
+    (doseq [args [{:node "n5" :before "n3"} {:node "n4" :parent "n8"} {:node "n6" :before "n2"}]]
+      (let [{:keys [store]} (s/ok store move-wireframe-node (assoc args :element eid))
+            after           (layout-of store eid)]
+        (is (= (sort (layout-ids before)) (sort (layout-ids after))) (pr-str args))
+        ;; the parent a node is moved into gains that child; every other node
+        ;; is untouched
+        (doseq [id (remove #{(:parent args)} ["n3" "n4" "n5" "n7" "n8"])]
+          (is (= (wf/find-node before id) (wf/find-node after id))
+              (str id " is untouched by " (pr-str args))))
+        (testing "the moved layout is still well formed and resolves its fields"
+          (is (:valid? (wf/validate after)))
+          (is (:valid? (wf/validate-semantics after (m/fetch store :element eid)))))))))
+
+(deftest move-wireframe-node-to-where-it-already-sits-is-accepted
+  (let [[store eid] (screen-with-move-layout)
+        before      (layout-of store eid)]
+    (is (= before (:wireframe (:result (s/ok store move-wireframe-node
+                                            {:element eid :node "n5" :parent "n2"})))))
+    (is (= before (:wireframe (:result (s/ok store move-wireframe-node
+                                            {:element eid :node "n4" :before "n5"})))))))
+
+(deftest move-wireframe-node-emits-one-delta
+  (let [[store eid] (screen-with-move-layout)
+        {:keys [delta]} (s/ok store move-wireframe-node {:element eid :node "n5" :before "n3"})]
+    (is (= :MoveWireframeNode (:op delta)))
+    (is (= [[:updated :element eid]] (map (juxt :action :type :id) (:changes delta))))))
+
+;; --- MoveWireframeNode: requires --------------------------------------------
+
+(deftest move-wireframe-node-rejects-a-screen-without-layout
+  (let [[store eid] (screen-with-field)
+        err         (rejected store move-wireframe-node {:element eid :node "n2" :parent "n1"} :not-found)]
+    (is (= :wireframe (:type err)))))
+
+(deftest move-wireframe-node-requires-exactly-one-target
+  (let [[store eid] (screen-with-move-layout)]
+    (testing "both before and parent"
+      (rejected store move-wireframe-node {:element eid :node "n5" :before "n3" :parent "n6"}
+                :invalid-value))
+    (testing "neither"
+      (rejected store move-wireframe-node {:element eid :node "n5"} :invalid-value))))
+
+(deftest move-wireframe-node-rejects-an-unknown-node
+  (let [[store eid] (screen-with-move-layout)
+        err         (rejected store move-wireframe-node {:element eid :node "n99" :parent "n2"}
+                              :not-found)]
+    (is (= :wireframe-node (:type err)))
+    (is (= "n99" (:id err)))))
+
+(deftest move-wireframe-node-rejects-moving-the-root
+  (let [[store eid] (screen-with-move-layout)]
+    (doseq [args [{:node "n1" :parent "n8"} {:node "n1" :before "n3"}]]
+      (let [err (rejected store move-wireframe-node (assoc args :element eid) :invalid-value)]
+        (is (re-find #"(?i)root" (:message err)))))))
+
+(deftest move-wireframe-node-rejects-an-unknown-target
+  (let [[store eid] (screen-with-move-layout)]
+    (doseq [args [{:node "n5" :before "n99"} {:node "n5" :parent "n99"}]]
+      (let [err (rejected store move-wireframe-node (assoc args :element eid) :not-found)]
+        (is (= :wireframe-node (:type err)))
+        (is (= "n99" (:id err)))))))
+
+(deftest move-wireframe-node-rejects-the-node-itself-as-target
+  (let [[store eid] (screen-with-move-layout)]
+    (rejected store move-wireframe-node {:element eid :node "n4" :before "n4"} :invalid-value)
+    (rejected store move-wireframe-node {:element eid :node "n8" :parent "n8"} :invalid-value)))
+
+(deftest move-wireframe-node-rejects-a-target-inside-its-subtree
+  (let [[store eid] (screen-with-move-layout)]
+    (testing "into a container below the node"
+      (rejected store move-wireframe-node {:element eid :node "n6" :parent "n8"} :invalid-value))
+    (testing "before a node below it"
+      (rejected store move-wireframe-node {:element eid :node "n2" :before "n4"} :invalid-value))))
+
+(deftest move-wireframe-node-rejects-placing-before-the-root
+  (let [[store eid] (screen-with-move-layout)
+        err         (rejected store move-wireframe-node {:element eid :node "n5" :before "n1"}
+                              :invalid-value)]
+    (is (re-find #"(?i)root" (:message err)))))
+
+(deftest move-wireframe-node-rejects-a-parent-that-is-not-a-container
+  (let [[store eid] (screen-with-move-layout)]
+    (testing "a leaf tag"
+      (let [err (rejected store move-wireframe-node {:element eid :node "n3" :parent "n5"}
+                          :invalid-value)]
+        (is (str/includes? (:message err) "n5"))))
+    (testing "a text tag"
+      (let [err (rejected store move-wireframe-node {:element eid :node "n5" :parent "n3"}
+                          :invalid-value)]
+        (is (str/includes? (:message err) "n3"))))))
+
+;; --- ReplaceWireframe: ensures ----------------------------------------------
+
+(deftest replace-wireframe-keeps-named-ids-and-allocates-fresh-ones
+  ;; the current layout's highest id is n8; n3, n5, n7 and n8 are dropped, so the
+  ;; two new nodes take n9 and n10 in document order, not a dropped number
+  (let [[store eid] (screen-with-move-layout)
+        {:keys [store result]}
+        (s/ok store replace-wireframe
+              {:element eid
+               :layout  [:canvas {:-id "n1"}
+                         [:row {:-id "n6"}
+                          [:input {:-id "n4"} {:field-name "searchTerm" :label "Search"}]
+                          [:button {} {:label "Find"}]]
+                         [:col {:-id "n2"}
+                          [:divider {}]]]})]
+    (is (= [:canvas {:-id "n1"}
+            [:row {:-id "n6"}
+             [:input {:-id "n4"} {:field-name "searchTerm" :label "Search"}]
+             [:button {:-id "n9"} {:label "Find"}]]
+            [:col {:-id "n2"}
+             [:divider {:-id "n10"}]]]
+           (:wireframe result)
+           (layout-of store eid)))
+    (testing "existing nodes the target does not name are removed"
+      (doseq [id ["n3" "n5" "n7" "n8"]]
+        (is (nil? (wf/find-node (:wireframe result) id)) id)))))
+
+(deftest replace-wireframe-gives-a-screen-its-first-layout
+  (let [[store eid] (screen-with-field)
+        el          (:result (s/ok store replace-wireframe
+                                   {:element eid
+                                    :layout  [:canvas {}
+                                              [:col {}
+                                               [:h1 {} "Search"]
+                                               [:input {} {:field-name "searchTerm"}]]]}))]
+    (is (= [:canvas {:-id "n1"}
+            [:col {:-id "n2"}
+             [:h1 {:-id "n3"} "Search"]
+             [:input {:-id "n4"} {:field-name "searchTerm"}]]]
+           (:wireframe el)))))
+
+(deftest replace-wireframe-coerces-operator-text-values
+  ;; a value stated as text takes the type the tag declares, as for any other
+  ;; layout edit - which is what the JSON-read `wireframe show` output carries
+  (let [[store eid] (screen-with-move-layout)
+        el          (:result (s/ok store replace-wireframe
+                                   {:element eid
+                                    :layout  [:canvas {:-id "n1"}
+                                              [:button {:-id "n5"} {:label "Go" :variant "primary"
+                                                                    :disabled "true"}]]}))]
+    (is (= {:label "Go" :variant :primary :disabled true}
+           (some #(when (and (map? %) (not (contains? % :-id))) %)
+                 (wf/find-node (:wireframe el) "n5"))))))
+
+(deftest replace-wireframe-with-the-current-layout-is-a-no-op
+  (let [[store eid] (screen-with-move-layout)
+        before      (layout-of store eid)
+        el          (:result (s/ok store replace-wireframe {:element eid :layout before}))]
+    (is (= before (:wireframe el)))))
+
+(deftest replace-wireframe-emits-one-delta
+  (let [[store eid]     (screen-with-move-layout)
+        {:keys [delta]} (s/ok store replace-wireframe
+                              {:element eid :layout [:canvas {:-id "n1"} [:divider {}]]})]
+    (is (= :ReplaceWireframe (:op delta)))
+    (is (= [[:updated :element eid]] (map (juxt :action :type :id) (:changes delta))))))
+
+;; --- ReplaceWireframe: requires ---------------------------------------------
+
+(defn- error-messages [err] (map :message (:errors err)))
+
+(defn- reports?
+  "Some reported problem's message matches `re`."
+  [err re]
+  (boolean (some #(re-find re %) (error-messages err))))
+
+(deftest replace-wireframe-rejects-a-non-screen-element
+  (let [[store mid] (s/with-model)
+        {:keys [store result]} (s/ok store r/create-element {:model mid :name "PlaceOrder"
+                                                             :element-type :command})]
+    (rejected store replace-wireframe {:element (:id result) :layout [:canvas {}]}
+              :invalid-value)))
+
+(deftest replace-wireframe-rejects-an-unknown-element
+  (let [[store _] (s/with-model)]
+    (rejected store replace-wireframe {:element 999 :layout [:canvas {}]} :not-found)))
+
+(deftest replace-wireframe-rejects-an-id-named-twice
+  (let [[store eid] (screen-with-move-layout)
+        err         (rejected store replace-wireframe
+                              {:element eid
+                               :layout  [:canvas {:-id "n1"}
+                                         [:divider {:-id "n3"}]
+                                         [:divider {:-id "n3"}]]}
+                              :invalid-wireframe)]
+    (is (reports? err #"n3"))))
+
+(deftest replace-wireframe-rejects-named-ids-on-a-screen-without-layout
+  (let [[store eid] (screen-with-field)
+        err         (rejected store replace-wireframe
+                              {:element eid :layout [:canvas {:-id "n1"} [:divider {}]]}
+                              :invalid-wireframe)]
+    (is (reports? err #"n1"))))
+
+(deftest replace-wireframe-rejects-an-unknown-id
+  (let [[store eid] (screen-with-move-layout)
+        err         (rejected store replace-wireframe
+                              {:element eid :layout [:canvas {:-id "n1"} [:divider {:-id "n99"}]]}
+                              :invalid-wireframe)]
+    (is (reports? err #"n99"))))
+
+(deftest replace-wireframe-rejects-a-malformed-tree
+  (let [[store eid] (screen-with-move-layout)
+        reject      (fn [layout]
+                      (rejected store replace-wireframe {:element eid :layout layout}
+                                :invalid-wireframe))]
+    (testing "an unknown tag"
+      (is (reports? (reject [:canvas {:-id "n1"} [:card {}]]) #"unknown tag :card")))
+    (testing "a root that is not a canvas"
+      (is (reports? (reject [:col {:-id "n2"} [:divider {}]]) #"canvas")))
+    (testing "a canvas below the root"
+      (is (reports? (reject [:canvas {:-id "n1"} [:canvas {}]]) #"may not be nested")))
+    (testing "children on a leaf"
+      (is (reports? (reject [:canvas {:-id "n1"} [:button {} {:label "Go"} [:span {} "x"]]])
+                    #"leaf")))
+    (testing "an attribute the tag does not admit"
+      (is (reports? (reject [:canvas {:-id "n1"} [:button {} {:label "Go" :align :center}]])
+                    #"unknown attribute :align for :button")))
+    (testing "a required attribute missing"
+      (is (reports? (reject [:canvas {:-id "n1"} [:button {} {:variant :primary}]])
+                    #"label is required")))
+    (testing "a value outside the allowed set"
+      (is (reports? (reject [:canvas {:-id "n1"} [:button {} {:label "Go" :variant :bogus}]])
+                    #"variant")))
+    (testing "text that does not coerce"
+      (is (reports? (reject [:canvas {:-id "n1"} [:button {} {:label "Go" :variant "bogus"}]])
+                    #"variant")))))
+
+(deftest replace-wireframe-keeps-the-root
+  (let [[store eid] (screen-with-move-layout)]
+    (testing "a root naming no id is the current root"
+      (let [el (:result (s/ok store replace-wireframe
+                              {:element eid :layout [:canvas {} [:divider {}]]}))]
+        (is (= [:canvas {:-id "n1"} [:divider {:-id "n9"}]] (:wireframe el)))))
+    (testing "a root naming another existing node is rejected"
+      (let [err (rejected store replace-wireframe
+                          {:element eid :layout [:canvas {:-id "n2"} [:divider {}]]}
+                          :invalid-wireframe)]
+        (is (reports? err #"n2"))
+        (is (reports? err #"(?i)root"))))))
+
+(deftest replace-wireframe-rejects-an-unresolved-field-name
+  (let [[store eid] (screen-with-move-layout)
+        err         (rejected store replace-wireframe
+                              {:element eid
+                               :layout  [:canvas {:-id "n1"} [:input {} {:field-name "nope"}]]}
+                              :invalid-wireframe)]
+    (is (reports? err #"nope"))))
+
+(deftest replace-wireframe-reports-every-problem
+  ;; all-or-nothing, and one corrected target can answer every problem
+  (let [[store eid] (screen-with-move-layout)
+        err         (rejected store replace-wireframe
+                              {:element eid
+                               :layout  [:canvas {:-id "n1"}
+                                         [:divider {:-id "n99"}]
+                                         [:button {} {:variant :primary}]
+                                         [:input {} {:field-name "nope"}]]}
+                              :invalid-wireframe)]
+    (is (reports? err #"n99") "the unknown id")
+    (is (reports? err #"label is required") "the schema violation")
+    (is (reports? err #"nope") "the unresolved field")
+    (is (<= 3 (count (:errors err))))
+    (testing "the summary message carries them all"
+      (is (str/includes? (:message err) "n99"))
+      (is (str/includes? (:message err) "label"))
+      (is (str/includes? (:message err) "nope")))))

@@ -996,10 +996,24 @@
 ;; Wireframe rules
 ;; ---------------------------------------------------------------------------
 
-(defn- wireframe-invalid [validation]
-  {:error :invalid-wireframe :errors (:errors validation)
-   :message (str "wireframe validation failed: "
-                 (str/join "; " (map :message (:errors validation))))})
+(defn- wireframe-invalid
+  "The rejection of a layout edit whose resulting `tree` fails `validation`.
+  When a problem concerns a node's attributes, the message goes on to say what
+  that node's tag admits (RejectedLayoutEditNamesRemedy)."
+  [validation tree]
+  (let [errors (:errors validation)
+        remedy (wf/remedy-for-errors tree errors)]
+    (cond-> {:error :invalid-wireframe :errors errors
+             :message (str "wireframe validation failed: "
+                           (str/join "; " (map :message errors))
+                           (when remedy (str "\n" remedy)))}
+      remedy (assoc :remedy true))))
+
+(defn- touching
+  "A committed layout edit's result, naming the node it created, moved or
+  changed (LayoutEditRevealsResult); a rejection passes through."
+  [res node-id]
+  (cond-> res (not (error? res)) (assoc :node node-id)))
 
 (defn add-wireframe-node [store {:keys [element tag parent attrs text]}]
   (or (require-entity store :element element)
@@ -1027,11 +1041,12 @@
               (or (when (and parent (not (wf/find-node wf parent)))
                     {:error :not-found :type :wireframe-node :id parent
                      :message (str "node " parent " does not exist")})
-                  (when-not (:valid? sv) (wireframe-invalid sv))
-                  (when-not (:valid? ss) (wireframe-invalid ss))
+                  (when-not (:valid? sv) (wireframe-invalid sv wf'))
+                  (when-not (:valid? ss) (wireframe-invalid ss wf'))
                    (let [store (m/set-field store :element element :wireframe wf')]
-                     (commit store :AddWireframeNode [(updated store :element element)]
-                             (m/fetch store :element element)))))))))
+                     (touching (commit store :AddWireframeNode [(updated store :element element)]
+                                       (m/fetch store :element element))
+                               (wf/next-node-id wf)))))))))
 
 (defn add-wireframe-node-before [store {:keys [element before tag attrs text]}]
   (or (require-entity store :element element)
@@ -1063,12 +1078,13 @@
                      :message (str "cannot insert before root node " before)})
                   (let [sv (wf/validate wf')
                         ss (wf/validate-semantics wf' el)]
-                    (or (when-not (:valid? sv) (wireframe-invalid sv))
-                        (when-not (:valid? ss) (wireframe-invalid ss))
+                    (or (when-not (:valid? sv) (wireframe-invalid sv wf'))
+                        (when-not (:valid? ss) (wireframe-invalid ss wf'))
                         (let [store (m/set-field store :element element :wireframe wf')]
-                          (commit store :AddWireframeNodeBefore
-                                  [(updated store :element element)]
-                                  (m/fetch store :element element)))))))))))
+                          (touching (commit store :AddWireframeNodeBefore
+                                            [(updated store :element element)]
+                                            (m/fetch store :element element))
+                                    (wf/next-node-id (:wireframe el))))))))))))
 
 (defn set-wireframe-attr [store {:keys [element node attr value]}]
   (or (require-entity store :element element)
@@ -1082,11 +1098,12 @@
             (let [wf'  (wf/assoc-attr-at (:wireframe el) node attr value)
                   sv   (wf/validate wf')
                   ss   (wf/validate-semantics wf' el)]
-              (or (when-not (:valid? sv) (wireframe-invalid sv))
-                  (when-not (:valid? ss) (wireframe-invalid ss))
+              (or (when-not (:valid? sv) (wireframe-invalid sv wf'))
+                  (when-not (:valid? ss) (wireframe-invalid ss wf'))
                   (let [store (m/set-field store :element element :wireframe wf')]
-                    (commit store :SetWireframeAttr [(updated store :element element)]
-                            (m/fetch store :element element)))))))))
+                    (touching (commit store :SetWireframeAttr [(updated store :element element)]
+                                      (m/fetch store :element element))
+                              node))))))))
 
 (defn set-wireframe-text [store {:keys [element node text]}]
   (or (require-entity store :element element)
@@ -1106,12 +1123,13 @@
                   (let [wf'  (wf/set-text-child-at (:wireframe el) node text)
                         sv   (wf/validate wf')
                         ss   (wf/validate-semantics wf' el)]
-                    (or (when-not (:valid? sv) (wireframe-invalid sv))
-                        (when-not (:valid? ss) (wireframe-invalid ss))
+                    (or (when-not (:valid? sv) (wireframe-invalid sv wf'))
+                        (when-not (:valid? ss) (wireframe-invalid ss wf'))
                         (let [store (m/set-field store :element element :wireframe wf')]
-                          (commit store :SetWireframeText
-                                  [(updated store :element element)]
-                                  (m/fetch store :element element)))))))))))
+                          (touching (commit store :SetWireframeText
+                                            [(updated store :element element)]
+                                            (m/fetch store :element element))
+                                    node))))))))))
 
 (defn delete-wireframe-node [store {:keys [element node]}]
   (or (require-entity store :element element)
@@ -1126,5 +1144,128 @@
                   store (if wf'
                           (m/set-field store :element element :wireframe wf')
                           (m/set-field store :element element :wireframe nil))]
-              (commit store :DeleteWireframeNode [(updated store :element element)]
-                      (m/fetch store :element element)))))))
+              (touching (commit store :DeleteWireframeNode [(updated store :element element)]
+                                (m/fetch store :element element))
+                        node))))))
+
+(defn- no-node [node-id]
+  {:error :not-found :type :wireframe-node :id node-id
+   :message (str "node " node-id " does not exist")})
+
+;; MoveWireframeNode: one node, with its subtree, to before a sibling or to the
+;; end of a container. Nothing is allocated or renumbered.
+(defn move-wireframe-node [store {:keys [element node before parent]}]
+  (or (require-entity store :element element)
+      (let [tree (:wireframe (m/fetch store :element element))
+            root (get-in tree [1 :-id])
+            target (or before parent)]
+        (or (when-not tree
+              {:error :not-found :type :wireframe
+               :message (str "element " element " has no wireframe")})
+            (when-not (= 1 (count (filter some? [before parent])))
+              {:error :invalid-value
+               :message "move-node takes exactly one of --before <sibling node id> or --parent <container node id>"})
+            (when-not (wf/find-node tree node) (no-node node))
+            (when (= node root)
+              {:error :invalid-value
+               :message (str "node " node " is the layout's root (the canvas) and cannot be moved")})
+            (when-not (wf/find-node tree target) (no-node target))
+            (when (wf/within-subtree? tree node target)
+              {:error :invalid-value
+               :message (str "cannot move " node " into its own subtree: " target
+                             " is " node " or a node inside it")})
+            (when (and before (= before root))
+              {:error :invalid-value
+               :message (str "nothing can be placed before the root " root
+                             "; use --parent " root " to move a node to the end of the layout")})
+            (when (and parent (not (wf/container-tag? (first (wf/find-node tree parent)))))
+              {:error :invalid-value
+               :message (str "node " parent " (:" (name (first (wf/find-node tree parent)))
+                             ") cannot hold child nodes; --parent must name a container"
+                             " (canvas, row or col)")})
+            (let [wf' (wf/move-node-at tree node {:before before :parent parent})
+                  sv  (wf/validate wf')]
+              (or (when-not (:valid? sv) (wireframe-invalid sv wf'))
+                  (let [store (m/set-field store :element element :wireframe wf')]
+                    (touching (commit store :MoveWireframeNode [(updated store :element element)]
+                                      (m/fetch store :element element))
+                              node))))))))
+
+;; --- ReplaceWireframe --------------------------------------------------------
+
+(defn- named-node-ids
+  "Every node id the target layout names, in document order, repeats included."
+  [layout]
+  (into []
+        (keep #(let [id-map (second %)] (when (map? id-map) (:-id id-map))))
+        (tree-seq vector? #(filter vector? (drop 2 %)) layout)))
+
+(defn- coerce-operator-value
+  "An attribute value as the tag's schema types it: operator text becomes a
+  keyword, boolean or list the same way it does on any other layout edit; a
+  value already typed is kept. {:ok v} or {:error msg}."
+  [k v aschema]
+  (cond
+    (or (nil? aschema) (not (string? v))) {:ok v}
+    ;; a choice outside the allowed set is left to validation, which names it
+    (= :kw (:type aschema))               {:ok (keyword v)}
+    :else (try {:ok (wf/coerce-attr-value k v aschema)}
+               (catch Exception e {:error (ex-message e)}))))
+
+(defn- coerce-layout
+  "[layout errors]: the target with every attribute value coerced to its
+  declared type, and a problem for each value that does not coerce (that
+  attribute is then left out, so it is reported once)."
+  [[tag id-map & more]]
+  (let [attr-schema   (:attrs (wf/tag-schema tag))
+        [attrs rest-] (if (map? (first more)) [(first more) (rest more)] [nil more])
+        results       (map (fn [[k v]] [k (coerce-operator-value k v (get attr-schema k))]) attrs)
+        attrs'        (into {} (keep (fn [[k r]] (when (contains? r :ok) [k (:ok r)]))) results)
+        errors        (for [[_ r] results :when (:error r)]
+                        {:node-id (:-id id-map) :message (:error r)})
+        kids          (map #(if (vector? %) (coerce-layout %) [% []]) rest-)]
+    [(into (cond-> [tag id-map] attrs (conj attrs')) (map first) kids)
+     (into (vec errors) (mapcat second) kids)]))
+
+(defn- named-id-problems
+  "Each id the target names that does not address exactly one existing node,
+  and a root that names a node other than the layout's root."
+  [element current layout named]
+  (concat
+    (let [root-id (get-in layout [1 :-id])
+          current-root (get-in current [1 :-id])]
+      (when (and root-id current-root (not= root-id current-root)
+                 (wf/find-node current root-id))
+        [{:node-id root-id
+          :message (str "the first line is the layout's root: write it as [" current-root
+                        "] :canvas (or :canvas without an id), not [" root-id "]")}]))
+    (for [[id n] (frequencies named) :when (> n 1)]
+      {:node-id id :message (str "node " id " is named " n " times; an id addresses one node")})
+    (for [id (distinct named) :when (not (and current (wf/find-node current id)))]
+      {:node-id id
+       :message (if current
+                  (str "node " id " does not exist in the current layout"
+                       "; leave the [nX] prefix off a new node")
+                  (str "node " id " does not exist: element " element " has no layout yet"
+                       ", so leave the [nX] prefix off every line"))})))
+
+;; ReplaceWireframe: the whole layout, stated as its target. All or nothing,
+;; and a rejection reports every problem found.
+(defn replace-wireframe [store {:keys [element layout]}]
+  (or (require-entity store :element element)
+      (let [el      (m/fetch store :element element)
+            current (:wireframe el)]
+        (or (when (not= :screen (:element_type el))
+              {:error :invalid-value
+               :message (str "element " element " is not a screen")})
+            (let [[tree coerce-errors] (coerce-layout (wf/resolve-ids current layout))
+                  errors (vec (concat (named-id-problems element current layout
+                                                         (named-node-ids layout))
+                                      coerce-errors
+                                      (:errors (wf/validate tree))
+                                      (:errors (wf/validate-semantics tree el))))]
+              (if (seq errors)
+                (wireframe-invalid {:errors errors} tree)
+                (let [store (m/set-field store :element element :wireframe tree)]
+                  (commit store :ReplaceWireframe [(updated store :element element)]
+                          (m/fetch store :element element)))))))))

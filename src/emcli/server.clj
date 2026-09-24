@@ -90,8 +90,12 @@
   "Strip the heavy/internal bits from a rule result for the wire."
   [res]
   (if (r/error? res)
-    {:ok false :error (name (:error res)) :message (:message res)}
-    {:ok true :result (let [r (:result res)] (if (map? r) (dissoc r :type) r))}))
+    (cond-> {:ok false :error (name (:error res)) :message (:message res)}
+      ;; the message already names the remedy, so a client need not add usage
+      (:remedy res) (assoc :remedy true))
+    (cond-> {:ok true :result (let [r (:result res)] (if (map? r) (dissoc r :type) r))}
+      ;; the node a layout edit created, moved or changed (LayoutEditRevealsResult)
+      (:node res) (assoc :node (:node res)))))
 
 ;; --- routing ---------------------------------------------------------------
 

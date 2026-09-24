@@ -113,7 +113,8 @@
    "add-step-example" [:step] "remove-step-example" [:step]
     "add-wireframe-node" [:element] "set-wireframe-attr" [:element]
     "add-wireframe-node-before" [:element]
-    "set-wireframe-text" [:element]})
+    "set-wireframe-text" [:element]
+    "move-wireframe-node" [:element] "replace-wireframe" [:element]})
 
 ;; Allowed option keys per structured/composite command. Derived from the same
 ;; flag names that `cli/structured-manifest-params` publishes, so there is one
@@ -132,7 +133,35 @@
    "add-step-example"    #{:step :field-name :field-value}
    "remove-step-example" #{:step :field-name}
    "set-wireframe-attr"  #{:element :node :attr :value}
-   "set-wireframe-text"  #{:element :node :text}})
+   "set-wireframe-text"  #{:element :node :text}
+   "move-wireframe-node" #{:element :node :before :parent}
+   "replace-wireframe"   #{:element :tree}})
+
+(def ^:private remedy-kinds #{:unknown-attr :missing :bad-value})
+
+(defn- attr-rejection
+  "The rejection of attribute flags `wf/parse-node-attrs` (or a value coercion)
+  refused. Where the problem is an attribute - one the tag does not admit, a
+  required one left out, a choice outside the allowed set - it goes on to say
+  what `tag` admits, and for a missing or unadmitted attribute the corrected
+  command when one is given (RejectedLayoutEditNamesRemedy)."
+  [{:keys [error kind]} tag corrected]
+  (let [remedy? (and (remedy-kinds kind) (wf/tag-schema tag))]
+    (cond-> {:error :invalid-value
+             :message (str error
+                           (when remedy? (str "\n" (wf/attr-remedy tag)))
+                           (when (and remedy? corrected (#{:unknown-attr :missing} kind))
+                             (str "\ntry: " corrected)))}
+      remedy? (assoc :remedy true))))
+
+(defn- parse-error [errors]
+  {:error :parse-error :errors errors :remedy true
+   :message (str "the layout could not be read - "
+                 (str/join "; " (map (fn [{:keys [line message]}]
+                                       (str (if line (str "line " line) "input") ": " message))
+                                     errors))
+                 "\neach line is `[nX] :tag {attributes} \"text\"`, indented two spaces per level"
+                 " under its parent; the [nX] prefix only on existing nodes")})
 
 (defn- int-opt-keys [command]
   (if-let [params (:params (registry command))]
@@ -297,9 +326,12 @@
             attrs     (cond-> (dissoc opts :element :tag :parent :server)
                         (some? text) (dissoc :text))
             ;; Coerce attrs per tag schema
-            parsed    (wf/parse-node-attrs tag (into {} (map (fn [[k v]] [k (str v)]) attrs)))]
+            raw       (into {} (map (fn [[k v]] [k (str v)])) attrs)
+            parsed    (wf/parse-node-attrs tag raw)]
         (if (:error parsed)
-          {:error :invalid-value :message (:error parsed)}
+          (attr-rejection parsed tag
+                          (wf/corrected-add-command {:verb "add-node" :element eid :parent parent
+                                                     :tag tag :text text :attrs raw}))
           (app/apply-rule! app r/add-wireframe-node
                            {:element eid :tag tag :parent parent :attrs (:ok parsed) :text text})))
       {:error :missing-args :message "add-wireframe-node requires :element and :tag"})
@@ -315,9 +347,12 @@
                         (some-> (get opts :text) str))
             attrs     (cond-> (dissoc opts :element :before :tag :server)
                         (some? text) (dissoc :text))
-            parsed    (wf/parse-node-attrs tag (into {} (map (fn [[k v]] [k (str v)]) attrs)))]
+            raw       (into {} (map (fn [[k v]] [k (str v)])) attrs)
+            parsed    (wf/parse-node-attrs tag raw)]
         (if (:error parsed)
-          {:error :invalid-value :message (:error parsed)}
+          (attr-rejection parsed tag
+                          (wf/corrected-add-command {:verb "add-node-before" :element eid :before before
+                                                     :tag tag :text text :attrs raw}))
           (app/apply-rule! app r/add-wireframe-node-before
                            {:element eid :before before :tag tag :attrs (:ok parsed) :text text})))
       {:error :missing-args :message "add-wireframe-node-before requires :element, :before and :tag"})
@@ -336,15 +371,14 @@
             ;; the current store; when the node does not exist or the tag does
             ;; not admit the attribute there is no entry, the raw text goes
             ;; through unchanged and the rule's own validation decides.
-            schema (get-in (wf/tag-schema (first (wf/find-node
-                                                  (:wireframe (m/fetch (app/store app) :element eid))
-                                                  node)))
-                           [:attrs attr])
+            tag    (first (wf/find-node (:wireframe (m/fetch (app/store app) :element eid)) node))
+            schema (get-in (wf/tag-schema tag) [:attrs attr])
             typed  (try
                      {:ok (wf/coerce-attr-value attr raw schema)}
-                     (catch Exception e {:error (ex-message e)}))]
+                     (catch Exception e
+                       {:error (ex-message e) :kind (wf/value-rejection-kind schema)}))]
         (if (:error typed)
-          {:error :invalid-value :message (:error typed)}
+          (attr-rejection typed tag nil)
           (app/apply-rule! app r/set-wireframe-attr
                            {:element eid :node node :attr attr :value (:ok typed)})))
       {:error :missing-args :message "set-wireframe-attr requires :element, :node, :attr and :value"})
@@ -356,6 +390,25 @@
                         :node    (str (get opts :node))
                         :text    (str (get opts :text))})
       {:error :missing-args :message "set-wireframe-text requires :element, :node and :text"})
+
+    (= command "move-wireframe-node")
+    (if (and (get opts :element) (get opts :node))
+      (app/apply-rule! app r/move-wireframe-node
+                       {:element (->int (get opts :element))
+                        :node    (str (get opts :node))
+                        :before  (some-> (get opts :before) str)
+                        :parent  (some-> (get opts :parent) str)})
+      {:error :missing-args :message "move-wireframe-node requires :element and :node"})
+
+    ;; ReplaceWireframe takes the target as the text `wireframe show` prints
+    (= command "replace-wireframe")
+    (if (and (get opts :element) (get opts :tree))
+      (let [{:keys [ok errors]} (wf/parse-tree (str (get opts :tree)))]
+        (if errors
+          (parse-error errors)
+          (app/apply-rule! app r/replace-wireframe
+                           {:element (->int (get opts :element)) :layout ok})))
+      {:error :missing-args :message "replace-wireframe requires :element and :tree"})
 
     :else
     (if-let [{:keys [rule] :as entry} (registry command)]
@@ -371,7 +424,8 @@
   (sort (concat (keys registry)
                 ["add-field" "remove-field" "add-field-origin" "remove-field-origin"
                  "add-derivation" "remove-derivation" "add-step-example" "remove-step-example"
-                 "add-wireframe-node" "add-wireframe-node-before" "set-wireframe-attr" "set-wireframe-text"])))
+                 "add-wireframe-node" "add-wireframe-node-before" "set-wireframe-attr" "set-wireframe-text"
+                 "move-wireframe-node" "replace-wireframe"])))
 
 (defn authoring-view
   "The `surface ModelAuthoring` `exposes:` read projection (event-model.allium):

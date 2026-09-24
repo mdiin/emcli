@@ -1,6 +1,7 @@
 (ns emcli.wireframe-test
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest testing is]]
+            [emcli.support :as s]
             [emcli.wireframe :as wf]))
 
 ;; ---------------------------------------------------------------------------
@@ -71,10 +72,13 @@
               (:errors result)))))
 
 (deftest validate-names-the-tag-of-an-unknown-attribute
-  (let [wf [:canvas {:-id "n1"} [:button {:-id "n2"} {:label "Go" :align :center}]]]
-    (is (= [{:node-id "n2"
-             :message "unknown attribute :align for :button (see: emcli wireframe tags --tag button)"}]
-           (:errors (wf/validate wf))))))
+  ;; RejectedLayoutEditNamesRemedy lets the message go on to name the remedy,
+  ;; so it must start with the problem rather than equal it.
+  (let [wf     [:canvas {:-id "n1"} [:button {:-id "n2"} {:label "Go" :align :center}]]
+        errors (:errors (wf/validate wf))]
+    (is (= ["n2"] (map :node-id errors)))
+    (is (str/starts-with? (:message (first errors))
+                          "unknown attribute :align for :button (see: emcli wireframe tags --tag button)"))))
 
 (deftest validate-rejects-missing-required-attr
   (testing ":button requires :label"
@@ -469,3 +473,186 @@
           n2-line (first (filter #(re-find #"\[n2\]" %) lines))]
       (is (< (count (re-find #"^\s*" n1-line))
              (count (re-find #"^\s*" n2-line)))))))
+
+;; ---------------------------------------------------------------------------
+;; Tree helpers for the move / replace tests
+;; ---------------------------------------------------------------------------
+
+(def ^:private move-node-at wf/move-node-at)
+(def ^:private parse-tree   wf/parse-tree)
+(def ^:private resolve-ids  wf/resolve-ids)
+
+(defn- doc-ids
+  "Every node id of the tree, in document order."
+  [node]
+  (when (vector? node)
+    (cons (get-in node [1 :-id]) (mapcat doc-ids (filter vector? (drop 2 node))))))
+
+(defn- kid-ids
+  "The ids of the immediate child nodes of `node-id`."
+  [wireframe node-id]
+  (map #(get-in % [1 :-id]) (filter vector? (drop 2 (wf/find-node wireframe node-id)))))
+
+;; ---------------------------------------------------------------------------
+;; move-node-at (MoveWireframeNode: move_before / move_into)
+;; ---------------------------------------------------------------------------
+
+(def ^:private move-wf
+  [:canvas {:-id "n1"}
+   [:col {:-id "n2"}
+    [:h1 {:-id "n3"} "Orders"]
+    [:input {:-id "n4"} {:field-name "searchTerm"}]
+    [:button {:-id "n5"} {:label "Go"}]]
+   [:row {:-id "n6"}
+    [:span {:-id "n7"} "Total"]
+    [:col {:-id "n8"}]]])
+
+(deftest move-node-at-places-a-node-before-a-sibling
+  (let [result (move-node-at move-wf "n5" {:before "n3"})]
+    (is (= ["n5" "n3" "n4"] (kid-ids result "n2")))
+    (is (= ["n7" "n8"] (kid-ids result "n6")) "other parents keep their children")))
+
+(deftest move-node-at-appends-into-a-parent-as-last-child
+  (let [result (move-node-at move-wf "n3" {:parent "n2"})]
+    (is (= ["n4" "n5" "n3"] (kid-ids result "n2")))))
+
+(deftest move-node-at-moves-across-parents
+  (testing "before a sibling under another parent"
+    (let [result (move-node-at move-wf "n4" {:before "n7"})]
+      (is (= ["n3" "n5"] (kid-ids result "n2")))
+      (is (= ["n4" "n7" "n8"] (kid-ids result "n6")))))
+  (testing "into another container"
+    (let [result (move-node-at move-wf "n5" {:parent "n8"})]
+      (is (= ["n3" "n4"] (kid-ids result "n2")))
+      (is (= ["n5"] (kid-ids result "n8"))))))
+
+(deftest move-node-at-carries-the-whole-subtree
+  (let [result (move-node-at move-wf "n2" {:parent "n8"})]
+    (is (= ["n6"] (kid-ids result "n1")))
+    (is (= ["n2"] (kid-ids result "n8")))
+    (is (= (wf/find-node move-wf "n2") (wf/find-node result "n2"))
+        "the moved node keeps its children, attributes, text and ids")))
+
+(deftest move-node-at-keeps-every-node-id
+  (doseq [[node target] [["n5" {:before "n3"}] ["n4" {:parent "n8"}] ["n2" {:before "n7"}]]]
+    (let [result (move-node-at move-wf node target)]
+      (is (= (set (doc-ids move-wf)) (set (doc-ids result))))
+      (is (= (count (doc-ids move-wf)) (count (doc-ids result))))
+      ;; the parent a node is moved into gains that child; every other node is
+      ;; untouched
+      (doseq [id (remove #{(:parent target)} ["n3" "n4" "n5" "n7" "n8"])]
+        (is (= (wf/find-node move-wf id) (wf/find-node result id))
+            (str id " is unchanged by moving " node)))
+      (is (= (wf/next-node-id move-wf) (wf/next-node-id result))
+          "nothing is allocated or renumbered")
+      (is (:valid? (wf/validate result))))))
+
+(deftest move-node-at-to-where-it-already-sits-is-a-no-op
+  (is (= move-wf (move-node-at move-wf "n5" {:parent "n2"})) "already the last child")
+  (is (= move-wf (move-node-at move-wf "n4" {:before "n5"})) "already right before"))
+
+;; ---------------------------------------------------------------------------
+;; format-tree reveals every node's attributes and text
+;; ---------------------------------------------------------------------------
+
+(deftest format-tree-shows-both-attributes-and-text-of-a-text-node
+  ;; LayoutEditRevealsResult: every node with its id, tag, attributes and text
+  (let [line (->> (wf/format-tree [:canvas {:-id "n1"}
+                                   [:h1 {:-id "n2"} {:field-name "title"} "Orders"]])
+                  str/split-lines
+                  (filter #(str/includes? % "[n2]"))
+                  first)]
+    (is (str/includes? line ":field-name"))
+    (is (str/includes? line "\"title\""))
+    (is (str/includes? line "\"Orders\""))))
+
+;; ---------------------------------------------------------------------------
+;; parse-tree: the text form of a WireframeTargetNode tree is what
+;; format-tree (and so `wireframe show`) prints
+;; ---------------------------------------------------------------------------
+
+(deftest parse-tree-round-trips-format-tree
+  (doseq [w [simple-wf
+             move-wf
+             [:canvas {:-id "n1"}]
+             [:canvas {:-id "n1"}
+              [:row {:-id "n2"} {:gap :md}
+               [:h1 {:-id "n3"} {:field-name "title"} "Orders"]
+               [:dropdown {:-id "n5"} {:options ["a" "b"] :required true}]]]]]
+    (let [text (wf/format-tree w)]
+      (is (= {:ok w} (parse-tree text)) (str "round trip of\n" text))
+      (is (= (parse-tree text) (parse-tree text))
+          "a target tree is a value: the same text parses to equal trees"))))
+
+(deftest parse-tree-marks-unprefixed-lines-as-new-nodes
+  ;; A node naming no id has an id map without :-id; the rest of its shape
+  ;; (tag, attributes, text, children) is a wireframe node's.
+  (is (= {:ok [:canvas {:-id "n1"}
+               [:col {}
+                [:h1 {:-id "n3"} "Hi"]
+                [:input {} {:type :email :label "Email"}]]]}
+         (parse-tree (str "[n1] :canvas\n"
+                          "  :col\n"
+                          "    [n3] :h1  \"Hi\"\n"
+                          "    :input  {:type :email, :label \"Email\"}")))))
+
+(deftest parse-tree-ignores-surrounding-blank-lines-and-base-indentation
+  ;; a --tree argument written across lines in a shell usually starts with a
+  ;; newline and carries the indentation of the command around it
+  (is (= {:ok [:canvas {} [:col {} [:divider {}]]]}
+         (parse-tree "\n  :canvas\n    :col\n      :divider\n\n"))))
+
+(defn- error-lines [result] (set (map :line (:errors result))))
+
+(deftest parse-tree-errors-carry-a-line-number
+  (testing "indentation deeper than one level below its parent"
+    (let [res (parse-tree "[n1] :canvas\n  :col\n      :divider")]
+      (is (nil? (:ok res)))
+      (is (contains? (error-lines res) 3))
+      (is (every? #(string? (:message %)) (:errors res)))))
+  (testing "a line that is not a node"
+    (is (contains? (error-lines (parse-tree "[n1] :canvas\n  \"just text\"")) 2)))
+  (testing "content that does not read"
+    (is (contains? (error-lines (parse-tree "[n1] :canvas\n  :col  {:gap")) 2)))
+  (testing "a second root"
+    (is (contains? (error-lines (parse-tree "[n1] :canvas\n[n2] :canvas")) 2)))
+  (testing "every bad line is reported, not only the first"
+    (is (= #{2 3} (error-lines (parse-tree "[n1] :canvas\n  ???\n  :col  {:gap\n  :divider")))))
+  (testing "no node at all"
+    (let [res (parse-tree "\n  \n")]
+      (is (nil? (:ok res)))
+      (is (seq (:errors res))))))
+
+;; ---------------------------------------------------------------------------
+;; resolve-ids (ReplaceWireframe: the concrete tree a target describes)
+;; ---------------------------------------------------------------------------
+
+(deftest resolve-ids-keeps-named-ids-and-allocates-beyond-the-current-highest
+  ;; simple-wf's highest id is n5; the target drops n3 and n5, so the new nodes
+  ;; get n6 and n7 in document order - a dropped id is never handed out again
+  ;; within the same replacement
+  (is (= [:canvas {:-id "n1"}
+          [:col {:-id "n2"}
+           [:text {:-id "n6"} "new"]
+           [:input {:-id "n4"} {:placeholder "Search..." :field-name "searchTerm"}]
+           [:divider {:-id "n7"}]]]
+         (resolve-ids simple-wf
+                      [:canvas {:-id "n1"}
+                       [:col {:-id "n2"}
+                        [:text {} "new"]
+                        [:input {:-id "n4"} {:placeholder "Search..." :field-name "searchTerm"}]
+                        [:divider {}]]]))))
+
+(deftest resolve-ids-starts-from-n1-without-a-current-layout
+  (is (= [:canvas {:-id "n1"} [:col {:-id "n2"} [:h1 {:-id "n3"} "Hi"]]]
+         (resolve-ids nil [:canvas {} [:col {} [:h1 {} "Hi"]]]))))
+
+(deftest resolve-ids-keeps-the-root-as-the-root
+  ;; a target root naming no id is the layout's root, not a new node, so it
+  ;; takes the current root's id and costs no fresh number
+  (is (= [:canvas {:-id "n1"} [:divider {:-id "n6"}]]
+         (resolve-ids simple-wf [:canvas {} [:divider {}]]))))
+
+(deftest resolve-ids-takes-the-target's-content-for-a-kept-node
+  (is (= [:canvas {:-id "n1"} [:button {:-id "n5"} {:label "Save"}]]
+         (resolve-ids simple-wf [:canvas {:-id "n1"} [:button {:-id "n5"} {:label "Save"}]]))))

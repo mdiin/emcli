@@ -225,7 +225,7 @@ data: {"op":"DeleteTimeline","changes":[{"action":"deleted","type":"placement","
 | `SetFields` | updated | the element, then any element at the far end of an outgoing connection whose completeness the field edit moved |
 | `SetElementContext` / `AssignSwimlane` / `SetImageUrl` / `SetFieldOrigins` / `RenameElement` | updated | element |
 | `RenameField` | updated | the element (fields, field_origins and layout together), then each connection or spec-step the respelling reached, then any far-end element whose completeness moved |
-| `AddWireframeNode` / `AddWireframeNodeBefore` / `SetWireframeAttr` / `SetWireframeText` / `DeleteWireframeNode` | updated | the screen element, restated with its new layout tree |
+| `AddWireframeNode` / `AddWireframeNodeBefore` / `SetWireframeAttr` / `SetWireframeText` / `DeleteWireframeNode` / `MoveWireframeNode` / `ReplaceWireframe` | updated | the screen element, restated with its new layout tree |
 | `DeleteElement` | deleted, updated | cascaded placements, spec-steps and connections, then the element, then the slices and specifications whose `is_complete` those removals moved, then the surviving `to` element(s) whose completeness the removed connections moved |
 | `PlaceElement` | created, updated | placement, then the slice whose `is_complete` the new placement moved |
 | `ReorderPlacement` | updated (one per placement whose index moved, in new-index order; an empty `changes` list when the move changes nothing) | placement |
